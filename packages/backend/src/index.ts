@@ -9,7 +9,6 @@ import { compress } from 'hono/compress';
 import { cors } from 'hono/cors';
 import { csrf } from 'hono/csrf';
 import { logger } from 'hono/logger';
-import { secureHeaders } from 'hono/secure-headers';
 import { createServer } from 'http';
 
 // Import routers
@@ -21,10 +20,14 @@ import { filesRouter } from './routes/files';
 import { messagesRouter } from './routes/messages';
 import { searchRouter } from './routes/search';
 
+// Import OpenAPI documentation
+import { openapiApp } from './openapi';
+
 // Import middleware
 import { auditMiddleware } from './middleware/audit';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { sessionMiddleware } from './middleware/session';
+import { corsMiddleware, secureHeadersMiddleware } from './middleware/security';
 
 // Import services
 import { initializeDatabase } from './db';
@@ -34,46 +37,20 @@ import { initializeMinIO } from './services/storage';
 import { initializeWebSocket } from './services/websocket';
 
 // Environment configuration
-const PORT = process.env.PORT || 8080;
+const PORT = parseInt(process.env.PORT || '8080');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Initialize Hono app
 const app = new Hono();
 
-// Global middleware
-app.use('*', logger());
-app.use('*', compress());
-app.use('*', cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true,
-}));
-
-// Security headers
-app.use('*', secureHeaders({
-  contentSecurityPolicy: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'nonce-{{nonce}}'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", "data:", process.env.MINIO_ENDPOINT || 'localhost:9000'],
-    connectSrc: ["'self'", "wss://", process.env.ERP_GATEWAY || ''],
-    frameAncestors: ["'none'"],
-  },
-  strictTransportSecurity: 'max-age=31536000; includeSubDomains',
-  xFrameOptions: 'DENY',
-  xContentTypeOptions: 'nosniff',
-  referrerPolicy: 'strict-origin',
-}));
-
-// CSRF protection for state-changing operations
-app.use('/api/*', csrf({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-}));
-
-// Session management
-app.use('/api/*', sessionMiddleware);
-
-// Rate limiting
-app.use('/api/*', rateLimitMiddleware);
+// Middleware
+app.use(logger()); // Request logger
+app.use(compress()); // Gzip compression
+app.use(corsMiddleware()); // CORS for frontend
+app.use(secureHeadersMiddleware()); // Security headers
+app.use(csrf()); // CSRF protection
+app.use(sessionMiddleware()); // Session management
+app.use(rateLimitMiddleware); // Rate limiting
 
 // Audit logging for mutations
 app.use('/api/*', auditMiddleware);
@@ -95,6 +72,14 @@ app.route('/api/search', searchRouter);
 app.route('/api/calendar', calendarRouter);
 app.route('/api/erp', erpRouter);
 app.route('/api/admin', adminRouter);
+
+// OpenAPI Documentation
+app.route('/', openapiApp);
+
+// Root route
+app.get('/', (c) => {
+  return c.json({ message: 'AAELink Backend API' });
+});
 
 // 404 handler
 app.notFound((c) => {

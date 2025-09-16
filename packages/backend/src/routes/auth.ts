@@ -19,6 +19,10 @@ import { db } from '../db';
 import { auditLogs, passkeys, users } from '../db/schema';
 import { redis } from '../services/redis';
 import { createSession, deleteSession } from '../services/session';
+import { hashPassword, verifyPassword } from '../utils/crypto';
+import { createSession, setSessionCookie, clearSessionCookie } from '../middleware/session';
+import { auditEvents } from '../middleware/audit';
+import { zValidator } from '@hono/zod-validator';
 
 const authRouter = new Hono();
 
@@ -27,92 +31,86 @@ const RP_NAME = process.env.RP_NAME || 'AAELink';
 const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:3000';
 
-// Validation schemas
-const RegisterOptionsSchema = z.object({
-  email: z.string().email(),
-  displayName: z.string().min(1).max(100),
+// Input validation schemas
+const registerSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters long'),
+  displayName: z.string().min(3, 'Display name must be at least 3 characters long'),
 });
 
-const RegisterVerifySchema = z.object({
-  email: z.string().email(),
-  displayName: z.string(),
-  response: z.any(), // WebAuthn response object
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
 });
 
-const AuthOptionsSchema = z.object({
-  email: z.string().email(),
-});
 
-const AuthVerifySchema = z.object({
-  email: z.string().email(),
-  response: z.any(), // WebAuthn response object
-});
+// Registration endpoint
+authRouter.post(
+  '/register',
+  zValidator('json', registerSchema),
+  async (c) => {
+    const { email, password, displayName } = c.req.valid('json');
 
-/**
- * POST /api/auth/webauthn/register/options
- * Generate registration options for WebAuthn
- */
-authRouter.post('/webauthn/register/options', async (c) => {
-  try {
-    const body = await c.req.json();
-    const { email, displayName } = RegisterOptionsSchema.parse(body);
+    try {
+      // Check if user exists
+      const existingUser = await db.select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
 
-    // Check if user exists
-    const existingUser = await db.select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+      let user;
+      if (existingUser.length === 0) {
+        // Create new user
+        const [newUser] = await db.insert(users)
+          .values({
+            email,
+            displayName,
+            password: await hashPassword(password),
+          })
+          .returning();
+        user = newUser;
+      } else {
+        user = existingUser[0];
+      }
 
-    let user;
-    if (existingUser.length === 0) {
-      // Create new user
-      const [newUser] = await db.insert(users)
-        .values({
-          email,
-          displayName,
-        })
-        .returning();
-      user = newUser;
-    } else {
-      user = existingUser[0];
+      // Get existing passkeys for exclude list
+      const existingPasskeys = await db.select()
+        .from(passkeys)
+        .where(eq(passkeys.userId, user.id));
+
+      // Generate registration options
+      const options = await generateRegistrationOptions({
+        rpName: RP_NAME,
+        rpID: RP_ID,
+        userID: user.id,
+        userName: email,
+        userDisplayName: displayName,
+        attestationType: 'direct',
+        excludeCredentials: existingPasskeys.map(key => ({
+          id: Buffer.from(key.credId, 'base64'),
+          type: 'public-key',
+          transports: key.transports as any,
+        })),
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          requireResidentKey: true,
+          residentKey: 'required',
+          userVerification: 'required',
+        },
+      });
+
+      // Store challenge in Redis with 5-minute TTL
+      const challengeKey = `webauthn:register:${user.id}`;
+      await redis.setex(challengeKey, 300, options.challenge);
+
+      return c.json(options);
+    } catch (error) {
+      console.error('Registration error:', error);
+      auditEvents.register(c, '', email, false, error.message);
+      return c.json({ error: 'Registration failed' }, 500);
     }
-
-    // Get existing passkeys for exclude list
-    const existingPasskeys = await db.select()
-      .from(passkeys)
-      .where(eq(passkeys.userId, user.id));
-
-    // Generate registration options
-    const options = await generateRegistrationOptions({
-      rpName: RP_NAME,
-      rpID: RP_ID,
-      userID: user.id,
-      userName: email,
-      userDisplayName: displayName,
-      attestationType: 'direct',
-      excludeCredentials: existingPasskeys.map(key => ({
-        id: Buffer.from(key.credId, 'base64'),
-        type: 'public-key',
-        transports: key.transports as any,
-      })),
-      authenticatorSelection: {
-        authenticatorAttachment: 'platform',
-        requireResidentKey: true,
-        residentKey: 'required',
-        userVerification: 'required',
-      },
-    });
-
-    // Store challenge in Redis with 5-minute TTL
-    const challengeKey = `webauthn:register:${user.id}`;
-    await redis.setex(challengeKey, 300, options.challenge);
-
-    return c.json(options);
-  } catch (error) {
-    console.error('Registration options error:', error);
-    return c.json({ error: 'Failed to generate registration options' }, 500);
   }
-});
+);
 
 /**
  * POST /api/auth/webauthn/register/verify

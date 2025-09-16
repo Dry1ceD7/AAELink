@@ -28,7 +28,7 @@ nano .env
 ```bash
 DOMAIN=your-domain.com
 POSTGRES_PASSWORD=your-secure-password
-REDIS_PASSWORD=your-secure-password  
+REDIS_PASSWORD=your-secure-password
 MINIO_ACCESS_KEY=your-access-key
 MINIO_SECRET_KEY=your-secret-key
 JWT_SECRET=your-32-char-secret
