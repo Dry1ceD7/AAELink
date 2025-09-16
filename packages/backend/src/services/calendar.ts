@@ -154,7 +154,7 @@ class CalendarService {
 
     this.events.set(event.id, event);
     console.log(`Event created: ${event.title} by ${userId}`);
-    
+
     return event;
   }
 
@@ -170,34 +170,34 @@ class CalendarService {
 
     // Apply filters
     if (filter.userId) {
-      filteredEvents = filteredEvents.filter(event => 
-        event.createdBy === filter.userId || 
+      filteredEvents = filteredEvents.filter(event =>
+        event.createdBy === filter.userId ||
         event.attendees.includes(filter.userId)
       );
     }
 
     if (filter.channelId) {
-      filteredEvents = filteredEvents.filter(event => 
+      filteredEvents = filteredEvents.filter(event =>
         event.channelId === filter.channelId
       );
     }
 
     if (filter.startDate) {
       const startDate = new Date(filter.startDate);
-      filteredEvents = filteredEvents.filter(event => 
+      filteredEvents = filteredEvents.filter(event =>
         new Date(event.startDate) >= startDate
       );
     }
 
     if (filter.endDate) {
       const endDate = new Date(filter.endDate);
-      filteredEvents = filteredEvents.filter(event => 
+      filteredEvents = filteredEvents.filter(event =>
         new Date(event.startDate) <= endDate
       );
     }
 
     // Sort by start date
-    filteredEvents.sort((a, b) => 
+    filteredEvents.sort((a, b) =>
       new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
     );
 
@@ -243,7 +243,7 @@ class CalendarService {
 
     this.events.set(eventId, updatedEvent);
     console.log(`Event updated: ${updatedEvent.title}`);
-    
+
     return updatedEvent;
   }
 
@@ -264,7 +264,7 @@ class CalendarService {
 
     this.events.delete(eventId);
     console.log(`Event deleted: ${event.title}`);
-    
+
     return true;
   }
 
@@ -312,13 +312,13 @@ class CalendarService {
     let events = Array.from(this.events.values());
 
     if (userId) {
-      events = events.filter(event => 
-        event.createdBy === userId || 
+      events = events.filter(event =>
+        event.createdBy === userId ||
         event.attendees.includes(userId)
       );
     }
 
-    return events.filter(event => 
+    return events.filter(event =>
       event.title.toLowerCase().includes(searchTerm) ||
       event.description?.toLowerCase().includes(searchTerm) ||
       event.location?.toLowerCase().includes(searchTerm)
@@ -366,3 +366,4 @@ class CalendarService {
 export const calendarService = new CalendarService();
 export { CalendarService };
 export type { CalendarEvent, CreateEventData, EventFilter };
+

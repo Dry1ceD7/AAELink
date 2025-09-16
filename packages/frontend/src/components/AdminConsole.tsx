@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface AdminStats {
@@ -37,7 +37,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
   const loadAdminData = async () => {
     try {
       setLoading(true);
-      
+
       // Load admin stats
       const statsResponse = await fetch('/api/admin/stats', {
         credentials: 'include'
@@ -65,10 +65,10 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
   const handleERPSync = async (type: 'users' | 'data') => {
     try {
       setSyncLoading(true);
-      
+
       const endpoint = type === 'users' ? '/api/erp/sync/users' : '/api/erp/sync/data';
       const body = type === 'data' ? { dataType: 'projects' } : {};
-      
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -235,11 +235,11 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="flex items-center">
                     <div className={`w-3 h-3 rounded-full mr-3 ${
-                      stats?.systemHealth === 'healthy' ? 'bg-green-500' : 
+                      stats?.systemHealth === 'healthy' ? 'bg-green-500' :
                       stats?.systemHealth === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
                     }`}></div>
                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {t('admin.systemHealth', 'System Health')}: 
+                      {t('admin.systemHealth', 'System Health')}:
                       <span className={`ml-2 font-medium ${getHealthColor(stats?.systemHealth || 'unknown')}`}>
                         {stats?.systemHealth || 'Unknown'}
                       </span>
@@ -248,7 +248,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                   <div className="flex items-center">
                     <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {t('admin.activeConnections', 'Active Connections')}: 
+                      {t('admin.activeConnections', 'Active Connections')}:
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
                         {stats?.activeConnections || 0}
                       </span>
@@ -257,7 +257,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                   <div className="flex items-center">
                     <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {t('admin.lastSync', 'Last Sync')}: 
+                      {t('admin.lastSync', 'Last Sync')}:
                       <span className="ml-2 font-medium text-gray-900 dark:text-white">
                         {stats?.lastSync ? new Date(stats.lastSync).toLocaleString() : 'Never'}
                       </span>
@@ -279,7 +279,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                   <div>
                     <div className="flex items-center mb-2">
                       <div className={`w-3 h-3 rounded-full mr-3 ${
-                        erpStatus?.status === 'connected' ? 'bg-green-500' : 
+                        erpStatus?.status === 'connected' ? 'bg-green-500' :
                         erpStatus?.status === 'error' ? 'bg-red-500' : 'bg-gray-500'
                       }`}></div>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">
@@ -299,7 +299,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                     </p>
                   </div>
                 </div>
-                
+
                 {erpStatus?.integrations && (
                   <div className="mt-4">
                     <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">
@@ -339,7 +339,7 @@ const AdminConsole: React.FC<AdminConsoleProps> = ({ onClose }) => {
                     )}
                     {t('admin.syncUsers', 'Sync Users')}
                   </button>
-                  
+
                   <button
                     onClick={() => handleERPSync('data')}
                     disabled={syncLoading}

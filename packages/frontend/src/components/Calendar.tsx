@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface CalendarEvent {
@@ -43,7 +43,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
       setLoading(true);
       const startDate = getViewStartDate();
       const endDate = getViewEndDate();
-      
+
       const response = await fetch(
         `/api/calendar/events?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`,
         { credentials: 'include' }
@@ -168,7 +168,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
             {day}
           </div>
         ))}
-        
+
         {/* Calendar days */}
         {days.map((date, index) => {
           const dayEvents = getEventsForDate(date);
@@ -185,7 +185,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
               <div className={`text-sm font-medium ${isCurrentDay ? 'text-blue-600 dark:text-blue-400' : ''}`}>
                 {date.getDate()}
               </div>
-              
+
               <div className="mt-1 space-y-1">
                 {dayEvents.slice(0, 3).map(event => (
                   <div
@@ -226,7 +226,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
             </div>
           ))}
         </div>
-        
+
         {/* Week content */}
         <div className="flex-1 grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700">
           {days.map((date, index) => {
@@ -279,13 +279,13 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
             </div>
           ))}
         </div>
-        
+
         {/* Events column */}
         <div className="flex-1 relative">
           {hours.map(hour => (
             <div key={hour} className="h-12 border-b border-gray-200 dark:border-gray-700"></div>
           ))}
-          
+
           {/* Events */}
           {dayEvents.map(event => {
             const startTime = new Date(event.startDate);
@@ -347,9 +347,9 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-              {currentDate.toLocaleDateString('en-US', { 
-                month: 'long', 
-                year: 'numeric' 
+              {currentDate.toLocaleDateString('en-US', {
+                month: 'long',
+                year: 'numeric'
               })}
             </h2>
             <div className="flex items-center space-x-2">
@@ -377,7 +377,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
               </button>
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg">
               {(['month', 'week', 'day'] as const).map(viewType => (
@@ -427,7 +427,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
                   </svg>
                 </button>
               </div>
-              
+
               <div className="space-y-3">
                 {selectedEvent.description && (
                   <div>
@@ -439,7 +439,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
                     </p>
                   </div>
                 )}
-                
+
                 <div>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {t('calendar.startDate')}
@@ -448,7 +448,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
                     {new Date(selectedEvent.startDate).toLocaleString()}
                   </p>
                 </div>
-                
+
                 <div>
                   <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {t('calendar.endDate')}
@@ -457,7 +457,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
                     {new Date(selectedEvent.endDate).toLocaleString()}
                   </p>
                 </div>
-                
+
                 {selectedEvent.location && (
                   <div>
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -468,7 +468,7 @@ const Calendar: React.FC<CalendarProps> = ({ onEventClick, onEventCreate, classN
                     </p>
                   </div>
                 )}
-                
+
                 {selectedEvent.attendees.length > 0 && (
                   <div>
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">

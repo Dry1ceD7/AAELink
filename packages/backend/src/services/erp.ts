@@ -111,7 +111,7 @@ class ERPService {
 
     try {
       console.log('Starting user sync via n8n workflow...');
-      
+
       // Trigger n8n workflow for user sync
       const response = await fetch(`${this.config.n8nUrl}/api/v1/workflows/${this.config.workflows.userSync}/execute`, {
         method: 'POST',
@@ -131,7 +131,7 @@ class ERPService {
       }
 
       const result = await response.json();
-      
+
       // Update sync status
       this.syncStatus.lastSync = new Date().toISOString();
       this.syncStatus.status = 'connected';
@@ -163,7 +163,7 @@ class ERPService {
 
     try {
       console.log(`Starting ${dataType} sync via n8n workflow...`);
-      
+
       // Trigger n8n workflow for data sync
       const response = await fetch(`${this.config.n8nUrl}/api/v1/workflows/${this.config.workflows.dataSync}/execute`, {
         method: 'POST',
@@ -183,7 +183,7 @@ class ERPService {
       }
 
       const result = await response.json();
-      
+
       // Update sync status
       this.syncStatus.lastSync = new Date().toISOString();
       this.syncStatus.status = 'connected';
@@ -221,7 +221,7 @@ class ERPService {
 
     try {
       console.log('Sending notification via n8n workflow...');
-      
+
       // Trigger n8n workflow for notifications
       const response = await fetch(`${this.config.n8nUrl}/api/v1/workflows/${this.config.workflows.notifications}/execute`, {
         method: 'POST',
@@ -357,4 +357,5 @@ class ERPService {
 // Create singleton instance
 export const erpService = new ERPService();
 export { ERPService };
-export type { ERPConfig, ERPSyncStatus, UserSyncData, DataSyncResult };
+export type { DataSyncResult, ERPConfig, ERPSyncStatus, UserSyncData };
+

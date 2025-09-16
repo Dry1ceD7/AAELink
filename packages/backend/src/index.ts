@@ -11,6 +11,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { calendarService } from './services/calendar';
 import { erpService } from './services/erp';
 import { searchService } from './services/search';
+import { securityService } from './services/security';
 import { fileStorage } from './services/storage';
 import { webauthnService } from './services/webauthn';
 import { WebSocketManager } from './websocket';
@@ -20,8 +21,6 @@ const app = new Hono();
 
 // Middleware
 app.use(logger());
-// Remove compress middleware for now due to Bun compatibility issues
-// app.use(compress());
 app.use('*', cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
   credentials: true,
@@ -34,6 +33,28 @@ app.use('*', secureHeaders({
     imgSrc: ["'self'", "data:", "https:"],
   },
 }));
+
+// Rate limiting middleware
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+app.use('*', async (c, next) => {
+  const ip = c.req.header('x-forwarded-for') || 'unknown';
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 minutes
+  const maxRequests = 100; // 100 requests per window
+
+  const key = `${ip}`;
+  const current = rateLimitMap.get(key);
+
+  if (!current || now > current.resetTime) {
+    rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
+  } else if (current.count >= maxRequests) {
+    return c.json({ error: 'Too many requests' }, 429);
+  } else {
+    current.count++;
+  }
+
+  await next();
+});
 
 // Health check
 app.get('/health', (c) => {
@@ -534,7 +555,7 @@ app.get('/api/calendar/events/:eventId', async (c) => {
   try {
     const eventId = c.req.param('eventId');
     const event = await calendarService.getEvent(eventId);
-    
+
     if (!event) {
       return c.json({ error: 'Event not found' }, 404);
     }
@@ -550,7 +571,7 @@ app.post('/api/calendar/events', async (c) => {
   try {
     const userId = 'admin_001'; // In production, get from session
     const eventData = await c.req.json();
-    
+
     const event = await calendarService.createEvent(userId, eventData);
     return c.json({ event }, 201);
   } catch (error) {
@@ -564,9 +585,9 @@ app.put('/api/calendar/events/:eventId', async (c) => {
     const eventId = c.req.param('eventId');
     const userId = 'admin_001'; // In production, get from session
     const updates = await c.req.json();
-    
+
     const event = await calendarService.updateEvent(eventId, userId, updates);
-    
+
     if (!event) {
       return c.json({ error: 'Event not found' }, 404);
     }
@@ -582,9 +603,9 @@ app.delete('/api/calendar/events/:eventId', async (c) => {
   try {
     const eventId = c.req.param('eventId');
     const userId = 'admin_001'; // In production, get from session
-    
+
     const success = await calendarService.deleteEvent(eventId, userId);
-    
+
     if (!success) {
       return c.json({ error: 'Event not found' }, 404);
     }
@@ -600,7 +621,7 @@ app.get('/api/calendar/upcoming', async (c) => {
   try {
     const userId = c.req.query('userId') || 'admin_001';
     const days = parseInt(c.req.query('days') || '7');
-    
+
     const events = await calendarService.getUpcomingEvents(userId, days);
     return c.json({ events });
   } catch (error) {
@@ -612,7 +633,7 @@ app.get('/api/calendar/upcoming', async (c) => {
 app.get('/api/calendar/today', async (c) => {
   try {
     const userId = c.req.query('userId') || 'admin_001';
-    
+
     const events = await calendarService.getTodayEvents(userId);
     return c.json({ events });
   } catch (error) {
@@ -625,7 +646,7 @@ app.get('/api/calendar/search', async (c) => {
   try {
     const query = c.req.query('q') || '';
     const userId = c.req.query('userId');
-    
+
     const events = await calendarService.searchEvents(query, userId);
     return c.json({ events });
   } catch (error) {
@@ -721,11 +742,91 @@ app.post('/api/erp/workflows/:workflowId/execute', async (c) => {
   }
 });
 
+// Security API
+app.get('/api/security/audit-logs', async (c) => {
+  try {
+    const userId = c.req.query('userId');
+    const action = c.req.query('action');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+    const limit = parseInt(c.req.query('limit') || '100');
+
+    const logs = await securityService.getAuditLogs({
+      userId,
+      action,
+      startDate,
+      endDate,
+      limit
+    });
+
+    return c.json({ logs });
+  } catch (error) {
+    console.error('Security audit logs error:', error);
+    return c.json({ error: 'Failed to fetch audit logs' }, 500);
+  }
+});
+
+app.get('/api/security/events', async (c) => {
+  try {
+    const type = c.req.query('type');
+    const severity = c.req.query('severity');
+    const resolved = c.req.query('resolved') === 'true';
+    const limit = parseInt(c.req.query('limit') || '100');
+
+    const events = await securityService.getSecurityEvents({
+      type,
+      severity,
+      resolved,
+      limit
+    });
+
+    return c.json({ events });
+  } catch (error) {
+    console.error('Security events error:', error);
+    return c.json({ error: 'Failed to fetch security events' }, 500);
+  }
+});
+
+app.get('/api/security/stats', async (c) => {
+  try {
+    const stats = await securityService.getSecurityStats();
+    return c.json(stats);
+  } catch (error) {
+    console.error('Security stats error:', error);
+    return c.json({ error: 'Failed to fetch security stats' }, 500);
+  }
+});
+
+app.post('/api/security/validate-password', async (c) => {
+  try {
+    const { password } = await c.req.json();
+    const result = await securityService.validatePassword(password);
+    return c.json(result);
+  } catch (error) {
+    console.error('Password validation error:', error);
+    return c.json({ error: 'Failed to validate password' }, 500);
+  }
+});
+
+app.post('/api/security/validate-file', async (c) => {
+  try {
+    const fileData = await c.req.json();
+    const result = await securityService.validateFileUpload(fileData);
+    return c.json(result);
+  } catch (error) {
+    console.error('File validation error:', error);
+    return c.json({ error: 'Failed to validate file' }, 500);
+  }
+});
+
 // Admin API
-app.get('/api/admin/stats', (c) => {
-  return c.json({
-    users: users.size,
-    organizations: organizations.size,
+app.get('/api/admin/stats', async (c) => {
+  try {
+    const securityStats = await securityService.getSecurityStats();
+    
+    return c.json({
+      users: users.size,
+      organizations: organizations.size,
     channels: channels.size,
     messages: messages.size,
     files: files.size,
