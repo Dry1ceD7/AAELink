@@ -1,0 +1,314 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: aaelink-postgres
+    environment:
+      POSTGRES_USER: aaelink
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aaelink2024}
+      POSTGRES_DB: aaelink_db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aaelink -d aaelink_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: aaelink-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-aaelink2024}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: aaelink-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aaelink}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aaelink2024}
+      MINIO_DOMAIN: minio
+      MINIO_REGION: us-east-1
+      MINIO_BROWSER: on
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: aaelink-n8n
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-aaelink2024}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      NODE_ENV: production
+      WEBHOOK_URL: http://n8n:5678/
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: aaelink
+      DB_POSTGRESDB_PASSWORD: ${DB_PASSWORD:-aaelink2024}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/workflows
+    ports:
+      - "5678:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # SigNoz APM & Observability
+  signoz-clickhouse:
+    image: clickhouse/clickhouse-server:23.7-alpine
+    container_name: aaelink-signoz-clickhouse
+    hostname: signoz-clickhouse
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: signoz_traces
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aaelink2024}
+    ports:
+      - "9002:9000"
+      - "8123:8123"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  signoz-alertmanager:
+    image: signoz/alertmanager:0.23.4
+    container_name: aaelink-signoz-alertmanager
+    volumes:
+      - alertmanager_data:/data
+    depends_on:
+      - signoz-query-service
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  signoz-query-service:
+    image: signoz/query-service:latest
+    container_name: aaelink-signoz-query-service
+    environment:
+      ClickHouseUrl: tcp://signoz-clickhouse:9002/?database=signoz_traces
+      ALERTMANAGER_API_PREFIX: http://signoz-alertmanager:9093/api/
+      SIGNOZ_LOCAL_DB_PATH: /var/lib/signoz/signoz.db
+      DASHBOARDS_PATH: /root/config/dashboards
+      STORAGE: clickhouse
+      GODEBUG: netdns=go
+      TELEMETRY_ENABLED: false
+    volumes:
+      - query_service_data:/var/lib/signoz
+      - ./signoz/dashboards:/root/config/dashboards:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      signoz-clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  signoz-frontend:
+    image: signoz/frontend:latest
+    container_name: aaelink-signoz-frontend
+    environment:
+      SIGNOZ_API_URL: http://signoz-query-service:8080
+    ports:
+      - "3301:3301"
+    depends_on:
+      - signoz-query-service
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  signoz-otel-collector:
+    image: signoz/signoz-otel-collector:latest
+    container_name: aaelink-signoz-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    environment:
+      OTEL_RESOURCE_ATTRIBUTES: service.name=aaelink-collector
+      CLICKHOUSE_HOST: signoz-clickhouse
+      CLICKHOUSE_PORT: 9002
+    volumes:
+      - ./signoz/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+      - "14268:14268"   # Jaeger ingest
+      - "9411:9411"     # Zipkin
+    depends_on:
+      - signoz-clickhouse
+      - signoz-query-service
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./packages/backend
+      dockerfile: Dockerfile
+    container_name: aaelink-backend
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8080
+      DATABASE_URL: postgresql://aaelink:${DB_PASSWORD:-aaelink2024}@postgres:5432/aaelink_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-aaelink2024}@redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aaelink}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aaelink2024}
+      MINIO_USE_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      SESSION_SECRET: ${SESSION_SECRET:-your-super-secret-session-key-change-in-production}
+      RP_NAME: AAELink
+      RP_ID: ${RP_ID:-localhost}
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://signoz-otel-collector:4318
+      OTEL_SERVICE_NAME: aaelink-backend
+      ERP_GATEWAY: ${ERP_GATEWAY:-http://erp-mock:8000}
+      N8N_WEBHOOK_URL: http://n8n:5678
+    volumes:
+      - ./packages/backend/src:/app/src:ro
+      - backend_uploads:/app/uploads
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # Frontend Web Service
+  frontend:
+    build:
+      context: ./packages/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8080}
+    container_name: aaelink-frontend
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+  # NGINX Reverse Proxy (Production)
+  nginx:
+    image: nginx:alpine
+    container_name: aaelink-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/sites-enabled:/etc/nginx/sites-enabled:ro
+      - nginx_cache:/var/cache/nginx
+      - ./ssl:/etc/nginx/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - aaelink-network
+    restart: unless-stopped
+
+networks:
+  aaelink-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  n8n_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  query_service_data:
+    driver: local
+  backend_uploads:
+    driver: local
+  nginx_cache:
+    driver: local
