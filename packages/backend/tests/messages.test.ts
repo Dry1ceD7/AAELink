@@ -5,10 +5,13 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
+import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 import { db } from '../src/db';
 import { conversations, messages, users } from '../src/db/schema';
-import { app } from '../src/index';
+import { messagesRouter } from '../src/routes/messages';
+
+const app = new Hono().route('/messages', messagesRouter);
 
 describe('Messages API', () => {
   let testUser: any;

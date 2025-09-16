@@ -1,535 +1,269 @@
 /**
- * AAELink Storage Service
- * MinIO S3-compatible object storage
- * BMAD Method: Secure file management with presigned URLs
+ * File Storage Service
+ * Handles file uploads, downloads, and management using MinIO (S3-compatible)
  */
 
-import crypto from 'crypto';
-import { eq } from 'drizzle-orm';
-import * as Minio from 'minio';
-import { nanoid } from 'nanoid';
-import { db } from '../db';
-import { files } from '../db/schema';
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// MinIO client instance
-let minioClient: Minio.Client;
-
-// Bucket names
-const BUCKETS = {
-  uploads: 'aaelink-uploads',
-  avatars: 'aaelink-avatars',
-  attachments: 'aaelink-attachments',
-  thumbnails: 'aaelink-thumbnails',
-  exports: 'aaelink-exports',
-  quarantine: 'aaelink-quarantine', // For virus scanning
-};
-
-// File type restrictions
-const ALLOWED_MIME_TYPES = [
-  // Images
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/svg+xml',
-  // Documents
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // Text
-  'text/plain',
-  'text/csv',
-  'text/markdown',
-  // Archives
-  'application/zip',
-  'application/x-rar-compressed',
-  'application/x-7z-compressed',
-  // Audio
-  'audio/mpeg',
-  'audio/wav',
-  'audio/ogg',
-  // Video
-  'video/mp4',
-  'video/webm',
-  'video/ogg',
-];
-
-// Dangerous file extensions to block
-const BLOCKED_EXTENSIONS = [
-  '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-  '.app', '.deb', '.rpm', '.dmg', '.pkg', '.msi', '.dll', '.so'
-];
-
-// File size limits by type (in bytes)
-const SIZE_LIMITS = {
-  image: 10 * 1024 * 1024,        // 10 MB
-  document: 50 * 1024 * 1024,     // 50 MB
-  video: 500 * 1024 * 1024,       // 500 MB
-  default: 100 * 1024 * 1024,     // 100 MB
-};
-
-/**
- * Initialize MinIO connection and create buckets
- */
-export async function initializeMinIO(): Promise<void> {
-  try {
-    // Create MinIO client
-    minioClient = new Minio.Client({
-      endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-      port: parseInt(process.env.MINIO_PORT || '9000'),
-      useSSL: process.env.MINIO_USE_SSL === 'true',
-      accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-      secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
-    });
-
-    // Create buckets if they don't exist
-    for (const [key, bucketName] of Object.entries(BUCKETS)) {
-      const exists = await minioClient.bucketExists(bucketName);
-
-      if (!exists) {
-        await minioClient.makeBucket(bucketName, 'us-east-1');
-        console.log(`Created bucket: ${bucketName}`);
-
-        // Set bucket policies
-        await setBucketPolicy(bucketName, key as keyof typeof BUCKETS);
-      }
-    }
-
-    // Set up lifecycle rules for temporary files
-    await setupLifecycleRules();
-
-    console.log('MinIO initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize MinIO:', error);
-    throw error;
-  }
-}
-
-/**
- * Set bucket policy based on bucket type
- */
-async function setBucketPolicy(bucketName: string, bucketType: keyof typeof BUCKETS) {
-  let policy: any;
-
-  switch (bucketType) {
-    case 'avatars':
-    case 'thumbnails':
-      // Public read for avatars and thumbnails
-      policy = {
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Principal: { AWS: ['*'] },
-            Action: ['s3:GetObject'],
-            Resource: [`arn:aws:s3:::${bucketName}/*`],
-          },
-        ],
-      };
-      break;
-
-    case 'quarantine':
-      // No public access for quarantine
-      policy = {
-        Version: '2012-10-17',
-        Statement: [],
-      };
-      break;
-
-    default:
-      // Private buckets - access only via presigned URLs
-      return;
-  }
-
-  await minioClient.setBucketPolicy(bucketName, JSON.stringify(policy));
-}
-
-/**
- * Set up lifecycle rules for automatic cleanup
- */
-async function setupLifecycleRules() {
-  // Clean up exports after 7 days
-  const exportLifecycle = {
-    Rule: [
-      {
-        ID: 'delete-old-exports',
-        Status: 'Enabled',
-        Expiration: {
-          Days: 7,
-        },
-      },
-    ],
-  };
-
-  // Clean up quarantine after 30 days
-  const quarantineLifecycle = {
-    Rule: [
-      {
-        ID: 'delete-quarantined-files',
-        Status: 'Enabled',
-        Expiration: {
-          Days: 30,
-        },
-      },
-    ],
-  };
-
-  try {
-    await minioClient.setBucketLifecycle(BUCKETS.exports, exportLifecycle);
-    await minioClient.setBucketLifecycle(BUCKETS.quarantine, quarantineLifecycle);
-  } catch (error) {
-    console.error('Failed to set lifecycle rules:', error);
-  }
-}
-
-/**
- * Generate presigned URL for file upload
- */
-export async function generateUploadUrl(params: {
-  fileName: string;
-  contentType: string;
+interface FileUploadResult {
+  id: string;
+  name: string;
+  originalName: string;
+  mimeType: string;
   size: number;
+  path: string;
+  url: string;
+  hash: string;
   userId: string;
-  channelId?: string;
-}): Promise<{
-  uploadUrl: string;
-  objectName: string;
-  fileId: string;
-}> {
-  // Validate file type
-  if (!ALLOWED_MIME_TYPES.includes(params.contentType)) {
-    throw new Error(`File type not allowed: ${params.contentType}`);
-  }
-
-  // Check file extension
-  const extension = params.fileName.substring(params.fileName.lastIndexOf('.')).toLowerCase();
-  if (BLOCKED_EXTENSIONS.includes(extension)) {
-    throw new Error(`File extension not allowed: ${extension}`);
-  }
-
-  // Check file size
-  const fileType = getFileType(params.contentType);
-  const sizeLimit = SIZE_LIMITS[fileType] || SIZE_LIMITS.default;
-
-  if (params.size > sizeLimit) {
-    throw new Error(`File too large. Maximum size: ${sizeLimit / 1024 / 1024}MB`);
-  }
-
-  // Generate unique object name
-  const timestamp = Date.now();
-  const randomId = nanoid(12);
-  const safeName = params.fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const objectName = `${timestamp}-${randomId}-${safeName}`;
-
-  // Determine bucket based on file type
-  const bucket = params.channelId ? BUCKETS.attachments : BUCKETS.uploads;
-
-  // Generate presigned PUT URL (expires in 1 hour)
-  const uploadUrl = await minioClient.presignedPutObject(
-    bucket,
-    objectName,
-    60 * 60 // 1 hour
-  );
-
-  // Create file record in database
-  const fileId = nanoid();
-  await db.insert(files).values({
-    id: fileId,
-    objectName,
-    contentType: params.contentType,
-    size: params.size,
-    uploaderId: params.userId,
-    channelId: params.channelId,
-    metadata: {
-      originalName: params.fileName,
-      bucket,
-    },
-    createdAt: new Date(),
-  });
-
-  return {
-    uploadUrl,
-    objectName,
-    fileId,
-  };
+  createdAt: string;
 }
 
-/**
- * Generate presigned URL for file download
- */
-export async function generateDownloadUrl(params: {
-  fileId: string;
-  userId: string;
-}): Promise<{
-  downloadUrl: string;
-  fileName: string;
-  contentType: string;
-}> {
-  // Get file record
-  const [file] = await db.select()
-    .from(files)
-    .where(eq(files.id, params.fileId))
-    .limit(1);
-
-  if (!file) {
-    throw new Error('File not found');
-  }
-
-  // Check if file is deleted
-  if (file.deletedAt) {
-    throw new Error('File has been deleted');
-  }
-
-  // TODO: Add access control checks based on channel membership
-
-  const metadata = file.metadata as any;
-  const bucket = metadata?.bucket || BUCKETS.uploads;
-
-  // Generate presigned GET URL (expires in 6 hours)
-  const downloadUrl = await minioClient.presignedGetObject(
-    bucket,
-    file.objectName,
-    6 * 60 * 60 // 6 hours
-  );
-
-  return {
-    downloadUrl,
-    fileName: metadata?.originalName || file.objectName,
-    contentType: file.contentType,
-  };
+interface FileStorageConfig {
+  endpoint: string;
+  accessKey: string;
+  secretKey: string;
+  bucket: string;
+  region: string;
 }
 
-/**
- * Upload file directly (for server-side uploads)
- */
-export async function uploadFile(params: {
-  buffer: Buffer;
-  fileName: string;
-  contentType: string;
-  userId: string;
-  channelId?: string;
-}): Promise<{
-  fileId: string;
-  objectName: string;
-  url?: string;
-}> {
-  // Validate file
-  const extension = params.fileName.substring(params.fileName.lastIndexOf('.')).toLowerCase();
-  if (BLOCKED_EXTENSIONS.includes(extension)) {
-    throw new Error(`File extension not allowed: ${extension}`);
-  }
+class FileStorageService {
+  private s3Client: S3Client;
+  private bucket: string;
+  private isInitialized = false;
 
-  // Check size
-  const fileType = getFileType(params.contentType);
-  const sizeLimit = SIZE_LIMITS[fileType] || SIZE_LIMITS.default;
+  constructor(config: FileStorageConfig) {
+    this.bucket = config.bucket;
 
-  if (params.buffer.length > sizeLimit) {
-    throw new Error(`File too large. Maximum size: ${sizeLimit / 1024 / 1024}MB`);
-  }
-
-  // Generate object name
-  const timestamp = Date.now();
-  const randomId = nanoid(12);
-  const safeName = params.fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const objectName = `${timestamp}-${randomId}-${safeName}`;
-
-  // Determine bucket
-  const bucket = params.channelId ? BUCKETS.attachments : BUCKETS.uploads;
-
-  // Calculate checksum
-  const checksum = crypto
-    .createHash('sha256')
-    .update(params.buffer)
-    .digest('hex');
-
-  // Upload to MinIO
-  await minioClient.putObject(
-    bucket,
-    objectName,
-    params.buffer,
-    params.buffer.length,
-    {
-      'Content-Type': params.contentType,
-      'x-amz-meta-uploader': params.userId,
-      'x-amz-meta-checksum': checksum,
-    }
-  );
-
-  // Create file record
-  const fileId = nanoid();
-  await db.insert(files).values({
-    id: fileId,
-    objectName,
-    contentType: params.contentType,
-    size: params.buffer.length,
-    checksum,
-    uploaderId: params.userId,
-    channelId: params.channelId,
-    metadata: {
-      originalName: params.fileName,
-      bucket,
-    },
-    createdAt: new Date(),
-  });
-
-  // For public buckets, return direct URL
-  let url: string | undefined;
-  if (bucket === BUCKETS.avatars || bucket === BUCKETS.thumbnails) {
-    const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
-    const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
-    const port = process.env.MINIO_PORT || '9000';
-    url = `${protocol}://${endpoint}:${port}/${bucket}/${objectName}`;
-  }
-
-  return {
-    fileId,
-    objectName,
-    url,
-  };
-}
-
-/**
- * Delete file
- */
-export async function deleteFile(fileId: string, userId: string): Promise<void> {
-  // Get file record
-  const [file] = await db.select()
-    .from(files)
-    .where(eq(files.id, fileId))
-    .limit(1);
-
-  if (!file) {
-    throw new Error('File not found');
-  }
-
-  // Check ownership or admin rights
-  if (file.uploaderId !== userId) {
-    // TODO: Check if user is admin
-    throw new Error('Unauthorized to delete this file');
-  }
-
-  const metadata = file.metadata as any;
-  const bucket = metadata?.bucket || BUCKETS.uploads;
-
-  // Delete from MinIO
-  await minioClient.removeObject(bucket, file.objectName);
-
-  // Soft delete in database
-  await db.update(files)
-    .set({ deletedAt: new Date() })
-    .where(eq(files.id, fileId));
-}
-
-/**
- * Move file to quarantine (for virus scanning)
- */
-export async function quarantineFile(fileId: string, reason: string): Promise<void> {
-  const [file] = await db.select()
-    .from(files)
-    .where(eq(files.id, fileId))
-    .limit(1);
-
-  if (!file) {
-    throw new Error('File not found');
-  }
-
-  const metadata = file.metadata as any;
-  const sourceBucket = metadata?.bucket || BUCKETS.uploads;
-
-  // Copy to quarantine bucket
-  await minioClient.copyObject(
-    BUCKETS.quarantine,
-    file.objectName,
-    `/${sourceBucket}/${file.objectName}`
-  );
-
-  // Delete from original bucket
-  await minioClient.removeObject(sourceBucket, file.objectName);
-
-  // Update database
-  await db.update(files)
-    .set({
-      virusScanStatus: 'quarantined',
-      metadata: {
-        ...metadata,
-        originalBucket: sourceBucket,
-        quarantineReason: reason,
-        quarantinedAt: new Date().toISOString(),
+    this.s3Client = new S3Client({
+      endpoint: config.endpoint,
+      region: config.region,
+      credentials: {
+        accessKeyId: config.accessKey,
+        secretAccessKey: config.secretKey,
       },
-    })
-    .where(eq(files.id, fileId));
-}
-
-/**
- * Get file statistics for a user or channel
- */
-export async function getStorageStats(params: {
-  userId?: string;
-  channelId?: string;
-}): Promise<{
-  totalFiles: number;
-  totalSize: number;
-  fileTypes: Record<string, number>;
-}> {
-  const conditions = [];
-
-  if (params.userId) {
-    conditions.push(eq(files.uploaderId, params.userId));
+      forcePathStyle: true, // Required for MinIO
+    });
   }
 
-  if (params.channelId) {
-    conditions.push(eq(files.channelId, params.channelId));
+  public async initialize(): Promise<void> {
+    try {
+      // Test connection by listing objects
+      await this.s3Client.send(new ListObjectsV2Command({
+        Bucket: this.bucket,
+        MaxKeys: 1
+      }));
+
+      this.isInitialized = true;
+      console.log('File storage service initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize file storage service:', error);
+      throw error;
+    }
   }
 
-  const result = await db.select()
-    .from(files)
-    .where(conditions.length > 0 ? conditions[0] : undefined);
+  public async uploadFile(
+    file: Buffer | Uint8Array | string,
+    fileName: string,
+    mimeType: string,
+    userId: string,
+    metadata?: Record<string, string>
+  ): Promise<FileUploadResult> {
+    if (!this.isInitialized) {
+      throw new Error('File storage service not initialized');
+    }
 
-  const stats = {
-    totalFiles: result.length,
-    totalSize: result.reduce((sum, file) => sum + file.size, 0),
-    fileTypes: {} as Record<string, number>,
-  };
+    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    const filePath = `uploads/${userId}/${fileId}`;
+    const fileHash = await this.generateHash(file);
 
-  // Count by file type
-  result.forEach((file) => {
-    const type = getFileType(file.contentType);
-    stats.fileTypes[type] = (stats.fileTypes[type] || 0) + 1;
-  });
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath,
+        Body: file,
+        ContentType: mimeType,
+        Metadata: {
+          userId,
+          originalName: fileName,
+          fileId,
+          hash: fileHash,
+          ...metadata
+        }
+      });
 
-  return stats;
-}
+      await this.s3Client.send(command);
 
-/**
- * Helper function to determine file type category
- */
-function getFileType(contentType: string): 'image' | 'document' | 'video' | 'audio' | 'other' {
-  if (contentType.startsWith('image/')) return 'image';
-  if (contentType.startsWith('video/')) return 'video';
-  if (contentType.startsWith('audio/')) return 'audio';
-  if (
-    contentType.includes('pdf') ||
-    contentType.includes('document') ||
-    contentType.includes('sheet') ||
-    contentType.includes('presentation') ||
-    contentType.includes('text')
-  ) {
-    return 'document';
+      // Generate presigned URL for immediate access
+      const url = await this.getFileUrl(filePath);
+
+      return {
+        id: fileId,
+        name: fileName,
+        originalName: fileName,
+        mimeType,
+        size: Buffer.isBuffer(file) ? file.length : new TextEncoder().encode(file).length,
+        path: filePath,
+        url,
+        hash: fileHash,
+        userId,
+        createdAt: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Failed to upload file:', error);
+      throw error;
+    }
   }
-  return 'other';
+
+  public async getFileUrl(filePath: string, expiresIn: number = 3600): Promise<string> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath
+      });
+
+      return await getSignedUrl(this.s3Client, command, { expiresIn });
+    } catch (error) {
+      console.error('Failed to generate file URL:', error);
+      throw error;
+    }
+  }
+
+  public async deleteFile(filePath: string): Promise<void> {
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath
+      });
+
+      await this.s3Client.send(command);
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      throw error;
+    }
+  }
+
+  public async listUserFiles(userId: string, limit: number = 100): Promise<FileUploadResult[]> {
+    try {
+      const command = new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: `uploads/${userId}/`,
+        MaxKeys: limit
+      });
+
+      const response = await this.s3Client.send(command);
+
+      if (!response.Contents) {
+        return [];
+      }
+
+      const files: FileUploadResult[] = [];
+
+      for (const object of response.Contents) {
+        if (object.Key) {
+          const url = await this.getFileUrl(object.Key);
+
+          files.push({
+            id: object.Key.split('/').pop() || '',
+            name: object.Key.split('/').pop() || '',
+            originalName: object.Metadata?.originalName || '',
+            mimeType: object.Metadata?.mimetype || 'application/octet-stream',
+            size: object.Size || 0,
+            path: object.Key,
+            url,
+            hash: object.Metadata?.hash || '',
+            userId,
+            createdAt: object.LastModified?.toISOString() || new Date().toISOString()
+          });
+        }
+      }
+
+      return files;
+    } catch (error) {
+      console.error('Failed to list user files:', error);
+      throw error;
+    }
+  }
+
+  private async generateHash(data: Buffer | Uint8Array | string): Promise<string> {
+    const crypto = await import('crypto');
+    const buffer = Buffer.isBuffer(data) ? data : new TextEncoder().encode(data);
+    return crypto.createHash('sha256').update(buffer).digest('hex');
+  }
+
+  public isReady(): boolean {
+    return this.isInitialized;
+  }
 }
 
-/**
- * Generate thumbnail for image
- */
-export async function generateThumbnail(fileId: string): Promise<string> {
-  // This would integrate with an image processing service
-  // For now, return a placeholder
-  return `/api/files/${fileId}/thumbnail`;
+// Mock implementation for development
+class MockFileStorageService {
+  private files = new Map<string, FileUploadResult>();
+
+  public async initialize(): Promise<void> {
+    console.log('Mock file storage service initialized');
+  }
+
+  public async uploadFile(
+    file: Buffer | Uint8Array | string,
+    fileName: string,
+    mimeType: string,
+    userId: string,
+    metadata?: Record<string, string>
+  ): Promise<FileUploadResult> {
+    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    const filePath = `uploads/${userId}/${fileId}`;
+
+    const result: FileUploadResult = {
+      id: fileId,
+      name: fileName,
+      originalName: fileName,
+      mimeType,
+      size: Buffer.isBuffer(file) ? file.length : new TextEncoder().encode(file).length,
+      path: filePath,
+      url: `http://localhost:3001/api/files/${fileId}`,
+      hash: `hash_${fileId}`,
+      userId,
+      createdAt: new Date().toISOString()
+    };
+
+    this.files.set(fileId, result);
+    return result;
+  }
+
+  public async getFileUrl(filePath: string): Promise<string> {
+    const fileId = filePath.split('/').pop();
+    const file = this.files.get(fileId || '');
+    return file?.url || '';
+  }
+
+  public async deleteFile(filePath: string): Promise<void> {
+    const fileId = filePath.split('/').pop();
+    this.files.delete(fileId || '');
+  }
+
+  public async listUserFiles(userId: string): Promise<FileUploadResult[]> {
+    return Array.from(this.files.values()).filter(file => file.userId === userId);
+  }
+
+  public isReady(): boolean {
+    return true;
+  }
 }
 
-export { minioClient };
+// Export appropriate implementation based on environment
+const isProduction = process.env.NODE_ENV === 'production';
+const storageConfig = {
+  endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
+  accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
+  secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+  bucket: process.env.MINIO_BUCKET || 'aaelink-files',
+  region: process.env.MINIO_REGION || 'us-east-1'
+};
+
+export const fileStorage = isProduction
+  ? new FileStorageService(storageConfig)
+  : new MockFileStorageService();
+
+export { FileStorageService, MockFileStorageService };
+export type { FileStorageConfig, FileUploadResult };

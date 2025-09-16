@@ -102,3 +102,23 @@ export const useToasts = () => {
 
   return { toasts, removeToast };
 };
+
+// Export toast function for direct use
+export const toast = {
+  success: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    const { addToast } = useToastStore.getState();
+    addToast({ message, type: 'success', ...options });
+  },
+  error: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    const { addToast } = useToastStore.getState();
+    addToast({ message, type: 'error', duration: 7000, ...options });
+  },
+  warning: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    const { addToast } = useToastStore.getState();
+    addToast({ message, type: 'warning', ...options });
+  },
+  info: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
+    const { addToast } = useToastStore.getState();
+    addToast({ message, type: 'info', ...options });
+  },
+};

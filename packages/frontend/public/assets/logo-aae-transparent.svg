@@ -1,0 +1,20 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Inner Circle -->
+  <circle cx="100" cy="100" r="75" fill="#1e40af" stroke="#3b82f6" stroke-width="2"/>
+  
+  <!-- Letter A (first A) -->
+  <path d="M60 140 L80 100 L100 140 M70 120 L90 120" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- Letter A (second A) -->
+  <path d="M100 140 L120 100 L140 140 M110 120 L130 120" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- Letter E -->
+  <path d="M150 100 L150 140 M150 100 L180 100 M150 120 L170 120 M150 140 L180 140" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
+  <!-- Connection Lines -->
+  <path d="M100 100 L100 80" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="100" cy="70" r="8" fill="white"/>
+  
+  <!-- Link Symbol -->
+  <path d="M70 50 L130 50 M70 50 L50 70 M130 50 L150 70" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

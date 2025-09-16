@@ -12,7 +12,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { LanguageSelector } from '../components/ui/LanguageSelector';
-import { Logo } from '../components/ui/Logo';
+import Logo from '../components/Logo';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { toast } from '../hooks/useToast';
 import { api } from '../services/api';
@@ -160,10 +160,7 @@ const LoginPage: React.FC = () => {
       <Card className="w-full max-w-md p-8 bg-white dark:bg-gray-800 shadow-2xl">
         {/* Logo and title */}
         <div className="text-center mb-8">
-          <Logo className="w-20 h-20 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            AAELink
-          </h1>
+          <Logo variant="text" size="lg" className="mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400 mt-2">
             {t('login.subtitle')}
           </p>

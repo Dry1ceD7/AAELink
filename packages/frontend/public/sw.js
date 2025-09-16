@@ -1,69 +1,74 @@
 /**
- * AAELink Service Worker
- * Offline-first with intelligent caching and background sync
- * BMAD Method: Resilient offline operation
+ * Service Worker for AAELink
+ * Provides offline-first capabilities with caching and sync
  */
 
-const CACHE_VERSION = 'v1';
-const CACHE_NAME = `aaelink-${CACHE_VERSION}`;
-const API_CACHE = `aaelink-api-${CACHE_VERSION}`;
-const STATIC_CACHE = `aaelink-static-${CACHE_VERSION}`;
+const CACHE_NAME = 'aaelink-v1';
+const API_CACHE_NAME = 'aaelink-api-v1';
+const STATIC_CACHE_NAME = 'aaelink-static-v1';
 
-// Assets to cache immediately
-const STATIC_ASSETS = [
+// Files to cache for offline use
+const STATIC_FILES = [
   '/',
-  '/index.html',
+  '/static/js/bundle.js',
+  '/static/css/main.css',
   '/manifest.json',
-  '/offline.html',
+  '/assets/logo-aae.svg',
+  '/assets/logo-aae-text.svg',
+  '/assets/logo-aae-transparent.svg'
 ];
 
 // API endpoints to cache
-const API_CACHE_PATHS = [
-  '/api/auth/me',
+const API_ENDPOINTS = [
+  '/api/auth/session',
   '/api/channels',
-  '/api/messages',
+  '/api/messages/',
+  '/api/files'
 ];
 
-// Install event - cache static assets
+// Install event - cache static files
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('Service Worker installing...');
 
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
-    }).then(() => {
-      console.log('[SW] Service worker installed');
-      return self.skipWaiting(); // Activate immediately
-    })
+    caches.open(STATIC_CACHE_NAME)
+      .then((cache) => {
+        console.log('Caching static files');
+        return cache.addAll(STATIC_FILES);
+      })
+      .then(() => {
+        console.log('Service Worker installed');
+        return self.skipWaiting();
+      })
   );
 });
 
-// Activate event - clean old caches
+// Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log('Service Worker activating...');
 
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((cacheName) => {
-            return cacheName.startsWith('aaelink-') &&
-                   !cacheName.includes(CACHE_VERSION);
+    caches.keys()
+      .then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME &&
+                cacheName !== API_CACHE_NAME &&
+                cacheName !== STATIC_CACHE_NAME) {
+              console.log('Deleting old cache:', cacheName);
+              return caches.delete(cacheName);
+            }
           })
-          .map((cacheName) => {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          })
-      );
-    }).then(() => {
-      console.log('[SW] Service worker activated');
-      return self.clients.claim(); // Take control immediately
-    })
+        );
+      })
+      .then(() => {
+        console.log('Service Worker activated');
+        return self.clients.claim();
+      })
   );
 });
 
-// Fetch event - implement caching strategies
+// Fetch event - handle requests with caching strategy
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -73,94 +78,58 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip WebSocket connections
-  if (url.protocol === 'ws:' || url.protocol === 'wss:') {
-    return;
-  }
-
-  // API requests - Network first, fallback to cache
+  // Handle API requests
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      networkFirstStrategy(request)
-    );
+    event.respondWith(handleApiRequest(request));
     return;
   }
 
-  // Static assets - Cache first, fallback to network
-  if (isStaticAsset(url.pathname)) {
-    event.respondWith(
-      cacheFirstStrategy(request)
-    );
+  // Handle static file requests
+  if (url.pathname.startsWith('/static/') ||
+      url.pathname.endsWith('.js') ||
+      url.pathname.endsWith('.css') ||
+      url.pathname.endsWith('.svg') ||
+      url.pathname.endsWith('.png') ||
+      url.pathname.endsWith('.jpg')) {
+    event.respondWith(handleStaticRequest(request));
     return;
   }
 
-  // Default - Network first
-  event.respondWith(
-    networkFirstStrategy(request)
-  );
+  // Handle page requests (HTML)
+  if (request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(handlePageRequest(request));
+    return;
+  }
 });
 
-// Cache-first strategy for static assets
-async function cacheFirstStrategy(request) {
-  const cache = await caches.open(STATIC_CACHE);
+// Handle API requests with network-first strategy
+async function handleApiRequest(request) {
+  const cache = await caches.open(API_CACHE_NAME);
 
   try {
-    const cachedResponse = await cache.match(request);
-    if (cachedResponse) {
-      // Update cache in background
-      fetchAndCache(request, cache);
-      return cachedResponse;
-    }
-
+    // Try network first
     const networkResponse = await fetch(request);
+
+    // Cache successful responses
     if (networkResponse.ok) {
       cache.put(request, networkResponse.clone());
     }
-    return networkResponse;
-  } catch (error) {
-    console.error('[SW] Cache first failed:', error);
-    // Return offline page if available
-    const offlineResponse = await cache.match('/offline.html');
-    return offlineResponse || new Response('Offline', { status: 503 });
-  }
-}
-
-// Network-first strategy for API requests
-async function networkFirstStrategy(request) {
-  const cache = await caches.open(API_CACHE);
-
-  try {
-    const networkResponse = await fetch(request);
-
-    if (networkResponse.ok) {
-      // Cache successful responses
-      if (shouldCacheApiResponse(request.url)) {
-        cache.put(request, networkResponse.clone());
-      }
-    }
 
     return networkResponse;
   } catch (error) {
-    console.log('[SW] Network failed, trying cache:', request.url);
+    console.log('Network failed, trying cache for:', request.url);
 
+    // Fall back to cache
     const cachedResponse = await cache.match(request);
     if (cachedResponse) {
-      // Add header to indicate cached response
-      const headers = new Headers(cachedResponse.headers);
-      headers.set('X-From-Cache', 'true');
-
-      return new Response(cachedResponse.body, {
-        status: cachedResponse.status,
-        statusText: cachedResponse.statusText,
-        headers: headers,
-      });
+      return cachedResponse;
     }
 
-    // Return error response
+    // Return offline response for API calls
     return new Response(
       JSON.stringify({
-        error: 'Network error',
-        offline: true
+        error: 'Offline',
+        message: 'This request is not available offline'
       }),
       {
         status: 503,
@@ -170,40 +139,111 @@ async function networkFirstStrategy(request) {
   }
 }
 
-// Background fetch and cache update
-async function fetchAndCache(request, cache) {
+// Handle static file requests with cache-first strategy
+async function handleStaticRequest(request) {
+  const cache = await caches.open(STATIC_CACHE_NAME);
+
+  // Try cache first
+  const cachedResponse = await cache.match(request);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
   try {
-    const response = await fetch(request);
-    if (response.ok) {
-      cache.put(request, response);
+    // Fall back to network
+    const networkResponse = await fetch(request);
+
+    // Cache successful responses
+    if (networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
     }
+
+    return networkResponse;
   } catch (error) {
-    // Silent fail - we already returned cached version
+    console.log('Failed to fetch static file:', request.url);
+    return new Response('File not available offline', { status: 404 });
   }
 }
 
-// Check if URL is a static asset
-function isStaticAsset(pathname) {
-  const staticExtensions = [
-    '.js', '.css', '.png', '.jpg', '.jpeg',
-    '.gif', '.svg', '.ico', '.woff', '.woff2'
-  ];
+// Handle page requests with network-first strategy
+async function handlePageRequest(request) {
+  const cache = await caches.open(CACHE_NAME);
 
-  return staticExtensions.some(ext => pathname.endsWith(ext));
+  try {
+    // Try network first
+    const networkResponse = await fetch(request);
+
+    // Cache successful responses
+    if (networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+    }
+
+    return networkResponse;
+  } catch (error) {
+    console.log('Network failed, trying cache for page:', request.url);
+
+    // Fall back to cache
+    const cachedResponse = await cache.match(request);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    // Return offline page
+    return new Response(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>AAELink - Offline</title>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              margin: 0; padding: 40px; text-align: center;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white; min-height: 100vh; display: flex;
+              align-items: center; justify-content: center; flex-direction: column;
+            }
+            .offline-container { max-width: 400px; }
+            .logo { width: 80px; height: 80px; margin: 0 auto 20px;
+              background: white; border-radius: 50%; display: flex;
+              align-items: center; justify-content: center; font-weight: bold;
+              color: #667eea; font-size: 24px; }
+            h1 { margin: 0 0 10px; font-size: 28px; }
+            p { margin: 0 0 20px; opacity: 0.9; }
+            .retry-btn {
+              background: white; color: #667eea; border: none;
+              padding: 12px 24px; border-radius: 6px; font-weight: bold;
+              cursor: pointer; font-size: 16px;
+            }
+            .retry-btn:hover { opacity: 0.9; }
+          </style>
+        </head>
+        <body>
+          <div class="offline-container">
+            <div class="logo">AAE</div>
+            <h1>You're Offline</h1>
+            <p>AAELink is not available right now. Please check your internet connection and try again.</p>
+            <button class="retry-btn" onclick="window.location.reload()">
+              Try Again
+            </button>
+          </div>
+        </body>
+      </html>
+    `, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
 }
 
-// Check if API response should be cached
-function shouldCacheApiResponse(url) {
-  return API_CACHE_PATHS.some(path => url.includes(path));
-}
+// Background sync for offline actions
+self.addEventListener('sync', (event) => {
+  console.log('Background sync triggered:', event.tag);
 
-// Handle background sync for offline actions
-self.addEventListener('sync', async (event) => {
-  console.log('[SW] Background sync triggered:', event.tag);
-
-  if (event.tag === 'sync-messages') {
+  if (event.tag === 'message-sync') {
     event.waitUntil(syncMessages());
-  } else if (event.tag === 'sync-files') {
+  } else if (event.tag === 'file-sync') {
     event.waitUntil(syncFiles());
   }
 });
@@ -211,137 +251,66 @@ self.addEventListener('sync', async (event) => {
 // Sync offline messages
 async function syncMessages() {
   try {
-    // Get queued messages from IndexedDB
-    const db = await openDB();
-    const tx = db.transaction('offline_queue', 'readonly');
-    const store = tx.objectStore('offline_queue');
-    const messages = await store.getAll();
+    const cache = await caches.open('aaelink-offline-queue');
+    const requests = await cache.keys();
 
-    for (const message of messages) {
-      if (message.type === 'message') {
-        await fetch('/api/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(message.data),
-        });
-
-        // Remove from queue after successful sync
-        const deleteTx = db.transaction('offline_queue', 'readwrite');
-        await deleteTx.objectStore('offline_queue').delete(message.id);
+    for (const request of requests) {
+      if (request.url.includes('/api/messages')) {
+        try {
+          await fetch(request);
+          await cache.delete(request);
+          console.log('Synced offline message');
+        } catch (error) {
+          console.log('Failed to sync message:', error);
+        }
       }
     }
-
-    // Notify clients of successful sync
-    const clients = await self.clients.matchAll();
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'sync-complete',
-        target: 'messages',
-      });
-    });
   } catch (error) {
-    console.error('[SW] Message sync failed:', error);
-    throw error; // Retry sync
+    console.log('Message sync failed:', error);
   }
 }
 
-// Sync offline file uploads
+// Sync offline files
 async function syncFiles() {
   try {
-    const db = await openDB();
-    const tx = db.transaction('offline_files', 'readonly');
-    const store = tx.objectStore('offline_files');
-    const files = await store.getAll();
+    const cache = await caches.open('aaelink-offline-queue');
+    const requests = await cache.keys();
 
-    for (const file of files) {
-      const formData = new FormData();
-      formData.append('file', file.blob, file.name);
-      formData.append('metadata', JSON.stringify(file.metadata));
-
-      await fetch('/api/files/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      // Remove from queue after successful upload
-      const deleteTx = db.transaction('offline_files', 'readwrite');
-      await deleteTx.objectStore('offline_files').delete(file.id);
+    for (const request of requests) {
+      if (request.url.includes('/api/files')) {
+        try {
+          await fetch(request);
+          await cache.delete(request);
+          console.log('Synced offline file');
+        } catch (error) {
+          console.log('Failed to sync file:', error);
+        }
+      }
     }
-
-    // Notify clients
-    const clients = await self.clients.matchAll();
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'sync-complete',
-        target: 'files',
-      });
-    });
   } catch (error) {
-    console.error('[SW] File sync failed:', error);
-    throw error;
+    console.log('File sync failed:', error);
   }
 }
 
-// Open IndexedDB
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('AAELinkOffline', 1);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-
-      // Create object stores if they don't exist
-      if (!db.objectStoreNames.contains('offline_queue')) {
-        db.createObjectStore('offline_queue', {
-          keyPath: 'id',
-          autoIncrement: true
-        });
-      }
-
-      if (!db.objectStoreNames.contains('offline_files')) {
-        db.createObjectStore('offline_files', {
-          keyPath: 'id',
-          autoIncrement: true
-        });
-      }
-
-      if (!db.objectStoreNames.contains('cached_data')) {
-        const store = db.createObjectStore('cached_data', {
-          keyPath: 'key'
-        });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-    };
-  });
-}
-
-// Handle push notifications
+// Push notifications
 self.addEventListener('push', (event) => {
+  console.log('Push notification received');
+
   const options = {
-    body: event.data ? event.data.text() : 'New notification',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/badge-72.png',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    },
+    body: event.data ? event.data.text() : 'New message in AAELink',
+    icon: '/assets/logo-aae.svg',
+    badge: '/assets/logo-aae.svg',
+    tag: 'aaelink-message',
+    requireInteraction: true,
     actions: [
       {
-        action: 'explore',
-        title: 'View',
-        icon: '/icons/checkmark.png'
+        action: 'open',
+        title: 'Open AAELink'
       },
       {
         action: 'close',
-        title: 'Close',
-        icon: '/icons/xmark.png'
-      },
+        title: 'Close'
+      }
     ]
   };
 
@@ -352,14 +321,15 @@ self.addEventListener('push', (event) => {
 
 // Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
+  console.log('Notification clicked:', event.action);
+
   event.notification.close();
 
-  if (event.action === 'explore') {
-    // Open the app
+  if (event.action === 'open' || !event.action) {
     event.waitUntil(
       clients.openWindow('/')
     );
   }
 });
 
-console.log('[SW] Service worker loaded');
+console.log('Service Worker loaded');

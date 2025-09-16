@@ -1,0 +1,36 @@
+<svg width="300" height="80" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logo Icon -->
+  <g transform="translate(0, 0)">
+    <!-- Background Circle -->
+    <circle cx="40" cy="40" r="35" fill="#1e40af" stroke="#1e3a8a" stroke-width="1"/>
+    
+    <!-- Inner Circle -->
+    <circle cx="40" cy="40" r="25" fill="#3b82f6" stroke="#1e40af" stroke-width="0.5"/>
+    
+    <!-- Letter A (first A) -->
+    <path d="M25 55 L35 35 L45 55 M30 45 L40 45" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    
+    <!-- Letter A (second A) -->
+    <path d="M45 55 L55 35 L65 55 M50 45 L60 45" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    
+    <!-- Letter E -->
+    <path d="M70 35 L70 55 M70 35 L85 35 M70 45 L80 45 M70 55 L85 55" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    
+    <!-- Connection Lines -->
+    <path d="M40 40 L40 30" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="40" cy="25" r="3" fill="white"/>
+    
+    <!-- Link Symbol -->
+    <path d="M25 15 L55 15 M25 15 L15 25 M55 15 L65 25" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="90" y="50" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="700" fill="#1e40af">
+    AAELink
+  </text>
+  
+  <!-- Tagline -->
+  <text x="90" y="65" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#6b7280">
+    Enterprise Workspace Platform
+  </text>
+</svg>

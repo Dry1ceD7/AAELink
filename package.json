@@ -5,15 +5,12 @@
   "description": "Advanced ID Asia Engineering Co., Ltd. - Company Workspace Application",
   "workspaces": [
     "packages/backend",
-    "packages/frontend",
-    "packages/shared",
-    "packages/mobile",
-    "packages/desktop"
+    "packages/frontend"
   ],
   "scripts": {
-    "dev": "yarn workspaces run dev",
-    "build": "yarn workspaces run build",
-    "test": "yarn workspaces run test",
+    "dev": "bun --bun run dev",
+    "build": "bun --bun run build",
+    "test": "bun --bun run test",
     "test:e2e": "playwright test",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",

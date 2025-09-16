@@ -5,9 +5,12 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
+import { Hono } from 'hono';
 import { db } from '../src/db';
 import { users } from '../src/db/schema';
-import { app } from '../src/index';
+import { authRouter } from '../src/routes/auth';
+
+const app = new Hono().route('/auth', authRouter);
 
 describe('Authentication', () => {
   let testUser: any;
