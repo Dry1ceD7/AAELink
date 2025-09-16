@@ -5,12 +5,12 @@
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { nanoid } from 'nanoid';
 import postgres from 'postgres';
+import { hashPassword } from '../utils/crypto';
 import { db } from './index';
 import * as schema from './schema';
-import { users, organizations, channels, channelMembers } from './schema';
-import { nanoid } from 'nanoid';
-import { hashPassword } from '../utils/crypto';
+import { channelMembers, channels, organizations, users } from './schema';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://aaelink:aaelink_dev@localhost:5432/aaelink_db';
 
@@ -19,16 +19,16 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://aaelink:aaelink_d
  */
 export async function runMigrations() {
   console.log('🔄 Running database migrations...');
-  
+
   try {
     const migrationClient = postgres(DATABASE_URL, { max: 1 });
     const migrationDb = drizzle(migrationClient, { schema });
-    
-    await migrate(migrationDb, { 
+
+    await migrate(migrationDb, {
       migrationsFolder: './drizzle',
       migrationsTable: 'drizzle_migrations',
     });
-    
+
     await migrationClient.end();
     console.log('✅ Database migrations completed');
   } catch (error) {
@@ -42,7 +42,7 @@ export async function runMigrations() {
  */
 export async function seedDatabase() {
   console.log('🌱 Seeding database...');
-  
+
   try {
     // Check if already seeded
     const existingUsers = await db.select().from(users).limit(1);
@@ -50,7 +50,7 @@ export async function seedDatabase() {
       console.log('📦 Database already seeded, skipping...');
       return;
     }
-    
+
     // Create system organization
     const [systemOrg] = await db.insert(organizations).values({
       id: nanoid(),
@@ -66,9 +66,9 @@ export async function seedDatabase() {
         },
       },
     }).returning();
-    
+
     console.log('✅ Created system organization');
-    
+
     // Create admin user
     const adminPassword = await hashPassword('admin123!');
     const [adminUser] = await db.insert(users).values({
@@ -88,9 +88,9 @@ export async function seedDatabase() {
         language: 'en',
       },
     }).returning();
-    
+
     console.log('✅ Created admin user');
-    
+
     // Create default channels
     const defaultChannels = [
       {
@@ -133,10 +133,10 @@ export async function seedDatabase() {
         },
       },
     ];
-    
+
     const createdChannels = await db.insert(channels).values(defaultChannels).returning();
     console.log('✅ Created default channels');
-    
+
     // Add admin to all channels
     const channelMemberships = createdChannels.map(channel => ({
       id: nanoid(),
@@ -145,10 +145,10 @@ export async function seedDatabase() {
       role: 'admin' as const,
       joinedAt: new Date(),
     }));
-    
+
     await db.insert(channelMembers).values(channelMemberships);
     console.log('✅ Added admin to channels');
-    
+
     // Create demo users (for development)
     if (process.env.NODE_ENV === 'development') {
       const demoUsers = [
@@ -177,10 +177,10 @@ export async function seedDatabase() {
           isEmailVerified: true,
         },
       ];
-      
+
       const createdDemoUsers = await db.insert(users).values(demoUsers).returning();
       console.log('✅ Created demo users');
-      
+
       // Add demo users to general channel
       const generalChannel = createdChannels.find(c => c.name === 'general');
       if (generalChannel) {
@@ -191,18 +191,18 @@ export async function seedDatabase() {
           role: 'member' as const,
           joinedAt: new Date(),
         }));
-        
+
         await db.insert(channelMembers).values(demoMemberships);
         console.log('✅ Added demo users to general channel');
       }
     }
-    
+
     console.log('🎉 Database seeding completed');
     console.log('\n📝 Default credentials:');
     console.log('   Email: admin@aaelink.com');
     console.log('   Password: admin123!');
     console.log('\n⚠️  Please change the default password after first login!');
-    
+
   } catch (error) {
     console.error('❌ Seeding failed:', error);
     throw error;
@@ -216,18 +216,18 @@ export async function resetDatabase() {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Cannot reset database in production');
   }
-  
+
   console.log('🔄 Resetting database...');
-  
+
   try {
     // Drop all tables in reverse order of dependencies
     const client = postgres(DATABASE_URL, { max: 1 });
-    
+
     const dropTables = [
       'audit_logs',
       'erp_cache',
       'tasks',
-      'events', 
+      'events',
       'files',
       'read_cursors',
       'message_reads',
@@ -241,19 +241,19 @@ export async function resetDatabase() {
       'organizations',
       'drizzle_migrations',
     ];
-    
+
     for (const table of dropTables) {
       await client.unsafe(`DROP TABLE IF EXISTS "${table}" CASCADE`);
       console.log(`   Dropped table: ${table}`);
     }
-    
+
     await client.end();
     console.log('✅ Database reset completed');
-    
+
     // Re-run migrations and seed
     await runMigrations();
     await seedDatabase();
-    
+
   } catch (error) {
     console.error('❌ Reset failed:', error);
     throw error;
@@ -280,7 +280,7 @@ export async function checkDatabaseHealth() {
 export async function getDatabaseStats() {
   try {
     const stats = await db.execute(`
-      SELECT 
+      SELECT
         schemaname,
         tablename,
         n_tup_ins as inserts,
@@ -288,10 +288,10 @@ export async function getDatabaseStats() {
         n_tup_del as deletes,
         n_live_tup as live_rows,
         n_dead_tup as dead_rows
-      FROM pg_stat_user_tables 
+      FROM pg_stat_user_tables
       ORDER BY live_rows DESC
     `);
-    
+
     return stats.rows;
   } catch (error) {
     console.error('Failed to get database stats:', error);
@@ -302,34 +302,34 @@ export async function getDatabaseStats() {
 // CLI interface
 if (import.meta.main) {
   const command = process.argv[2];
-  
+
   switch (command) {
     case 'migrate':
       await runMigrations();
       break;
-      
+
     case 'seed':
       await seedDatabase();
       break;
-      
+
     case 'reset':
       await resetDatabase();
       break;
-      
+
     case 'health':
       const healthy = await checkDatabaseHealth();
       process.exit(healthy ? 0 : 1);
       break;
-      
+
     case 'stats':
       const stats = await getDatabaseStats();
       console.table(stats);
       break;
-      
+
     default:
       console.log('Usage: bun run db/migrate.ts [migrate|seed|reset|health|stats]');
       process.exit(1);
   }
-  
+
   process.exit(0);
 }

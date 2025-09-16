@@ -3,8 +3,7 @@
  * Centralized Redis connection and utilities
  */
 
-import Redis from 'ioredis';
-import { Cluster } from 'ioredis';
+import Redis, { Cluster } from 'ioredis';
 
 // Redis connection instance
 export let redis: Redis | Cluster;
@@ -187,20 +186,20 @@ export const redisUtils = {
   async checkRateLimit(key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
     const now = Date.now();
     const windowStart = now - windowMs;
-    
+
     const pipeline = redis.pipeline();
     pipeline.zremrangebyscore(key, 0, windowStart);
     pipeline.zcard(key);
     pipeline.zadd(key, now, `${now}-${Math.random()}`);
     pipeline.expire(key, Math.ceil(windowMs / 1000));
-    
+
     const results = await pipeline.exec();
     const currentCount = (results?.[1]?.[1] as number) || 0;
-    
+
     const allowed = currentCount < limit;
     const remaining = Math.max(0, limit - currentCount - 1);
     const resetTime = now + windowMs;
-    
+
     return { allowed, remaining, resetTime };
   },
 
@@ -218,7 +217,7 @@ export const redisUtils = {
   async cacheGet<T>(key: string): Promise<T | null> {
     const cached = await redis.get(key);
     if (!cached) return null;
-    
+
     try {
       return JSON.parse(cached) as T;
     } catch (error) {
@@ -268,9 +267,9 @@ export const redisUtils = {
       const result = timeout > 0
         ? await redis.brpop(`queue:${queueName}`, timeout)
         : await redis.rpop(`queue:${queueName}`);
-      
+
       if (!result) return null;
-      
+
       const data = Array.isArray(result) ? result[1] : result;
       try {
         return JSON.parse(data) as T;
@@ -297,14 +296,14 @@ export const redisUtils = {
       const start = Date.now();
       await redis.ping();
       const latency = Date.now() - start;
-      
+
       const info = await redis.info('memory');
       const memoryInfo = info.split('\r\n').reduce((acc, line) => {
         const [key, value] = line.split(':');
         if (key && value) acc[key] = value;
         return acc;
       }, {} as Record<string, string>);
-      
+
       return {
         status: 'healthy',
         latency,
