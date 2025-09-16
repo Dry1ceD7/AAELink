@@ -823,7 +823,7 @@ app.post('/api/security/validate-file', async (c) => {
 app.get('/api/admin/stats', async (c) => {
   try {
     const securityStats = await securityService.getSecurityStats();
-    
+
     return c.json({
       users: users.size,
       organizations: organizations.size,

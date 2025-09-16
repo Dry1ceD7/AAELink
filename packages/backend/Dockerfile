@@ -1,41 +1,46 @@
-# Backend Dockerfile
-FROM oven/bun:1-alpine AS base
+# Multi-stage build for production
+FROM oven/bun:1.0.0-alpine AS builder
+
 WORKDIR /app
 
-# Install dependencies only when needed
-FROM base AS deps
-COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile
+# Copy package files
+COPY package.json bun.lockb ./
+
+# Install dependencies
+RUN bun install --frozen-lockfile --production
+
+# Copy source code
+COPY . .
 
 # Build the application
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN bun run build || echo "No build step"
+RUN bun run build
 
-# Production image
-FROM base AS runner
-WORKDIR /app
+# Production stage
+FROM oven/bun:1.0.0-alpine AS production
 
-ENV NODE_ENV=production
+WORKDIR /app
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S bun -u 1001
 
-# Copy necessary files
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
+# Copy built application
+COPY --from=builder --chown=bun:nodejs /app/dist ./dist
+COPY --from=builder --chown=bun:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=bun:nodejs /app/package.json ./
 
-USER nodejs
+# Create necessary directories
+RUN mkdir -p /app/logs && chown bun:nodejs /app/logs
 
-EXPOSE 8080
+# Switch to non-root user
+USER bun
+
+# Expose port
+EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD curl -f http://localhost:3001/health || exit 1
 
-CMD ["bun", "run", "src/index.ts"]
+# Start the application
+CMD ["bun", "run", "dist/index.js"]

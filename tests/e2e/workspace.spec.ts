@@ -2,7 +2,7 @@
  * E2E Tests for AAELink Workspace
  */
 
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:5174';
 
@@ -40,7 +40,7 @@ test.describe('AAELink Workspace', () => {
     test('should support WebAuthn authentication', async ({ page }) => {
       // Click on WebAuthn toggle
       await page.click('text=Use passkey authentication instead');
-      
+
       // Should show WebAuthn interface
       await expect(page.locator('text=Passkey Authentication')).toBeVisible();
       await expect(page.locator('text=Sign in with Passkey')).toBeVisible();
@@ -68,11 +68,11 @@ test.describe('AAELink Workspace', () => {
       // Switch to Calendar tab
       await page.click('text=📅 Calendar');
       await expect(page.locator('text=Calendar')).toBeVisible();
-      
+
       // Switch to Admin tab
       await page.click('text=⚙️ Admin');
       await expect(page.locator('text=Admin Dashboard')).toBeVisible();
-      
+
       // Switch back to Chat
       await page.click('text=💬 Chat');
       await expect(page.locator('text=Channels')).toBeVisible();
@@ -136,11 +136,11 @@ test.describe('AAELink Workspace', () => {
       // Switch to week view
       await page.click('text=week');
       await expect(page.locator('text=week')).toHaveClass(/bg-blue-600/);
-      
+
       // Switch to day view
       await page.click('text=day');
       await expect(page.locator('text=day')).toHaveClass(/bg-blue-600/);
-      
+
       // Switch back to month view
       await page.click('text=month');
       await expect(page.locator('text=month')).toHaveClass(/bg-blue-600/);
@@ -179,10 +179,10 @@ test.describe('AAELink Workspace', () => {
     test('should handle ERP sync', async ({ page }) => {
       // Click on ERP tab
       await page.click('text=ERP Integration');
-      
+
       // Should show ERP status
       await expect(page.locator('text=ERP Integration Status')).toBeVisible();
-      
+
       // Test sync buttons
       await page.click('text=Sync Users');
       await expect(page.locator('text=Sync Users')).toBeVisible();
@@ -238,10 +238,10 @@ test.describe('AAELink Workspace', () => {
     test('should change language', async ({ page }) => {
       // Go back to login page to test language selector
       await page.goto(BASE_URL);
-      
+
       const languageSelector = page.locator('select');
       await languageSelector.selectOption('th');
-      
+
       // Should show Thai text
       await expect(page.locator('text=เข้าสู่ระบบ')).toBeVisible();
     });
@@ -250,7 +250,7 @@ test.describe('AAELink Workspace', () => {
   test.describe('Responsive Design', () => {
     test('should work on mobile devices', async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 667 });
-      
+
       await page.fill('input[type="email"]', 'admin@aae.co.th');
       await page.fill('input[type="password"]', '12345678');
       await page.click('button[type="submit"]');
@@ -262,7 +262,7 @@ test.describe('AAELink Workspace', () => {
 
     test('should work on tablet devices', async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 1024 });
-      
+
       await page.fill('input[type="email"]', 'admin@aae.co.th');
       await page.fill('input[type="password"]', '12345678');
       await page.click('button[type="submit"]');
@@ -276,28 +276,28 @@ test.describe('AAELink Workspace', () => {
   test.describe('Accessibility', () => {
     test('should have proper ARIA labels', async ({ page }) => {
       await page.goto(BASE_URL);
-      
+
       // Check for ARIA labels on form elements
       const emailInput = page.locator('input[type="email"]');
       await expect(emailInput).toHaveAttribute('aria-label');
-      
+
       const passwordInput = page.locator('input[type="password"]');
       await expect(passwordInput).toHaveAttribute('aria-label');
     });
 
     test('should support keyboard navigation', async ({ page }) => {
       await page.goto(BASE_URL);
-      
+
       // Tab through form elements
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
       await page.keyboard.press('Tab');
-      
+
       // Should be able to submit with Enter
       await page.fill('input[type="email"]', 'admin@aae.co.th');
       await page.fill('input[type="password"]', '12345678');
       await page.keyboard.press('Enter');
-      
+
       await page.waitForURL('**/');
       await expect(page.locator('text=AAELink Workspace')).toBeVisible();
     });

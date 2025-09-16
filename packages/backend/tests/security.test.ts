@@ -2,7 +2,7 @@
  * Security Service Unit Tests
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { securityService } from '../src/services/security';
 
 describe('SecurityService', () => {
@@ -135,7 +135,7 @@ describe('SecurityService', () => {
     it('should track failed login attempts', async () => {
       await securityService.trackFailedLogin('127.0.0.1', 'user1');
       await securityService.trackFailedLogin('127.0.0.1', 'user1');
-      
+
       const events = await securityService.getSecurityEvents({ type: 'login_attempt' });
       expect(events).toHaveLength(2);
       expect(events[0].severity).toBe('medium');
@@ -146,7 +146,7 @@ describe('SecurityService', () => {
       for (let i = 0; i < 6; i++) {
         await securityService.trackFailedLogin('127.0.0.1', 'user1');
       }
-      
+
       const events = await securityService.getSecurityEvents({ type: 'login_attempt' });
       const highSeverityEvents = events.filter(e => e.severity === 'high');
       expect(highSeverityEvents.length).toBeGreaterThan(0);

@@ -144,7 +144,7 @@ class SecurityService {
     };
 
     this.auditLogs.push(auditLog);
-    
+
     // Keep only last 10000 logs in memory
     if (this.auditLogs.length > 10000) {
       this.auditLogs = this.auditLogs.slice(-10000);
@@ -259,7 +259,7 @@ class SecurityService {
 
     // This is a simplified rate limiting - in production, use Redis or similar
     const current = this.failedLoginAttempts.get(key);
-    
+
     if (!current || now > current.lastAttempt + windowMs) {
       this.failedLoginAttempts.set(key, { count: 1, lastAttempt: now });
       return { allowed: true, remaining: maxRequests - 1 };
@@ -410,4 +410,5 @@ class SecurityService {
 // Create singleton instance
 export const securityService = new SecurityService();
 export { SecurityService };
-export type { AuditLog, SecurityPolicy, SecurityRule, SecurityEvent };
+export type { AuditLog, SecurityEvent, SecurityPolicy, SecurityRule };
+
