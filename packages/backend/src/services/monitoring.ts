@@ -317,10 +317,10 @@ class MonitoringService {
   } {
     const recentMetrics = this.metrics.slice(-100);
     const activeAlerts = this.alerts.filter(a => !a.resolved).length;
-    
+
     const totalRequests = recentMetrics.length;
-    const averageResponseTime = totalRequests > 0 
-      ? recentMetrics.reduce((sum, m) => sum + m.responseTime, 0) / totalRequests 
+    const averageResponseTime = totalRequests > 0
+      ? recentMetrics.reduce((sum, m) => sum + m.responseTime, 0) / totalRequests
       : 0;
     const errorRate = this.calculateErrorRate();
 
@@ -349,7 +349,7 @@ class MonitoringService {
 
     // Top slow endpoints
     const endpointStats = new Map<string, { totalTime: number; count: number; errors: number }>();
-    
+
     recentMetrics.forEach(metric => {
       const key = `${metric.method} ${metric.endpoint}`;
       const existing = endpointStats.get(key) || { totalTime: 0, count: 0, errors: 0 };
@@ -414,4 +414,5 @@ class MonitoringService {
 // Create singleton instance
 export const monitoringService = new MonitoringService();
 export { MonitoringService };
-export type { PerformanceMetrics, SystemMetrics, AlertRule, Alert };
+export type { Alert, AlertRule, PerformanceMetrics, SystemMetrics };
+

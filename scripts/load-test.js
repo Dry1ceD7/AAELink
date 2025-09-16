@@ -3,8 +3,8 @@
  * Tests API endpoints under various load conditions
  */
 
-import http from 'k6/http';
 import { check, sleep } from 'k6';
+import http from 'k6/http';
 import { Rate, Trend } from 'k6/metrics';
 
 // Custom metrics
@@ -40,7 +40,7 @@ const testUsers = [
 
 export function setup() {
   console.log('Starting load test setup...');
-  
+
   // Health check
   const healthResponse = http.get(`${BASE_URL}/health`);
   check(healthResponse, {
@@ -52,7 +52,7 @@ export function setup() {
 
 export default function(data) {
   const { baseUrl } = data;
-  
+
   // Test different endpoints with different probabilities
   const endpointTests = [
     { weight: 30, test: () => testHealthCheck(baseUrl) },
@@ -65,7 +65,7 @@ export default function(data) {
   // Select test based on weight
   const random = Math.random() * 100;
   let cumulativeWeight = 0;
-  
+
   for (const { weight, test } of endpointTests) {
     cumulativeWeight += weight;
     if (random <= cumulativeWeight) {
@@ -79,7 +79,7 @@ export default function(data) {
 
 function testHealthCheck(baseUrl) {
   const response = http.get(`${baseUrl}/health`);
-  
+
   const success = check(response, {
     'health check status is 200': (r) => r.status === 200,
     'health check response time < 500ms': (r) => r.timings.duration < 500,
@@ -92,7 +92,7 @@ function testHealthCheck(baseUrl) {
 
 function testLogin(baseUrl) {
   const user = testUsers[Math.floor(Math.random() * testUsers.length)];
-  
+
   const payload = JSON.stringify({
     email: user.email,
     password: user.password,
@@ -105,7 +105,7 @@ function testLogin(baseUrl) {
   };
 
   const response = http.post(`${baseUrl}/api/auth/login`, payload, params);
-  
+
   const success = check(response, {
     'login status is 200 or 401': (r) => r.status === 200 || r.status === 401,
     'login response time < 1000ms': (r) => r.timings.duration < 1000,
@@ -117,7 +117,7 @@ function testLogin(baseUrl) {
 
 function testCalendar(baseUrl) {
   const response = http.get(`${baseUrl}/api/calendar/events`);
-  
+
   const success = check(response, {
     'calendar status is 200': (r) => r.status === 200,
     'calendar response time < 2000ms': (r) => r.timings.duration < 2000,
@@ -131,9 +131,9 @@ function testCalendar(baseUrl) {
 function testSearch(baseUrl) {
   const searchQueries = ['test', 'meeting', 'project', 'user', 'admin'];
   const query = searchQueries[Math.floor(Math.random() * searchQueries.length)];
-  
+
   const response = http.get(`${baseUrl}/api/search?q=${query}&type=all`);
-  
+
   const success = check(response, {
     'search status is 200': (r) => r.status === 200,
     'search response time < 1500ms': (r) => r.timings.duration < 1500,
@@ -146,7 +146,7 @@ function testSearch(baseUrl) {
 
 function testAdmin(baseUrl) {
   const response = http.get(`${baseUrl}/api/admin/stats`);
-  
+
   const success = check(response, {
     'admin status is 200 or 401': (r) => r.status === 200 || r.status === 401,
     'admin response time < 2000ms': (r) => r.timings.duration < 2000,
@@ -158,7 +158,7 @@ function testAdmin(baseUrl) {
 
 export function teardown(data) {
   console.log('Load test completed');
-  
+
   // Final health check
   const healthResponse = http.get(`${data.baseUrl}/health`);
   check(healthResponse, {
