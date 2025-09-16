@@ -3,11 +3,11 @@
  * WebAuthn and session management testing
  */
 
-import { describe, expect, it, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { app } from '../src/index';
-import { db } from '../src/db';
-import { users, passkeys, sessions } from '../src/db/schema';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
+import { db } from '../src/db';
+import { users } from '../src/db/schema';
+import { app } from '../src/index';
 
 describe('Authentication', () => {
   let testUser: any;
