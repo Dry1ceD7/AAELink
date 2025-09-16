@@ -3,12 +3,12 @@
  * Secure session management with Redis
  */
 
+import { eq } from 'drizzle-orm';
 import { Context, Next } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { redis } from '../services/redis';
 import { db } from '../db';
 import { users } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { redis } from '../services/redis';
 
 export interface Session {
   userId: string;
@@ -36,18 +36,18 @@ const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
 export async function createSession(userId: string): Promise<string> {
   const sessionId = generateSessionId();
   const expiresAt = Date.now() + SESSION_DURATION;
-  
+
   // Get user data
   const [user] = await db
     .select()
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  
+
   if (!user) {
     throw new Error('User not found');
   }
-  
+
   const session: Session = {
     userId: user.id,
     email: user.email,
@@ -56,18 +56,18 @@ export async function createSession(userId: string): Promise<string> {
     createdAt: Date.now(),
     expiresAt,
   };
-  
+
   // Store in Redis with expiration
   await redis.setex(
     `session:${sessionId}`,
     Math.floor(SESSION_DURATION / 1000),
     JSON.stringify(session)
   );
-  
+
   // Track active sessions for user
   await redis.sadd(`user_sessions:${userId}`, sessionId);
   await redis.expire(`user_sessions:${userId}`, Math.floor(SESSION_DURATION / 1000));
-  
+
   return sessionId;
 }
 
@@ -76,19 +76,19 @@ export async function createSession(userId: string): Promise<string> {
  */
 export async function validateSession(sessionId: string): Promise<Session | null> {
   if (!sessionId) return null;
-  
+
   try {
     const sessionData = await redis.get(`session:${sessionId}`);
     if (!sessionData) return null;
-    
+
     const session: Session = JSON.parse(sessionData);
-    
+
     // Check expiration
     if (session.expiresAt < Date.now()) {
       await deleteSession(sessionId);
       return null;
     }
-    
+
     return session;
   } catch (error) {
     console.error('Session validation error:', error);
@@ -107,7 +107,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
       const session: Session = JSON.parse(sessionData);
       await redis.srem(`user_sessions:${session.userId}`, sessionId);
     }
-    
+
     // Delete session
     await redis.del(`session:${sessionId}`);
   } catch (error) {
@@ -121,7 +121,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
 export async function deleteUserSessions(userId: string): Promise<void> {
   try {
     const sessionIds = await redis.smembers(`user_sessions:${userId}`);
-    
+
     if (sessionIds.length > 0) {
       // Delete all sessions
       const pipeline = redis.pipeline();
@@ -130,7 +130,7 @@ export async function deleteUserSessions(userId: string): Promise<void> {
       });
       await pipeline.exec();
     }
-    
+
     // Delete user sessions set
     await redis.del(`user_sessions:${userId}`);
   } catch (error) {
@@ -156,12 +156,12 @@ function generateSessionId(): string {
 export const sessionMiddleware = () => {
   return createMiddleware(async (c: Context, next: Next) => {
     const sessionId = getCookie(c, SESSION_COOKIE_NAME);
-    
+
     if (sessionId) {
       const session = await validateSession(sessionId);
       if (session) {
         c.set('session', session);
-        
+
         // Optionally load full user data
         try {
           const [user] = await db
@@ -169,7 +169,7 @@ export const sessionMiddleware = () => {
             .from(users)
             .where(eq(users.id, session.userId))
             .limit(1);
-          
+
           if (user) {
             c.set('user', user);
           }
@@ -178,7 +178,7 @@ export const sessionMiddleware = () => {
         }
       }
     }
-    
+
     await next();
   });
 };
@@ -189,11 +189,11 @@ export const sessionMiddleware = () => {
 export const requireAuth = () => {
   return createMiddleware(async (c: Context, next: Next) => {
     const session = c.get('session');
-    
+
     if (!session) {
       return c.json({ error: 'Authentication required' }, 401);
     }
-    
+
     await next();
   });
 };
@@ -204,16 +204,16 @@ export const requireAuth = () => {
 export const requireRole = (roles: string | string[]) => {
   return createMiddleware(async (c: Context, next: Next) => {
     const session = c.get('session');
-    
+
     if (!session) {
       return c.json({ error: 'Authentication required' }, 401);
     }
-    
+
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
     if (!allowedRoles.includes(session.role)) {
       return c.json({ error: 'Insufficient permissions' }, 403);
     }
-    
+
     await next();
   });
 };
@@ -223,7 +223,7 @@ export const requireRole = (roles: string | string[]) => {
  */
 export function setSessionCookie(c: Context, sessionId: string): void {
   const isProduction = process.env.NODE_ENV === 'production';
-  
+
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
     httpOnly: true,
     secure: isProduction,
@@ -250,24 +250,24 @@ export function clearSessionCookie(c: Context): void {
 function getCookie(c: Context, name: string): string | undefined {
   const cookieHeader = c.req.header('Cookie');
   if (!cookieHeader) return undefined;
-  
+
   const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
     const [key, value] = cookie.trim().split('=');
     acc[key] = value;
     return acc;
   }, {} as Record<string, string>);
-  
+
   return cookies[name];
 }
 
 function setCookie(c: Context, name: string, value: string, options: any): void {
   let cookieString = `${name}=${value}`;
-  
+
   if (options.maxAge) cookieString += `; Max-Age=${options.maxAge}`;
   if (options.path) cookieString += `; Path=${options.path}`;
   if (options.httpOnly) cookieString += '; HttpOnly';
   if (options.secure) cookieString += '; Secure';
   if (options.sameSite) cookieString += `; SameSite=${options.sameSite}`;
-  
+
   c.header('Set-Cookie', cookieString);
 }

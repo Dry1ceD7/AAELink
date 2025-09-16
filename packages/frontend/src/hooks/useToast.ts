@@ -27,7 +27,7 @@ interface ToastStore {
 
 const useToastStore = create<ToastStore>((set, get) => ({
   toasts: [],
-  
+
   addToast: (toast) => {
     const id = Math.random().toString(36).substring(2, 9);
     const newToast: Toast = {
@@ -36,11 +36,11 @@ const useToastStore = create<ToastStore>((set, get) => ({
       dismissible: true,
       ...toast,
     };
-    
+
     set((state) => ({
       toasts: [...state.toasts, newToast],
     }));
-    
+
     // Auto-remove toast after duration
     if (newToast.duration && newToast.duration > 0) {
       setTimeout(() => {
@@ -48,13 +48,13 @@ const useToastStore = create<ToastStore>((set, get) => ({
       }, newToast.duration);
     }
   },
-  
+
   removeToast: (id) => {
     set((state) => ({
       toasts: state.toasts.filter((toast) => toast.id !== id),
     }));
   },
-  
+
   clearToasts: () => {
     set({ toasts: [] });
   },
@@ -62,43 +62,43 @@ const useToastStore = create<ToastStore>((set, get) => ({
 
 export const useToast = () => {
   const { addToast, removeToast, clearToasts } = useToastStore();
-  
+
   const toast = {
     success: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
       addToast({ message, type: 'success', ...options });
     },
-    
+
     error: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
       addToast({ message, type: 'error', duration: 7000, ...options });
     },
-    
+
     warning: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
       addToast({ message, type: 'warning', ...options });
     },
-    
+
     info: (message: string, options?: Partial<Omit<Toast, 'id' | 'message' | 'type'>>) => {
       addToast({ message, type: 'info', ...options });
     },
-    
+
     custom: (toast: Omit<Toast, 'id'>) => {
       addToast(toast);
     },
-    
+
     dismiss: (id: string) => {
       removeToast(id);
     },
-    
+
     clear: () => {
       clearToasts();
     },
   };
-  
+
   return { toast };
 };
 
 export const useToasts = () => {
   const toasts = useToastStore((state) => state.toasts);
   const removeToast = useToastStore((state) => state.removeToast);
-  
+
   return { toasts, removeToast };
 };

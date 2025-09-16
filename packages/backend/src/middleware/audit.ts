@@ -5,9 +5,9 @@
 
 import { Context, Next } from 'hono';
 import { createMiddleware } from 'hono/factory';
+import { nanoid } from 'nanoid';
 import { db } from '../db';
 import { auditLogs } from '../db/schema';
-import { nanoid } from 'nanoid';
 
 export interface AuditEvent {
   userId?: string;
@@ -52,13 +52,13 @@ export async function logAuditEvent(event: AuditEvent): Promise<void> {
  */
 function getClientInfo(c: Context) {
   const forwarded = c.req.header('X-Forwarded-For');
-  const ipAddress = forwarded ? 
-    forwarded.split(',')[0].trim() : 
-    c.req.header('X-Real-IP') || 
+  const ipAddress = forwarded ?
+    forwarded.split(',')[0].trim() :
+    c.req.header('X-Real-IP') ||
     'unknown';
-  
+
   const userAgent = c.req.header('User-Agent') || 'unknown';
-  
+
   return { ipAddress, userAgent };
 }
 
@@ -71,7 +71,7 @@ export const auditMiddleware = () => {
     const method = c.req.method;
     const path = c.req.path;
     const { ipAddress, userAgent } = getClientInfo(c);
-    
+
     // Skip audit for health checks and static assets
     if (
       path === '/health' ||
@@ -82,17 +82,17 @@ export const auditMiddleware = () => {
       await next();
       return;
     }
-    
+
     let success = true;
     let errorMessage: string | undefined;
-    
+
     try {
       await next();
-      
+
       // Check if response indicates failure
       const status = c.res.status;
       success = status < 400;
-      
+
       if (!success) {
         try {
           const response = await c.res.clone().json();
@@ -109,7 +109,7 @@ export const auditMiddleware = () => {
       // Log significant actions
       const session = c.get('session');
       const shouldLog = shouldLogAction(method, path, success);
-      
+
       if (shouldLog) {
         const event: AuditEvent = {
           userId: session?.userId,
@@ -128,7 +128,7 @@ export const auditMiddleware = () => {
           success,
           errorMessage,
         };
-        
+
         // Don't await to avoid slowing down response
         logAuditEvent(event).catch(console.error);
       }
@@ -142,20 +142,20 @@ export const auditMiddleware = () => {
 function shouldLogAction(method: string, path: string, success: boolean): boolean {
   // Always log authentication events
   if (path.includes('/auth/')) return true;
-  
+
   // Always log failures
   if (!success) return true;
-  
+
   // Log state-changing operations
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return true;
-  
+
   // Log sensitive read operations
   if (method === 'GET' && (
     path.includes('/admin/') ||
     path.includes('/users/') ||
     path.includes('/sensitive/')
   )) return true;
-  
+
   return false;
 }
 
@@ -167,7 +167,7 @@ function getActionName(method: string, path: string): string {
   if (path.includes('/auth/login')) return 'auth.login';
   if (path.includes('/auth/logout')) return 'auth.logout';
   if (path.includes('/auth/register')) return 'auth.register';
-  
+
   // Message actions
   if (path.includes('/messages')) {
     switch (method) {
@@ -178,7 +178,7 @@ function getActionName(method: string, path: string): string {
       case 'GET': return 'message.read';
     }
   }
-  
+
   // File actions
   if (path.includes('/files')) {
     if (path.includes('/upload')) return 'file.upload';
@@ -189,12 +189,12 @@ function getActionName(method: string, path: string): string {
       case 'GET': return 'file.access';
     }
   }
-  
+
   // Admin actions
   if (path.includes('/admin/')) {
     return `admin.${method.toLowerCase()}`;
   }
-  
+
   // Generic action
   return `${method.toLowerCase()}.${getResourceName(path)}`;
 }
@@ -204,10 +204,10 @@ function getActionName(method: string, path: string): string {
  */
 function getResourceName(path: string): string {
   const segments = path.split('/').filter(Boolean);
-  
+
   // Remove 'api' prefix if present
   if (segments[0] === 'api') segments.shift();
-  
+
   // Return first segment as resource type
   return segments[0] || 'unknown';
 }
@@ -217,7 +217,7 @@ function getResourceName(path: string): string {
  */
 function getResourceId(path: string): string | undefined {
   const segments = path.split('/').filter(Boolean);
-  
+
   // Look for UUID-like patterns or numeric IDs
   for (const segment of segments) {
     if (
@@ -228,7 +228,7 @@ function getResourceId(path: string): string | undefined {
       return segment;
     }
   }
-  
+
   return undefined;
 }
 
@@ -238,7 +238,7 @@ function getResourceId(path: string): string | undefined {
 function extractSessionId(c: Context): string | undefined {
   const cookieHeader = c.req.header('Cookie');
   if (!cookieHeader) return undefined;
-  
+
   const sessionMatch = cookieHeader.match(/__Host-session=([^;]+)/);
   return sessionMatch ? sessionMatch[1] : undefined;
 }
@@ -258,7 +258,7 @@ export const auditEvents = {
       errorMessage,
     });
   },
-  
+
   logout: async (c: Context, userId: string) => {
     const { ipAddress, userAgent } = getClientInfo(c);
     await logAuditEvent({
@@ -269,7 +269,7 @@ export const auditEvents = {
       success: true,
     });
   },
-  
+
   register: async (c: Context, userId: string, email: string, success: boolean, errorMessage?: string) => {
     const { ipAddress, userAgent } = getClientInfo(c);
     await logAuditEvent({
@@ -282,7 +282,7 @@ export const auditEvents = {
       errorMessage,
     });
   },
-  
+
   passwordChange: async (c: Context, userId: string, success: boolean) => {
     const { ipAddress, userAgent } = getClientInfo(c);
     await logAuditEvent({
@@ -293,7 +293,7 @@ export const auditEvents = {
       success,
     });
   },
-  
+
   permissionDenied: async (c: Context, action: string, resource?: string) => {
     const session = c.get('session');
     const { ipAddress, userAgent } = getClientInfo(c);
@@ -308,7 +308,7 @@ export const auditEvents = {
       errorMessage: 'Permission denied',
     });
   },
-  
+
   dataExport: async (c: Context, userId: string, dataType: string, recordCount: number) => {
     const { ipAddress, userAgent } = getClientInfo(c);
     await logAuditEvent({
@@ -321,7 +321,7 @@ export const auditEvents = {
       success: true,
     });
   },
-  
+
   configChange: async (c: Context, userId: string, setting: string, oldValue: any, newValue: any) => {
     const { ipAddress, userAgent } = getClientInfo(c);
     await logAuditEvent({

@@ -43,7 +43,7 @@ export const rateLimit = (options: RateLimitOptions) => {
       if (currentCount >= maxRequests) {
         // Get time until window resets
         const oldestEntry = await redis.zrange(key, 0, 0, 'WITHSCORES');
-        const resetTime = oldestEntry.length > 0 
+        const resetTime = oldestEntry.length > 0
           ? parseInt(oldestEntry[1] as string) + windowMs
           : now + windowMs;
 
@@ -63,7 +63,7 @@ export const rateLimit = (options: RateLimitOptions) => {
         // Wrap next to check response status
         const wrappedNext = async () => {
           await originalNext();
-          
+
           if (!counted) {
             const status = c.res.status;
             const isSuccessful = status >= 200 && status < 300;
@@ -109,8 +109,8 @@ export const rateLimit = (options: RateLimitOptions) => {
  */
 function defaultKeyGenerator(c: Context): string {
   const forwarded = c.req.header('X-Forwarded-For');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 
-             c.req.header('X-Real-IP') || 
+  const ip = forwarded ? forwarded.split(',')[0].trim() :
+             c.req.header('X-Real-IP') ||
              'unknown';
   return `rate_limit:${ip}`;
 }
@@ -195,11 +195,11 @@ export async function getRateLimitInfo(key: string, windowMs: number, maxRequest
   try {
     const now = Date.now();
     const windowStart = now - windowMs;
-    
+
     await redis.zremrangebyscore(key, 0, windowStart);
     const currentCount = await redis.zcard(key);
     const remaining = Math.max(0, maxRequests - currentCount);
-    
+
     return {
       limit: maxRequests,
       used: currentCount,
@@ -234,7 +234,7 @@ export async function resetRateLimit(key: string): Promise<void> {
 export const rateLimitMiddleware = () => {
   return createMiddleware(async (c: Context, next: Next) => {
     const path = c.req.path;
-    
+
     // Apply specific rate limits based on path
     if (path.startsWith('/api/auth/')) {
       return authRateLimit()(c, next);
