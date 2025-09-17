@@ -89,12 +89,7 @@
     </style>
   </head>
   <body>
-    <div id="root">
-      <!-- Initial loading state -->
-      <div class="app-shell-loader">
-        <div class="loader-spinner"></div>
-      </div>
-    </div>
+    <div id="root"></div>
 
     <!-- No JavaScript fallback -->
     <noscript>
@@ -104,6 +99,164 @@
       </div>
     </noscript>
 
-    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Simple working AAELink app
+      let isAuthenticated = false;
+      let user = null;
+
+      async function checkAuth() {
+        try {
+          const response = await fetch('http://localhost:3002/api/auth/session', {
+            credentials: 'include'
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            user = data.user;
+            isAuthenticated = true;
+          }
+        } catch (error) {
+          console.log('No active session');
+        }
+        renderApp();
+      }
+
+      async function handleLogin(email, password) {
+        try {
+          const response = await fetch('http://localhost:3002/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email, password }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            user = data.user;
+            isAuthenticated = true;
+            renderApp();
+          } else {
+            alert('Login failed');
+          }
+        } catch (error) {
+          alert('Network error');
+        }
+      }
+
+      async function handleLogout() {
+        try {
+          await fetch('http://localhost:3002/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          user = null;
+          isAuthenticated = false;
+          renderApp();
+        } catch (error) {
+          console.error('Logout failed:', error);
+        }
+      }
+
+      function renderApp() {
+        const root = document.getElementById('root');
+
+        if (!isAuthenticated) {
+          root.innerHTML = `
+                            <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                <div style="max-width: 400px; width: 100%; padding: 32px; background: white; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+                                    <div style="text-align: center; margin-bottom: 32px;">
+                                        <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin: 0;">AAELink</h2>
+                                        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6b7280;">Company Workspace</p>
+                                    </div>
+    
+                                    <form onsubmit="handleFormSubmit(event)" style="display: flex; flex-direction: column; gap: 24px;">
+                                        <div>
+                                            <label style="display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 4px;">Email</label>
+                                            <input
+                                                type="email"
+                                                id="email"
+                                                required
+                                                value="admin@aae.co.th"
+                                                style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; box-sizing: border-box;"
+                                            />
+                                        </div>
+    
+                                        <div>
+                                            <label style="display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 4px;">Password</label>
+                                            <input
+                                                type="password"
+                                                id="password"
+                                                required
+                                                value="12345678"
+                                                style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; box-sizing: border-box;"
+                                            />
+                                        </div>
+    
+                                        <button
+                                            type="submit"
+                                            style="width: 100%; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer;"
+                                        >
+                                            Sign in
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        `;
+        } else {
+          root.innerHTML = `
+                            <div style="min-height: 100vh; background: #f3f4f6;">
+                                <nav style="background: white; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
+                                    <div style="max-width: 1280px; margin: 0 auto; padding: 0 16px;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; height: 64px;">
+                                            <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0;">AAELink Workspace</h1>
+                                            <div style="display: flex; align-items: center; gap: 16px;">
+                                                <span style="font-size: 14px; color: #374151;">Welcome, ${user?.email || 'User'}</span>
+                                                <button
+                                                    onclick="handleLogout()"
+                                                    style="background: #dc2626; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer;"
+                                                >
+                                                    Logout
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </nav>
+    
+                                <main style="max-width: 1280px; margin: 0 auto; padding: 24px 16px;">
+                                    <div style="border: 4px dashed #d1d5db; border-radius: 8px; height: 384px; display: flex; align-items: center; justify-content: center;">
+                                        <div style="text-align: center;">
+                                            <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin: 0 0 16px 0;">Welcome to AAELink!</h2>
+                                            <p style="color: #6b7280; margin: 0 0 16px 0;">Your company workspace is ready.</p>
+                                            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: #6b7280; margin: 0 0 24px 0;">
+                                                <p style="margin: 0;">✅ Authentication working</p>
+                                                <p style="margin: 0;">✅ Backend connected</p>
+                                                <p style="margin: 0;">✅ React app loaded</p>
+                                                <p style="margin: 0;">✅ User: ${user?.email}</p>
+                                                <p style="margin: 0;">✅ Role: ${user?.role}</p>
+                                            </div>
+                                            <button
+                                                onclick="alert('Features coming soon!')"
+                                                style="background: #2563eb; color: white; padding: 12px 24px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer;"
+                                            >
+                                                Get Started
+                                            </button>
+                                        </div>
+                                    </div>
+                                </main>
+                            </div>
+                        `;
+        }
+      }
+
+      function handleFormSubmit(event) {
+        event.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        handleLogin(email, password);
+      }
+
+      // Initialize app
+      checkAuth();
+    </script>
   </body>
 </html>

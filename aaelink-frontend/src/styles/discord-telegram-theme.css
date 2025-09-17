@@ -1,0 +1,439 @@
+/**
+ * AAELink v1.1 - Discord+Telegram Theme System
+ * Discord Architecture + Telegram Simplicity
+ * Enterprise-Grade UI/UX Design System
+ */
+
+:root {
+  /* Discord-inspired Color Palette */
+  --discord-bg-primary: #1a1b26;
+  --discord-bg-elevated: #24283b;
+  --discord-bg-hover: #414868;
+  --discord-bg-modifier-hover: #414868;
+  --discord-bg-modifier-active: #565f89;
+
+  /* AAE Brand Colors */
+  --aae-blue: #2563eb;
+  --aae-blue-hover: #3b82f6;
+  --aae-blue-pressed: #1d4ed8;
+  --aae-blue-light: #dbeafe;
+
+  /* Semantic Colors */
+  --semantic-green: #10b981;
+  --semantic-red: #ef4444;
+  --semantic-yellow: #f59e0b;
+  --semantic-orange: #f97316;
+
+  /* Text Hierarchy (Telegram-inspired) */
+  --text-primary: #c9d1d9;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;
+  --text-disabled: #484f58;
+
+  /* Border Colors */
+  --border-primary: #30363d;
+  --border-secondary: #21262d;
+  --border-focus: var(--aae-blue);
+
+  /* Shadow System */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Spacing System */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* Border Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 200ms ease-in-out;
+  --transition-slow: 300ms ease-in-out;
+}
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--discord-bg-primary);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+/* Discord-inspired Layout System */
+.discord-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.discord-sidebar {
+  width: 312px; /* 72px + 240px */
+  background-color: var(--discord-bg-elevated);
+  border-right: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.discord-server-list {
+  width: 72px;
+  background-color: var(--discord-bg-primary);
+  border-right: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2);
+}
+
+.discord-channel-list {
+  flex: 1;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.discord-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--discord-bg-primary);
+}
+
+.discord-content {
+  flex: 1;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+.discord-user-panel {
+  width: 240px;
+  background-color: var(--discord-bg-elevated);
+  border-left: 1px solid var(--border-primary);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+/* Telegram-inspired Components */
+.telegram-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  background-color: var(--aae-blue);
+  color: white;
+}
+
+.telegram-button:hover {
+  background-color: var(--aae-blue-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.telegram-button:active {
+  background-color: var(--aae-blue-pressed);
+  transform: translateY(0);
+}
+
+.telegram-button:disabled {
+  background-color: var(--text-disabled);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.telegram-button--secondary {
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+.telegram-button--secondary:hover {
+  background-color: var(--discord-bg-hover);
+  border-color: var(--aae-blue);
+}
+
+.telegram-input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background-color: var(--discord-bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  transition: all var(--transition-normal);
+}
+
+.telegram-input:focus {
+  outline: none;
+  border-color: var(--aae-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.telegram-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.telegram-card {
+  background-color: var(--discord-bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.telegram-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.telegram-card--glass {
+  background: rgba(36, 40, 59, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Floating Action Buttons (Telegram-style) */
+.fab {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background-color: var(--aae-blue);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  box-shadow: var(--shadow-lg);
+  transition: all var(--transition-normal);
+  z-index: 1000;
+}
+
+.fab:hover {
+  background-color: var(--aae-blue-hover);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-xl);
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+
+/* Inline Keyboards (Telegram-style) */
+.inline-keyboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.inline-keyboard-button {
+  flex: 1;
+  min-width: 120px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background-color: var(--discord-bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.inline-keyboard-button:hover {
+  background-color: var(--discord-bg-hover);
+  border-color: var(--aae-blue);
+}
+
+/* Micro-animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-normal) ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn var(--transition-normal) ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Responsive Design */
+@media (max-width: 1023px) {
+  .discord-layout {
+    flex-direction: column;
+  }
+
+  .discord-sidebar {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+  }
+
+  .discord-server-list {
+    width: auto;
+    flex-direction: row;
+    padding: var(--space-2);
+  }
+
+  .discord-channel-list {
+    flex: 1;
+    padding: var(--space-2);
+  }
+
+  .discord-user-panel {
+    width: 100%;
+    height: auto;
+    border-left: none;
+    border-top: 1px solid var(--border-primary);
+  }
+}
+
+@media (max-width: 767px) {
+  .discord-layout {
+    flex-direction: column;
+  }
+
+  .discord-sidebar {
+    display: none;
+  }
+
+  .discord-user-panel {
+    display: none;
+  }
+
+  .discord-content {
+    padding: var(--space-4);
+  }
+
+  .fab {
+    bottom: var(--space-4);
+    right: var(--space-4);
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* Dark mode optimizations */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --discord-bg-primary: #0d1117;
+    --discord-bg-elevated: #161b22;
+    --discord-bg-hover: #21262d;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border-primary: #ffffff;
+    --text-primary: #ffffff;
+    --text-secondary: #cccccc;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .discord-sidebar,
+  .discord-user-panel,
+  .fab {
+    display: none;
+  }
+
+  .discord-main {
+    width: 100%;
+  }
+
+  .telegram-card {
+    box-shadow: none;
+    border: 1px solid #000;
+  }
+}

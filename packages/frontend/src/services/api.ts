@@ -1,32 +1,50 @@
 import axios from 'axios';
 
-// Create axios instance with default config
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3001/api',
+// Request deduplication map
+const pendingRequests = new Map<string, Promise<any>>();
+
+// Create axios instance with aggressive request deduplication
+const api = axios.create({
+  baseURL: 'http://localhost:3002/api',
   withCredentials: true,
+  timeout: 10000, // 10 second timeout
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor for CSRF tokens
-api.interceptors.request.use(async (config) => {
-  // Get CSRF token from meta tag or cookie
-  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-  if (csrfToken) {
-    config.headers['X-CSRF-Token'] = csrfToken;
+// Request interceptor for deduplication
+api.interceptors.request.use((config) => {
+  const key = `${config.method?.toUpperCase()}-${config.url}`;
+
+  // If same request is already pending, return the existing promise
+  if (pendingRequests.has(key)) {
+    console.log('Deduplicating request:', key);
+    return pendingRequests.get(key)!;
   }
-  return config;
+
+  // Create new request promise
+  const requestPromise = Promise.resolve(config);
+  pendingRequests.set(key, requestPromise);
+
+  return requestPromise;
 });
 
-// Response interceptor for error handling
+// Response interceptor for cleanup and error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const key = `${response.config.method?.toUpperCase()}-${response.config.url}`;
+    pendingRequests.delete(key);
+    return response;
+  },
   (error) => {
+    const key = `${error.config?.method?.toUpperCase()}-${error.config?.url}`;
+    pendingRequests.delete(key);
+
     if (error.response?.status === 401) {
-      // Redirect to login on unauthorized
-      window.location.href = '/login';
+      console.log('Unauthorized - not redirecting to prevent loops');
     }
+
     return Promise.reject(error);
   }
 );

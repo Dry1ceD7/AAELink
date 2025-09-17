@@ -17,7 +17,7 @@ code {
     monospace;
 }
 
-/* Senior Mode */
+/* Senior mode styles */
 .senior-mode {
   font-size: 125%;
 }
@@ -31,11 +31,9 @@ code {
 }
 
 /* High contrast mode */
-@media (prefers-contrast: high) {
-  :root {
-    --background: white;
-    --foreground: black;
-  }
+[data-theme="high-contrast"] {
+  --background: white;
+  --foreground: black;
 }
 
 /* Reduced motion */

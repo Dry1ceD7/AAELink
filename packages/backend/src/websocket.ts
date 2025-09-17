@@ -1,10 +1,8 @@
 /**
  * WebSocket Server for Real-time Communication
  * Handles channels, presence, typing indicators, and message broadcasting
+ * Bun-compatible implementation
  */
-
-import { IncomingMessage } from 'http';
-import { Server } from 'ws';
 
 interface WebSocketClient {
   ws: any;
@@ -14,44 +12,51 @@ interface WebSocketClient {
 }
 
 interface Message {
-  type: 'message' | 'typing' | 'presence' | 'reaction' | 'read';
+  type: 'message' | 'typing' | 'presence' | 'reaction' | 'read' | 'join' | 'leave';
   channelId: string;
   userId: string;
   data: any;
   timestamp: string;
 }
 
-class WebSocketManager {
+export class WebSocketManager {
   private clients = new Map<string, WebSocketClient>();
   private channels = new Map<string, Set<string>>(); // channelId -> Set of userIds
 
-  constructor(server: any) {
-    const wss = new Server({ server });
+  constructor() {
+    console.log('WebSocket Manager initialized for Bun');
+  }
 
-    wss.on('connection', (ws: any, req: IncomingMessage) => {
-      console.log('WebSocket client connected');
+  // Bun-specific WebSocket handler
+  public handleBunWebSocket(socket: any, userId: string) {
+    console.log(`WebSocket client connected: ${userId}`);
 
-      ws.on('message', (data: Buffer) => {
-        try {
-          const message = JSON.parse(data.toString());
-          this.handleMessage(ws, message);
-        } catch (error) {
-          console.error('Invalid WebSocket message:', error);
-          ws.send(JSON.stringify({ error: 'Invalid message format' }));
-        }
-      });
-
-      ws.on('close', () => {
-        this.handleDisconnect(ws);
-      });
-
-      ws.on('error', (error: Error) => {
-        console.error('WebSocket error:', error);
-        this.handleDisconnect(ws);
-      });
+    // Store client info
+    this.clients.set(userId, {
+      ws: socket,
+      userId,
+      channels: new Set(),
+      lastSeen: new Date()
     });
 
-    console.log('WebSocket server initialized');
+    socket.addEventListener('message', (event: MessageEvent) => {
+      try {
+        const message = JSON.parse(event.data);
+        this.handleMessage(socket, message);
+      } catch (error) {
+        console.error('Invalid WebSocket message:', error);
+        socket.send(JSON.stringify({ error: 'Invalid message format' }));
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      this.handleDisconnect(socket);
+    });
+
+    socket.addEventListener('error', (error: ErrorEvent) => {
+      console.error('WebSocket error:', error);
+      this.handleDisconnect(socket);
+    });
   }
 
   private handleMessage(ws: any, message: Message) {
@@ -276,5 +281,3 @@ class WebSocketManager {
     return Array.from(this.clients.keys());
   }
 }
-
-export { WebSocketManager };

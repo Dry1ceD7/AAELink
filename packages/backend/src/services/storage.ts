@@ -3,8 +3,9 @@
  * Handles file uploads, downloads, and management using MinIO (S3-compatible)
  */
 
-import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as Minio from 'minio';
+import { nanoid } from 'nanoid';
+import crypto from 'crypto';
 
 interface FileUploadResult {
   id: string;
@@ -28,226 +29,181 @@ interface FileStorageConfig {
 }
 
 class FileStorageService {
-  private s3Client: S3Client;
+  private minioClient: Minio.Client;
   private bucket: string;
   private isInitialized = false;
 
   constructor(config: FileStorageConfig) {
     this.bucket = config.bucket;
 
-    this.s3Client = new S3Client({
-      endpoint: config.endpoint,
-      region: config.region,
-      credentials: {
-        accessKeyId: config.accessKey,
-        secretAccessKey: config.secretKey,
-      },
-      forcePathStyle: true, // Required for MinIO
+    this.minioClient = new Minio.Client({
+      endPoint: config.endpoint.replace('http://', '').replace('https://', ''),
+      port: config.endpoint.includes('https://') ? 443 : 9000,
+      useSSL: config.endpoint.includes('https://'),
+      accessKey: config.accessKey,
+      secretKey: config.secretKey
     });
   }
 
   public async initialize(): Promise<void> {
     try {
-      // Test connection by listing objects
-      await this.s3Client.send(new ListObjectsV2Command({
-        Bucket: this.bucket,
-        MaxKeys: 1
-      }));
-
+      // Check if bucket exists, create if not
+      const bucketExists = await this.minioClient.bucketExists(this.bucket);
+      if (!bucketExists) {
+        await this.minioClient.makeBucket(this.bucket, 'us-east-1');
+      }
       this.isInitialized = true;
-      console.log('File storage service initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize file storage service:', error);
+      console.error('Failed to initialize MinIO:', error);
       throw error;
     }
   }
 
   public async uploadFile(
-    file: Buffer | Uint8Array | string,
-    fileName: string,
+    file: Buffer,
+    originalName: string,
     mimeType: string,
-    userId: string,
-    metadata?: Record<string, string>
+    userId: string
   ): Promise<FileUploadResult> {
     if (!this.isInitialized) {
-      throw new Error('File storage service not initialized');
+      await this.initialize();
     }
 
-    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-    const filePath = `uploads/${userId}/${fileId}`;
-    const fileHash = await this.generateHash(file);
+    const id = nanoid();
+    const hash = crypto.createHash('sha256').update(file).digest('hex');
+    const path = `files/${userId}/${id}/${originalName}`;
 
     try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: filePath,
-        Body: file,
-        ContentType: mimeType,
-        Metadata: {
-          userId,
-          originalName: fileName,
-          fileId,
-          hash: fileHash,
-          ...metadata
-        }
+      await this.minioClient.putObject(this.bucket, path, file, file.length, {
+        'Content-Type': mimeType,
+        'x-amz-meta-user-id': userId,
+        'x-amz-meta-original-name': originalName,
+        'x-amz-meta-hash': hash
       });
 
-      await this.s3Client.send(command);
-
-      // Generate presigned URL for immediate access
-      const url = await this.getFileUrl(filePath);
+      const url = await this.getPresignedUrl(path);
 
       return {
-        id: fileId,
-        name: fileName,
-        originalName: fileName,
+        id,
+        name: originalName,
+        originalName,
         mimeType,
-        size: Buffer.isBuffer(file) ? file.length : new TextEncoder().encode(file).length,
-        path: filePath,
+        size: file.length,
+        path,
         url,
-        hash: fileHash,
+        hash,
         userId,
         createdAt: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Failed to upload file:', error);
-      throw error;
+      console.error('File upload error:', error);
+      throw new Error('Failed to upload file');
     }
   }
 
-  public async getFileUrl(filePath: string, expiresIn: number = 3600): Promise<string> {
+  public async getPresignedUrl(path: string, expiresIn: number = 3600): Promise<string> {
     try {
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: filePath
-      });
-
-      return await getSignedUrl(this.s3Client, command, { expiresIn });
+      return await this.minioClient.presignedGetObject(this.bucket, path, expiresIn);
     } catch (error) {
-      console.error('Failed to generate file URL:', error);
-      throw error;
+      console.error('Presigned URL error:', error);
+      throw new Error('Failed to generate presigned URL');
     }
   }
 
-  public async deleteFile(filePath: string): Promise<void> {
+  public async deleteFile(path: string): Promise<void> {
     try {
-      const command = new DeleteObjectCommand({
-        Bucket: this.bucket,
-        Key: filePath
-      });
-
-      await this.s3Client.send(command);
+      await this.minioClient.removeObject(this.bucket, path);
     } catch (error) {
-      console.error('Failed to delete file:', error);
-      throw error;
+      console.error('File deletion error:', error);
+      throw new Error('Failed to delete file');
     }
   }
 
-  public async listUserFiles(userId: string, limit: number = 100): Promise<FileUploadResult[]> {
+  public async listFiles(userId?: string, limit: number = 100): Promise<FileUploadResult[]> {
     try {
-      const command = new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: `uploads/${userId}/`,
-        MaxKeys: limit
-      });
-
-      const response = await this.s3Client.send(command);
-
-      if (!response.Contents) {
-        return [];
-      }
-
+      const objects = await this.minioClient.listObjectsV2(this.bucket, `files/${userId || ''}`, true);
       const files: FileUploadResult[] = [];
+      let count = 0;
 
-      for (const object of response.Contents) {
-        if (object.Key) {
-          const url = await this.getFileUrl(object.Key);
-
+      for await (const obj of objects) {
+        if (count >= limit) break;
+        
+        if (obj.name && obj.lastModified) {
+          const url = await this.getPresignedUrl(obj.name);
           files.push({
-            id: object.Key.split('/').pop() || '',
-            name: object.Key.split('/').pop() || '',
-            originalName: object.Metadata?.originalName || '',
-            mimeType: object.Metadata?.mimetype || 'application/octet-stream',
-            size: object.Size || 0,
-            path: object.Key,
+            id: obj.name.split('/')[2] || nanoid(),
+            name: obj.name.split('/').pop() || 'unknown',
+            originalName: obj.name.split('/').pop() || 'unknown',
+            mimeType: 'application/octet-stream',
+            size: obj.size || 0,
+            path: obj.name,
             url,
-            hash: object.Metadata?.hash || '',
-            userId,
-            createdAt: object.LastModified?.toISOString() || new Date().toISOString()
+            hash: '',
+            userId: obj.name.split('/')[1] || 'unknown',
+            createdAt: obj.lastModified.toISOString()
           });
+          count++;
         }
       }
 
       return files;
     } catch (error) {
-      console.error('Failed to list user files:', error);
-      throw error;
+      console.error('List files error:', error);
+      throw new Error('Failed to list files');
     }
-  }
-
-  private async generateHash(data: Buffer | Uint8Array | string): Promise<string> {
-    const crypto = await import('crypto');
-    const buffer = Buffer.isBuffer(data) ? data : new TextEncoder().encode(data);
-    return crypto.createHash('sha256').update(buffer).digest('hex');
-  }
-
-  public isReady(): boolean {
-    return this.isInitialized;
   }
 }
 
-// Mock implementation for development
 class MockFileStorageService {
   private files = new Map<string, FileUploadResult>();
 
   public async initialize(): Promise<void> {
-    console.log('Mock file storage service initialized');
+    // Mock initialization
   }
 
   public async uploadFile(
-    file: Buffer | Uint8Array | string,
-    fileName: string,
+    file: Buffer,
+    originalName: string,
     mimeType: string,
-    userId: string,
-    metadata?: Record<string, string>
+    userId: string
   ): Promise<FileUploadResult> {
-    const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-    const filePath = `uploads/${userId}/${fileId}`;
+    const id = nanoid();
+    const hash = crypto.createHash('sha256').update(file).digest('hex');
+    const path = `files/${userId}/${id}/${originalName}`;
 
     const result: FileUploadResult = {
-      id: fileId,
-      name: fileName,
-      originalName: fileName,
+      id,
+      name: originalName,
+      originalName,
       mimeType,
-      size: Buffer.isBuffer(file) ? file.length : new TextEncoder().encode(file).length,
-      path: filePath,
-      url: `http://localhost:3001/api/files/${fileId}`,
-      hash: `hash_${fileId}`,
+      size: file.length,
+      path,
+      url: `http://localhost:3002/api/files/${id}`,
+      hash,
       userId,
       createdAt: new Date().toISOString()
     };
 
-    this.files.set(fileId, result);
+    this.files.set(id, result);
     return result;
   }
 
-  public async getFileUrl(filePath: string): Promise<string> {
-    const fileId = filePath.split('/').pop();
-    const file = this.files.get(fileId || '');
-    return file?.url || '';
+  public async getPresignedUrl(path: string, expiresIn: number = 3600): Promise<string> {
+    const id = path.split('/')[2];
+    const file = this.files.get(id);
+    return file?.url || `http://localhost:3002/api/files/${id}`;
   }
 
-  public async deleteFile(filePath: string): Promise<void> {
-    const fileId = filePath.split('/').pop();
-    this.files.delete(fileId || '');
+  public async deleteFile(path: string): Promise<void> {
+    const id = path.split('/')[2];
+    this.files.delete(id);
   }
 
-  public async listUserFiles(userId: string): Promise<FileUploadResult[]> {
-    return Array.from(this.files.values()).filter(file => file.userId === userId);
-  }
-
-  public isReady(): boolean {
-    return true;
+  public async listFiles(userId?: string, limit: number = 100): Promise<FileUploadResult[]> {
+    const files = Array.from(this.files.values());
+    return userId 
+      ? files.filter(f => f.userId === userId).slice(0, limit)
+      : files.slice(0, limit);
   }
 }
 

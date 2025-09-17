@@ -91,7 +91,7 @@ const WorkspacePage: React.FC = () => {
       // If online, also try to load from server
       if (isOnline) {
         try {
-          const response = await fetch(`http://localhost:3001/api/messages/${selectedChannel}`);
+          const response = await fetch(`http://localhost:3002/api/messages/${selectedChannel}`);
           if (response.ok) {
             const serverMessages = await response.json();
             setMessages(serverMessages.messages || []);
@@ -200,7 +200,7 @@ const WorkspacePage: React.FC = () => {
 
         // Also try to send via API
         try {
-          await fetch('http://localhost:3001/api/messages', {
+          await fetch('http://localhost:3002/api/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -241,7 +241,7 @@ const WorkspacePage: React.FC = () => {
       formData.append('file', file);
       formData.append('channelId', selectedChannel);
 
-      const response = await fetch('http://localhost:3001/api/files/upload', {
+      const response = await fetch('http://localhost:3002/api/files/upload', {
         method: 'POST',
         body: formData,
         credentials: 'include'

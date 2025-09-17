@@ -1,0 +1,358 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  firstName String
+  lastName  String
+  avatar    String?
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  lastSeen  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Authentication
+  passwordHash String?
+  passkeyId    String? @unique
+  passkeyData  Json?
+
+  // Relationships
+  sentMessages     Message[]     @relation("MessageSender")
+  receivedMessages Message[]     @relation("MessageReceiver")
+  groupMemberships GroupMember[]
+  reactions        Reaction[]
+  files            File[]
+  calls            CallParticipant[]
+  searchHistory    SearchHistory[]
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  GUEST
+}
+
+// Messaging System
+model Message {
+  id        String      @id @default(cuid())
+  content   String
+  type      MessageType @default(TEXT)
+  senderId  String
+  receiverId String?
+  groupId   String?
+  threadId  String?
+  parentId  String?
+  isEdited  Boolean     @default(false)
+  isDeleted Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Encryption
+  encryptedContent String?
+  encryptionKey   String?
+
+  // Relationships
+  sender     User        @relation("MessageSender", fields: [senderId], references: [id])
+  receiver   User?       @relation("MessageReceiver", fields: [receiverId], references: [id])
+  group      Group?      @relation(fields: [groupId], references: [id])
+  thread     Thread?     @relation(fields: [threadId], references: [id])
+  parent     Message?    @relation("MessageThread", fields: [parentId], references: [id])
+  replies    Message[]   @relation("MessageThread")
+  reactions  Reaction[]
+  attachments File[]
+  readReceipts ReadReceipt[]
+
+  @@map("messages")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+  CALL
+  SYSTEM
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  avatar      String?
+  isPrivate   Boolean  @default(false)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  creator   User          @relation(fields: [createdBy], references: [id])
+  members   GroupMember[]
+  messages  Message[]
+  threads   Thread[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id      String      @id @default(cuid())
+  userId  String
+  groupId String
+  role    GroupRole   @default(MEMBER)
+  joinedAt DateTime  @default(now())
+
+  // Relationships
+  user  User  @relation(fields: [userId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
+
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+enum GroupRole {
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+model Thread {
+  id        String   @id @default(cuid())
+  title     String
+  groupId   String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  group    Group     @relation(fields: [groupId], references: [id])
+  creator  User      @relation(fields: [createdBy], references: [id])
+  messages Message[]
+
+  @@map("threads")
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user    User    @relation(fields: [userId], references: [id])
+  message Message @relation(fields: [messageId], references: [id])
+
+  @@unique([userId, messageId, emoji])
+  @@map("reactions")
+}
+
+model ReadReceipt {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  readAt    DateTime @default(now())
+
+  // Relationships
+  user    User    @relation(fields: [userId], references: [id])
+  message Message @relation(fields: [messageId], references: [id])
+
+  @@unique([userId, messageId])
+  @@map("read_receipts")
+}
+
+// File Management
+model File {
+  id          String   @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  thumbnailUrl String?
+  uploadedBy  String
+  messageId   String?
+  createdAt   DateTime @default(now())
+
+  // MinIO/S3 metadata
+  bucket      String
+  key         String
+  etag        String?
+  virusScanStatus String @default("PENDING")
+
+  // Relationships
+  uploader User    @relation(fields: [uploadedBy], references: [id])
+  message  Message? @relation(fields: [messageId], references: [id])
+
+  @@map("files")
+}
+
+// Video Calls/Meetings
+model Call {
+  id        String     @id @default(cuid())
+  type      CallType   @default(VIDEO)
+  status    CallStatus @default(INITIATED)
+  startedAt DateTime   @default(now())
+  endedAt   DateTime?
+  duration  Int?       // in seconds
+  recordingUrl String?
+
+  // Relationships
+  participants CallParticipant[]
+
+  @@map("calls")
+}
+
+enum CallType {
+  VIDEO
+  AUDIO
+  SCREEN_SHARE
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  CONNECTED
+  ENDED
+  FAILED
+}
+
+model CallParticipant {
+  id     String @id @default(cuid())
+  callId String
+  userId String
+  joinedAt DateTime @default(now())
+  leftAt  DateTime?
+
+  // Relationships
+  call Call @relation(fields: [callId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([callId, userId])
+  @@map("call_participants")
+}
+
+// Search
+model SearchHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  query     String
+  results   Json
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("search_history")
+}
+
+// Notifications
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  content   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  MESSAGE
+  MENTION
+  CALL
+  FILE_SHARED
+  GROUP_INVITE
+  SYSTEM
+}
+
+// Marketplace
+model Theme {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  previewUrl  String
+  price       Int      @default(0) // in credits
+  category    String
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("themes")
+}
+
+model Sticker {
+  id          String   @id @default(cuid())
+  name        String
+  emoji       String
+  imageUrl    String
+  category    String
+  price       Int      @default(0) // in credits
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("stickers")
+}
+
+// ERP Integration
+model ERPUser {
+  id          String   @id @default(cuid())
+  erpId       String   @unique
+  email       String
+  firstName   String
+  lastName    String
+  department  String?
+  position    String?
+  isActive    Boolean  @default(true)
+  lastSync    DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@map("erp_users")
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  location    String?
+  attendees   Json     // Array of user IDs
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // External calendar integration
+  externalId  String?
+  source      String? // 'google', 'outlook', 'internal'
+
+  @@map("calendar_events")
+}

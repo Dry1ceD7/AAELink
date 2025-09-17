@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AAELink Debug</title>
+</head>
+<body>
+    <div id="root">
+        <h1>Debug Mode</h1>
+        <p>Checking React app...</p>
+    </div>
+    <script type="module">
+        console.log('Starting debug...');
+
+        // Test if we can import React
+        try {
+            const { default: React } = await import('/node_modules/.vite/deps/react.js');
+            console.log('React imported successfully:', React);
+
+            // Test if we can import ReactDOM
+            const { default: ReactDOM } = await import('/node_modules/.vite/deps/react-dom_client.js');
+            console.log('ReactDOM imported successfully:', ReactDOM);
+
+            // Test if we can import our App
+            try {
+                const { default: App } = await import('/src/App.tsx');
+                console.log('App imported successfully:', App);
+
+                // Try to render
+                const rootElement = document.getElementById('root');
+                if (rootElement) {
+                    rootElement.innerHTML = '<h1 style="color: green;">All imports successful!</h1>';
+                    ReactDOM.createRoot(rootElement).render(React.createElement(App));
+                }
+            } catch (appError) {
+                console.error('App import failed:', appError);
+                document.getElementById('root').innerHTML = '<h1 style="color: red;">App import failed: ' + appError.message + '</h1>';
+            }
+
+        } catch (reactError) {
+            console.error('React import failed:', reactError);
+            document.getElementById('root').innerHTML = '<h1 style="color: red;">React import failed: ' + reactError.message + '</h1>';
+        }
+    </script>
+</body>
+</html>

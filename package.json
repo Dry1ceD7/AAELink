@@ -1,36 +1,20 @@
 {
-  "name": "aaelink-v2",
+  "name": "aaelink",
   "version": "2.0.0",
   "private": true,
-  "description": "Advanced ID Asia Engineering Co., Ltd. - Company Workspace Application",
   "workspaces": [
-    "packages/backend",
-    "packages/frontend"
+    "packages/*"
   ],
   "scripts": {
-    "dev": "bun --bun run dev",
-    "build": "bun --bun run build",
-    "test": "bun --bun run test",
-    "test:e2e": "playwright test",
-    "lint": "eslint . --ext .ts,.tsx",
-    "format": "prettier --write .",
-    "docker:dev": "docker-compose -f docker-compose.dev.yml up",
-    "docker:prod": "docker-compose -f docker-compose.prod.yml up",
-    "storybook": "cd packages/frontend && yarn storybook",
-    "lighthouse": "lighthouse http://localhost:3000 --output html --output-path ./lighthouse-report.html"
+    "dev": "concurrently \"bun run dev --filter=@aaelink/backend\" \"bun run dev --filter=@aaelink/frontend\"",
+    "build": "bun run build --filter=@aaelink/backend && bun run build --filter=@aaelink/frontend",
+    "test": "bun run test --filter=@aaelink/backend && bun run test --filter=@aaelink/frontend",
+    "lint": "bun run lint --filter=@aaelink/backend && bun run lint --filter=@aaelink/frontend",
+    "typecheck": "cd packages/backend && bun run typecheck && cd ../frontend && bun run typecheck",
+    "e2e": "bun run e2e --filter=@aaelink/frontend",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist"
   },
   "devDependencies": {
-    "@playwright/test": "^1.40.0",
-    "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.55.0",
-    "lighthouse": "^11.4.0",
-    "prettier": "^3.1.0",
-    "typescript": "^5.3.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "packageManager": "yarn@4.0.2"
+    "concurrently": "^8.2.2"
+  }
 }

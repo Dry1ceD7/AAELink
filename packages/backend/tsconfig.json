@@ -11,7 +11,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["bun-types"],
+    "types": ["bun-types", "./src/types/bun"],
     "paths": {
       "@/*": ["./src/*"]
     },

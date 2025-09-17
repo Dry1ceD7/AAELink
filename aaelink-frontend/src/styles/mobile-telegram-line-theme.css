@@ -1,0 +1,542 @@
+/**
+ * AAELink v1.1 - Mobile Telegram+LINE Theme System
+ * Telegram Core + LINE Personality
+ * Mobile-First Enterprise Design System
+ */
+
+:root {
+  /* Mobile-specific Color Palette */
+  --mobile-bg-primary: #ffffff;
+  --mobile-bg-secondary: #f8f9fa;
+  --mobile-bg-tertiary: #e9ecef;
+  --mobile-bg-elevated: #ffffff;
+
+  /* Telegram-inspired Colors */
+  --telegram-blue: #0088cc;
+  --telegram-blue-light: #e3f2fd;
+  --telegram-green: #4caf50;
+  --telegram-red: #f44336;
+  --telegram-orange: #ff9800;
+  --telegram-purple: #9c27b0;
+
+  /* LINE-inspired Colors */
+  --line-green: #00c300;
+  --line-green-light: #e8f5e8;
+  --line-yellow: #ffeb3b;
+  --line-pink: #e91e63;
+  --line-blue: #2196f3;
+
+  /* AAE Brand Colors (Mobile) */
+  --aae-blue-mobile: #2563eb;
+  --aae-blue-light-mobile: #dbeafe;
+  --aae-blue-dark-mobile: #1d4ed8;
+
+  /* Text Colors */
+  --text-primary-mobile: #1a1a1a;
+  --text-secondary-mobile: #6c757d;
+  --text-tertiary-mobile: #adb5bd;
+  --text-inverse-mobile: #ffffff;
+
+  /* Border Colors */
+  --border-light-mobile: #e9ecef;
+  --border-medium-mobile: #dee2e6;
+  --border-dark-mobile: #adb5bd;
+
+  /* Shadow System (Mobile) */
+  --shadow-mobile-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-mobile-md: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+  --shadow-mobile-lg: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23);
+
+  /* Mobile Spacing */
+  --mobile-space-xs: 4px;
+  --mobile-space-sm: 8px;
+  --mobile-space-md: 16px;
+  --mobile-space-lg: 24px;
+  --mobile-space-xl: 32px;
+  --mobile-space-2xl: 48px;
+
+  /* Mobile Typography */
+  --mobile-text-xs: 12px;
+  --mobile-text-sm: 14px;
+  --mobile-text-base: 16px;
+  --mobile-text-lg: 18px;
+  --mobile-text-xl: 20px;
+  --mobile-text-2xl: 24px;
+  --mobile-text-3xl: 30px;
+
+  /* Mobile Border Radius */
+  --mobile-radius-sm: 4px;
+  --mobile-radius-md: 8px;
+  --mobile-radius-lg: 12px;
+  --mobile-radius-xl: 16px;
+  --mobile-radius-full: 50px;
+
+  /* Mobile Transitions */
+  --mobile-transition-fast: 150ms ease-out;
+  --mobile-transition-normal: 250ms ease-out;
+  --mobile-transition-slow: 350ms ease-out;
+
+  /* Mobile Touch Targets */
+  --touch-target-min: 44px;
+  --touch-target-comfortable: 48px;
+  --touch-target-large: 56px;
+}
+
+/* Mobile Base Styles */
+@media (max-width: 767px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  body {
+    background-color: var(--mobile-bg-primary);
+    color: var(--text-primary-mobile);
+    font-size: var(--mobile-text-base);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Mobile Layout System */
+  .mobile-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .mobile-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: var(--mobile-bg-elevated);
+    border-bottom: 1px solid var(--border-light-mobile);
+    padding: var(--mobile-space-md);
+    box-shadow: var(--shadow-mobile-sm);
+  }
+
+  .mobile-content {
+    flex: 1;
+    padding: var(--mobile-space-md);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background-color: var(--mobile-bg-elevated);
+    border-top: 1px solid var(--border-light-mobile);
+    padding: var(--mobile-space-sm) 0;
+    box-shadow: var(--shadow-mobile-md);
+  }
+
+  .mobile-bottom-nav-items {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    max-width: 100%;
+  }
+
+  .mobile-bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--mobile-space-sm);
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    text-decoration: none;
+    color: var(--text-secondary-mobile);
+    transition: color var(--mobile-transition-fast);
+  }
+
+  .mobile-bottom-nav-item.active {
+    color: var(--aae-blue-mobile);
+  }
+
+  .mobile-bottom-nav-item:active {
+    transform: scale(0.95);
+  }
+
+  .mobile-bottom-nav-icon {
+    width: 24px;
+    height: 24px;
+    margin-bottom: var(--mobile-space-xs);
+  }
+
+  .mobile-bottom-nav-label {
+    font-size: var(--mobile-text-xs);
+    font-weight: 500;
+  }
+}
+
+/* Telegram-inspired Mobile Components */
+.telegram-mobile-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-comfortable);
+  padding: var(--mobile-space-sm) var(--mobile-space-md);
+  border: none;
+  border-radius: var(--mobile-radius-lg);
+  font-size: var(--mobile-text-base);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--mobile-transition-fast);
+  background-color: var(--telegram-blue);
+  color: var(--text-inverse-mobile);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.telegram-mobile-button:hover {
+  background-color: #0077b5;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-mobile-sm);
+}
+
+.telegram-mobile-button:active {
+  background-color: #006699;
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.telegram-mobile-button--secondary {
+  background-color: transparent;
+  color: var(--telegram-blue);
+  border: 1px solid var(--telegram-blue);
+}
+
+.telegram-mobile-button--secondary:hover {
+  background-color: var(--telegram-blue-light);
+}
+
+.telegram-mobile-button--large {
+  min-height: var(--touch-target-large);
+  padding: var(--mobile-space-md) var(--mobile-space-lg);
+  font-size: var(--mobile-text-lg);
+}
+
+.telegram-mobile-input {
+  width: 100%;
+  min-height: var(--touch-target-comfortable);
+  padding: var(--mobile-space-sm) var(--mobile-space-md);
+  border: 1px solid var(--border-medium-mobile);
+  border-radius: var(--mobile-radius-lg);
+  background-color: var(--mobile-bg-elevated);
+  color: var(--text-primary-mobile);
+  font-size: var(--mobile-text-base);
+  transition: all var(--mobile-transition-fast);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.telegram-mobile-input:focus {
+  outline: none;
+  border-color: var(--telegram-blue);
+  box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.1);
+}
+
+.telegram-mobile-input::placeholder {
+  color: var(--text-tertiary-mobile);
+}
+
+/* LINE-inspired Mobile Components */
+.line-mobile-card {
+  background-color: var(--mobile-bg-elevated);
+  border: 1px solid var(--border-light-mobile);
+  border-radius: var(--mobile-radius-xl);
+  padding: var(--mobile-space-lg);
+  margin-bottom: var(--mobile-space-md);
+  box-shadow: var(--shadow-mobile-sm);
+  transition: all var(--mobile-transition-normal);
+}
+
+.line-mobile-card:hover {
+  box-shadow: var(--shadow-mobile-md);
+  transform: translateY(-2px);
+}
+
+.line-mobile-card--green {
+  border-left: 4px solid var(--line-green);
+}
+
+.line-mobile-card--blue {
+  border-left: 4px solid var(--line-blue);
+}
+
+.line-mobile-card--pink {
+  border-left: 4px solid var(--line-pink);
+}
+
+/* Mobile Chat Interface */
+.mobile-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.mobile-chat-header {
+  display: flex;
+  align-items: center;
+  padding: var(--mobile-space-md);
+  background-color: var(--mobile-bg-elevated);
+  border-bottom: 1px solid var(--border-light-mobile);
+  box-shadow: var(--shadow-mobile-sm);
+}
+
+.mobile-chat-messages {
+  flex: 1;
+  padding: var(--mobile-space-md);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-chat-input-container {
+  padding: var(--mobile-space-md);
+  background-color: var(--mobile-bg-elevated);
+  border-top: 1px solid var(--border-light-mobile);
+}
+
+.mobile-message {
+  margin-bottom: var(--mobile-space-md);
+  display: flex;
+  align-items: flex-start;
+}
+
+.mobile-message--sent {
+  justify-content: flex-end;
+}
+
+.mobile-message--received {
+  justify-content: flex-start;
+}
+
+.mobile-message-bubble {
+  max-width: 80%;
+  padding: var(--mobile-space-sm) var(--mobile-space-md);
+  border-radius: var(--mobile-radius-lg);
+  font-size: var(--mobile-text-base);
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.mobile-message-bubble--sent {
+  background-color: var(--telegram-blue);
+  color: var(--text-inverse-mobile);
+  border-bottom-right-radius: var(--mobile-radius-sm);
+}
+
+.mobile-message-bubble--received {
+  background-color: var(--mobile-bg-secondary);
+  color: var(--text-primary-mobile);
+  border-bottom-left-radius: var(--mobile-space-sm);
+}
+
+/* Mobile Swipe Gestures */
+.mobile-swipe-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.mobile-swipe-content {
+  transition: transform var(--mobile-transition-normal);
+}
+
+.mobile-swipe-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  background-color: var(--telegram-red);
+  color: var(--text-inverse-mobile);
+  padding: 0 var(--mobile-space-md);
+  transform: translateX(100%);
+  transition: transform var(--mobile-transition-normal);
+}
+
+.mobile-swipe-container.swiped .mobile-swipe-actions {
+  transform: translateX(0);
+}
+
+/* Mobile Pull-to-Refresh */
+.mobile-pull-refresh {
+  position: relative;
+  overflow: hidden;
+}
+
+.mobile-pull-refresh-indicator {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
+  color: var(--text-secondary-mobile);
+  font-size: var(--mobile-text-sm);
+  transition: top var(--mobile-transition-normal);
+}
+
+.mobile-pull-refresh.pulling .mobile-pull-refresh-indicator {
+  top: 0;
+}
+
+.mobile-pull-refresh.refreshing .mobile-pull-refresh-indicator {
+  top: 0;
+  color: var(--telegram-blue);
+}
+
+/* Mobile Voice Message */
+.mobile-voice-message {
+  display: flex;
+  align-items: center;
+  padding: var(--mobile-space-md);
+  background-color: var(--mobile-bg-secondary);
+  border-radius: var(--mobile-radius-lg);
+  margin-bottom: var(--mobile-space-md);
+}
+
+.mobile-voice-message-button {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--mobile-radius-full);
+  background-color: var(--telegram-blue);
+  color: var(--text-inverse-mobile);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: var(--mobile-space-md);
+  cursor: pointer;
+  transition: all var(--mobile-transition-fast);
+}
+
+.mobile-voice-message-button:active {
+  transform: scale(0.95);
+  background-color: #0077b5;
+}
+
+.mobile-voice-message-info {
+  flex: 1;
+}
+
+.mobile-voice-message-duration {
+  font-size: var(--mobile-text-sm);
+  color: var(--text-secondary-mobile);
+  margin-bottom: var(--mobile-space-xs);
+}
+
+.mobile-voice-message-waveform {
+  height: 20px;
+  background-color: var(--border-light-mobile);
+  border-radius: var(--mobile-radius-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Mobile Sticker Support */
+.mobile-sticker {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: var(--mobile-radius-md);
+}
+
+.mobile-sticker--large {
+  width: 128px;
+  height: 128px;
+}
+
+.mobile-sticker--animated {
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Mobile Haptic Feedback */
+.mobile-haptic-light {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+}
+
+.mobile-haptic-medium {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.2);
+}
+
+.mobile-haptic-heavy {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.3);
+}
+
+/* Mobile Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-swipe-content,
+  .mobile-pull-refresh-indicator,
+  .mobile-sticker--animated {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* Mobile Dark Mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mobile-bg-primary: #1a1a1a;
+    --mobile-bg-secondary: #2d2d2d;
+    --mobile-bg-tertiary: #404040;
+    --mobile-bg-elevated: #2d2d2d;
+
+    --text-primary-mobile: #ffffff;
+    --text-secondary-mobile: #b3b3b3;
+    --text-tertiary-mobile: #808080;
+
+    --border-light-mobile: #404040;
+    --border-medium-mobile: #4d4d4d;
+    --border-dark-mobile: #666666;
+  }
+}
+
+/* Mobile Landscape Orientation */
+@media (max-width: 767px) and (orientation: landscape) {
+  .mobile-bottom-nav {
+    display: none;
+  }
+
+  .mobile-chat-container {
+    height: 100vh;
+  }
+
+  .mobile-content {
+    padding-bottom: var(--mobile-space-md);
+  }
+}
+
+/* Mobile High DPI Displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .mobile-bottom-nav-icon,
+  .mobile-sticker {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+}

@@ -1,13 +1,10 @@
-import React, { ReactNode, createContext, useContext, useEffect, useState } from 'react';
-
-type Theme = 'light' | 'dark' | 'high-contrast';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface ThemeContextType {
-  theme: Theme;
+  theme: 'light' | 'dark' | 'high-contrast';
   seniorMode: boolean;
-  setTheme: (theme: Theme) => void;
-  setSeniorMode: (enabled: boolean) => void;
   toggleTheme: () => void;
+  toggleSeniorMode: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -25,60 +22,41 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'high-contrast'>('light');
   const [seniorMode, setSeniorMode] = useState(false);
 
   useEffect(() => {
     // Load theme from localStorage
-    const savedTheme = localStorage.getItem('aaelink-theme') as Theme;
-    const savedSeniorMode = localStorage.getItem('aaelink-senior-mode') === 'true';
-
-    if (savedTheme) {
-      setTheme(savedTheme);
-    }
-    if (savedSeniorMode) {
-      setSeniorMode(savedSeniorMode);
-    }
+    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | 'high-contrast';
+    const savedSeniorMode = localStorage.getItem('seniorMode') === 'true';
+    
+    if (savedTheme) setTheme(savedTheme);
+    if (savedSeniorMode) setSeniorMode(savedSeniorMode);
   }, []);
 
   useEffect(() => {
     // Apply theme to document
-    const root = document.documentElement;
-
-    // Remove all theme classes
-    root.classList.remove('light', 'dark', 'high-contrast');
-    // Add current theme
-    root.classList.add(theme);
-
-    // Toggle senior mode
-    if (seniorMode) {
-      root.classList.add('senior-mode');
-    } else {
-      root.classList.remove('senior-mode');
-    }
-
-    // Save to localStorage
-    localStorage.setItem('aaelink-theme', theme);
-    localStorage.setItem('aaelink-senior-mode', seniorMode.toString());
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('senior-mode', seniorMode);
   }, [theme, seniorMode]);
 
   const toggleTheme = () => {
-    setTheme(prev => {
-      switch (prev) {
-        case 'light': return 'dark';
-        case 'dark': return 'high-contrast';
-        case 'high-contrast': return 'light';
-        default: return 'light';
-      }
-    });
+    const newTheme = theme === 'light' ? 'dark' : theme === 'dark' ? 'high-contrast' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+  };
+
+  const toggleSeniorMode = () => {
+    const newSeniorMode = !seniorMode;
+    setSeniorMode(newSeniorMode);
+    localStorage.setItem('seniorMode', newSeniorMode.toString());
   };
 
   const value = {
     theme,
     seniorMode,
-    setTheme,
-    setSeniorMode,
     toggleTheme,
+    toggleSeniorMode,
   };
 
   return (

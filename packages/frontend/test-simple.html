@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AAELink Simple Test</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root">
+        <h1>Loading...</h1>
+    </div>
+    <script type="text/babel">
+        const { useState } = React;
+
+        function SimpleApp() {
+            const [count, setCount] = useState(0);
+
+            return (
+                <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+                    <h1 style={{ color: 'green' }}>AAELink - CDN React Working!</h1>
+                    <p>If you can see this, React is working properly!</p>
+                    <p>Current time: {new Date().toLocaleString()}</p>
+                    <div style={{ marginTop: '20px' }}>
+                        <button
+                            onClick={() => setCount(count + 1)}
+                            style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                marginRight: '10px'
+                            }}
+                        >
+                            Count: {count}
+                        </button>
+                        <button
+                            onClick={() => alert('Button clicked!')}
+                            style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#28a745',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Test Alert
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<SimpleApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>

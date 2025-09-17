@@ -218,7 +218,7 @@ class WebSocketService {
 }
 
 // Create singleton instance
-const wsService = new WebSocketService('ws://localhost:3001/ws');
+const wsService = new WebSocketService('ws://localhost:3002/ws');
 
 export { wsService as WebSocketService };
 export type { WebSocketCallbacks, WebSocketMessage };

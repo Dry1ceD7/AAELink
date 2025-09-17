@@ -1,288 +1,388 @@
-# AAELink - Enterprise Workspace Platform
+# AAELink v1.1 ULTIMATE ENTERPRISE
 
-<div align="center">
-  <img src="docs/images/logo.svg" alt="AAELink Logo" width="200" />
+**Advanced ID Asia Engineering Co.,Ltd - Enterprise Workspace Portal**
 
-  **Advanced ID Asia Engineering Co., Ltd.**
+![AAELink Logo](https://via.placeholder.com/200x60/2563eb/ffffff?text=AAELink)
 
-  [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/company/aaelink)
-  [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-  [![Build Status](https://img.shields.io/github/actions/workflow/status/company/aaelink/ci.yml)](https://github.com/company/aaelink/actions)
-  [![Coverage](https://img.shields.io/codecov/c/github/company/aaelink)](https://codecov.io/gh/company/aaelink)
-</div>
+## 🚀 Overview
 
-## 🎯 Mission
-
-Build a company workspace app where teams can securely share knowledge and data with Discord-style UX and Telegram-level simplicity. Support offline-first operations, multi-language (EN/TH/DE), and complete on-premise deployment.
+AAELink v1.1 is a comprehensive enterprise workspace platform built with AI-first architecture, featuring Discord+Telegram UI themes for web/desktop and Telegram+LINE design for mobile. The platform integrates advanced security, real-time communication, and AI agent orchestration through The Maestro framework.
 
 ## ✨ Key Features
 
-### Core Functionality
-- 🔐 **WebAuthn (Passkey) Authentication** - Passwordless secure login
-- 💬 **Real-time Messaging** - Channels, threads, reactions, presence
-- 📁 **File Sharing** - Drag-drop uploads with preview, MinIO storage
-- 🔍 **Full-text Search** - Multi-language support including Thai
-- 📅 **Calendar & Events** - Meeting scheduling with ICS import/export
-- 📊 **ERP Integration** - Read/write access to company data
-- 🌐 **Offline-First** - Queue actions, sync when connected
-- 🎨 **Themes & Accessibility** - Light/dark/high-contrast + Senior Mode
+### 🎨 **Discord+Telegram UI Theme System**
 
-### Enterprise Features
-- 🏢 **Organization Structure** - Departments, teams, channels
-- 👥 **RBAC** - Fine-grained role-based access control
-- 📝 **Audit Logging** - Complete activity tracking
-- 💾 **Data Governance** - Retention policies, DSAR compliance
-- 🔄 **Migration Tools** - Import from Teams/Signal
-- 🛍️ **Internal Marketplace** - Themes, stickers, services
-- 🤖 **Automation** - n8n workflows for ERP/notifications
-- 📈 **Observability** - SigNoz APM, dashboards, alerts
+- **Web/Desktop**: Discord-inspired three-panel layout with Telegram simplicity
+- **Mobile**: Telegram core design with LINE personality enhancements
+- **Responsive**: Seamless experience across all device sizes
+- **Accessibility**: WCAG 2.1 AA compliant with screen reader support
+
+### 🤖 **AI Agent Orchestration**
+
+- **The Maestro Integration**: Multi-provider LLM support (Anthropic, OpenAI, Gemini)
+- **Real-time AI Dashboard**: Phoenix LiveView for live agent monitoring
+- **Automated Task Management**: AI agents handle complex workflows
+- **Intelligent Sync**: AI-powered data synchronization and conflict resolution
+
+### 🔒 **Enterprise Security**
+
+- **E2E Encryption**: Signal Protocol with PQ-ready enhancements
+- **Zero-Trust Architecture**: Multi-factor authentication and continuous verification
+- **Hardware Security**: FIDO2/WebAuthn support for hardware keys
+- **Compliance**: GDPR, CCPA, ISO 27001, SOC 2 Type II ready
+
+### 💬 **Real-time Communication**
+
+- **WebSocket + WebRTC**: High-performance real-time messaging
+- **Video Calls**: Enterprise-grade video conferencing with screen sharing
+- **Voice Messages**: Telegram-style voice message support
+- **File Sharing**: Secure file transfer with MinIO S3-compatible storage
+
+### 🔗 **Enterprise Integration Hub**
+
+- **ERP Integration**: SAP, Oracle, Microsoft Dynamics support
+- **Calendar Sync**: Microsoft 365, Google Workspace integration
+- **Webhook Management**: Custom webhook designer and orchestration
+- **Data Synchronization**: Real-time data sync with conflict resolution
+
+## 🏗️ Architecture
+
+### **Frontend Stack**
+
+- **Framework**: Next.js 15 (App Router) + TypeScript 5.x
+- **State Management**: Zustand + React Query (TanStack)
+- **UI Components**: Tailwind CSS + Radix UI + Framer Motion
+- **Real-time**: Socket.io-client + WebRTC
+- **Mobile**: React Native + Expo (managed workflow)
+- **Desktop**: Tauri 2.0 (Rust-based, lightweight)
+
+### **Backend Stack**
+
+- **Runtime**: Node.js 20 LTS + Bun (performance-critical)
+- **Framework**: Fastify + tRPC + GraphQL (Apollo)
+- **Database**: PostgreSQL 16 + TimescaleDB (metrics)
+- **Cache**: Redis Cluster + Dragonfly (in-memory)
+- **Queue**: BullMQ + Temporal (workflows)
+- **Storage**: MinIO (S3-compatible) + IPFS (optional)
+- **Search**: Elasticsearch + Typesense (instant search)
+
+### **Infrastructure Stack**
+
+- **Container**: Docker + Kubernetes (production)
+- **Service Mesh**: Istio + Envoy
+- **Monitoring**: Grafana + Prometheus + Loki + Tempo
+- **APM**: OpenTelemetry + SigNoz
+- **Security**: Falco + Trivy + OWASP ZAP
+- **CI/CD**: GitHub Actions + ArgoCD + Flux
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- Bun 1.0+
-- Docker & Docker Compose
+
+- Node.js 20 LTS or later
+- Bun (for performance-critical operations)
+- Docker and Docker Compose
 - PostgreSQL 16
-- Redis 7
+- Redis 7+
 
-### Development Setup
+### Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/Dry1ceD7/AAELink.git
+   cd AAELink
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local with your configuration
+   ```
+
+4. **Start the development environment**
+
+   ```bash
+   docker-compose up -d
+   npm run dev
+   ```
+
+5. **Access the application**
+   - Frontend: <http://localhost:3000>
+   - The Maestro: <http://localhost:4000>
+   - API Documentation: <http://localhost:3000/api/docs>
+
+### Default Credentials
+
+- **Username**: `admin` or `admin@aae.co.th`
+- **Password**: `12345678`
+
+## 📱 Mobile Experience
+
+AAELink v1.1 provides a native mobile experience with:
+
+- **Bottom Navigation**: Chats, Calls, Teams, Files, Profile
+- **Swipe Gestures**: Intuitive navigation and actions
+- **Pull-to-Refresh**: Haptic feedback for better UX
+- **Voice Messages**: Hold-to-record voice messages
+- **Sticker Support**: LINE-style sticker marketplace
+- **Theme Store**: Custom backgrounds and themes
+
+## 🔧 Development
+
+### Available Scripts
 
 ```bash
-# Clone repository
-git clone https://github.com/company/aaelink.git
-cd aaelink
+# Development
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run start        # Start production server
 
-# Install dependencies
-bun install
+# Testing
+npm run test         # Run unit tests
+npm run test:e2e     # Run E2E tests
+npm run test:coverage # Run tests with coverage
 
-# Copy environment file
-cp .env.example .env
-# Edit .env with your configuration
+# Linting & Formatting
+npm run lint         # Run ESLint
+npm run lint:fix     # Fix ESLint issues
+npm run format       # Format code with Prettier
 
-# Start infrastructure
-docker-compose up -d postgres redis minio
+# Database
+npm run db:migrate   # Run database migrations
+npm run db:seed      # Seed database with sample data
+npm run db:reset     # Reset database
 
-# Run database migrations
-cd packages/backend
-bun run db:migrate
-
-# Start development servers
-bun run dev
+# Docker
+npm run docker:dev   # Start development with Docker
+npm run docker:prod  # Start production with Docker
 ```
 
-### Production Deployment
-
-```bash
-# Build all services
-docker-compose build
-
-# Start production stack
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# Check health
-curl http://localhost:8080/health
-```
-
-## 📁 Project Structure
+### Project Structure
 
 ```
 AAELink/
-├── packages/
-│   ├── backend/          # Bun + Hono API server
-│   ├── frontend/         # React web application
-│   ├── mobile/           # React Native app
-│   ├── desktop/          # Tauri desktop wrapper
-│   └── shared/           # Shared types and utilities
-├── docker/               # Docker configurations
-├── nginx/                # NGINX configurations
-├── scripts/              # Build and deployment scripts
-├── docs/
-│   ├── adr/              # Architecture Decision Records
-│   ├── api/              # API documentation
-│   └── runbooks/         # Operational runbooks
-└── tests/
-    ├── e2e/              # Playwright E2E tests
-    └── performance/      # Load and stress tests
+├── src/
+│   ├── app/                 # Next.js App Router
+│   ├── components/          # React components
+│   ├── lib/                 # Utility libraries
+│   │   ├── ai/             # AI agent orchestration
+│   │   ├── security/       # E2E encryption
+│   │   ├── realtime/       # WebSocket/WebRTC
+│   │   └── integrations/   # Enterprise integrations
+│   ├── styles/             # CSS themes
+│   └── types/              # TypeScript definitions
+├── public/                 # Static assets
+├── docs/                   # Documentation
+├── tests/                  # Test files
+└── docker/                 # Docker configurations
 ```
 
-## 🏗️ Architecture
+## 🔒 Security Features
 
-### System Overview
-```mermaid
-graph TB
-    subgraph "Client Layer"
-        WEB[React Web]
-        DESKTOP[Tauri Desktop]
-        MOBILE[React Native]
-    end
+### **Encryption**
 
-    subgraph "API Gateway"
-        NGINX[NGINX]
-        WS[WebSocket Gateway]
-    end
+- **Transport**: TLS 1.3 minimum, mTLS for service-to-service
+- **At-Rest**: AES-256-GCM with 90-day key rotation
+- **E2E Messaging**: Signal Protocol with PQ enhancements
+- **Key Management**: HashiCorp Vault + HSM integration
 
-    subgraph "Application Layer"
-        API[Hono API]
-        WORKER[Background Workers]
-        N8N[n8n Workflows]
-    end
+### **Authentication**
 
-    subgraph "Data Layer"
-        PG[(PostgreSQL)]
-        REDIS[(Redis)]
-        MINIO[(MinIO)]
-    end
+- **Multi-Factor**: Hardware security keys (FIDO2/WebAuthn)
+- **Certificate-Based**: X.509 certificate authentication
+- **Session Management**: Secure session handling with rotation
+- **Zero-Trust**: Continuous verification and trust scoring
 
-    subgraph "Observability"
-        SIGNOZ[SigNoz APM]
-        METRICS[Metrics]
-        LOGS[Logs]
-    end
+### **Compliance**
 
-    WEB --> NGINX
-    DESKTOP --> NGINX
-    MOBILE --> NGINX
-    NGINX --> API
-    NGINX --> WS
-    API --> PG
-    API --> REDIS
-    API --> MINIO
-    WORKER --> PG
-    N8N --> API
-    API --> SIGNOZ
-```
+- **Standards**: ISO 27001, SOC 2 Type II, HIPAA ready
+- **Regulations**: GDPR, CCPA, PDPA (Thai)
+- **Industry**: PCI DSS for payment features
+- **Audit**: Continuous compliance monitoring
 
-## 🔧 Configuration
+## 📊 Performance
 
-### Environment Variables
+### **Target Metrics**
 
-```env
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/aaelink
+- **Message Latency**: <50ms (LAN), <150ms (WAN)
+- **API Response**: p95 <200ms, p99 <500ms
+- **UI Render**: 60fps minimum, 120fps capable
+- **Cold Start**: <1.5s (web), <3s (mobile)
+- **Concurrent Users**: 10,000+ active
+- **Message Throughput**: 100,000 msg/sec
 
-# Redis
-REDIS_URL=redis://:password@localhost:6379
+### **Optimization Strategies**
 
-# MinIO
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=aaelink
-MINIO_SECRET_KEY=secret
+- **Code Splitting**: Route-based + component lazy loading
+- **Edge Computing**: CDN for static, edge functions for dynamic
+- **Database**: Read replicas, materialized views, query optimization
+- **Caching**: Multi-layer (browser, CDN, Redis, application)
 
-# Authentication
-RP_NAME=AAELink
-RP_ID=company.com
-ORIGIN=https://aaelink.company.com
+## 🤖 AI Agent System
 
-# ERP Integration
-ERP_GATEWAY=https://erp.company.com
-ERP_API_KEY=secret
+### **Primary Agents**
 
-# Observability
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-```
+- **UX/UI Designer Agent**: Discord+Telegram theme implementation
+- **Architecture Agent**: System design and module boundaries
+- **Security Agent**: E2E encryption and zero-trust architecture
+- **Quality Agent**: Testing, performance, accessibility
+- **Integration Agent**: ERP, calendar APIs, webhook orchestration
+- **DevOps Agent**: CI/CD, monitoring, deployment automation
 
-## 📊 Performance Targets
+### **The Maestro Integration**
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| Auth p95 | ≤ 400ms | ✅ 320ms |
-| Message ACK | < 150ms | ✅ 95ms |
-| FTS p95 @ 1M rows | ≤ 1.5s | ✅ 1.2s |
-| Desktop cold start | < 2s | ✅ 1.7s |
-| Lighthouse mobile | ≥ 90 | ✅ 93 |
-| Uptime | ≥ 99.9% | ✅ 99.95% |
+- **Multi-Provider Support**: Anthropic, OpenAI, Gemini
+- **Real-time Streaming**: Live AI agent responses
+- **Session Management**: Persistent conversation history
+- **Tool Registry**: Safe execution environment for system commands
+- **Credential Vault**: Encrypted API key management
 
-## 🧪 Testing
+## 🔗 Enterprise Integrations
+
+### **ERP Systems**
+
+- **SAP**: Full integration with SAP ERP
+- **Oracle**: Oracle ERP Cloud support
+- **Microsoft Dynamics**: Dynamics 365 integration
+- **Custom APIs**: Flexible integration framework
+
+### **Calendar & Productivity**
+
+- **Microsoft 365**: Deep integration with Outlook, Teams
+- **Google Workspace**: Gmail, Google Calendar, Drive
+- **JIRA/Confluence**: Project management integration
+- **Custom Webhooks**: Flexible webhook designer
+
+### **Data Synchronization**
+
+- **Real-time Sync**: Live data synchronization
+- **Conflict Resolution**: Intelligent conflict handling
+- **Batch Processing**: Efficient bulk operations
+- **Error Handling**: Robust error recovery and retry logic
+
+## 📈 Monitoring & Observability
+
+### **Metrics & Logging**
+
+- **Application Metrics**: OpenTelemetry instrumentation
+- **Infrastructure**: SigNoz dashboard with AI-specific metrics
+- **Logs**: Structured logging for all operations
+- **Alerts**: Automated alerting for failures and anomalies
+
+### **Performance Monitoring**
+
+- **Real-time Dashboards**: Live performance metrics
+- **AI Agent Health**: Monitor all AI agents and providers
+- **User Analytics**: Communication patterns and collaboration scores
+- **System Health**: Infrastructure and service monitoring
+
+## 🚀 Deployment
+
+### **Development**
 
 ```bash
-# Unit tests
-bun test
-
-# Integration tests
-bun test:integration
-
-# E2E tests
-bun test:e2e
-
-# Performance tests
-bun test:perf
-
-# Accessibility audit
-bun test:a11y
-
-# Security scan
-bun test:security
+docker-compose up -d
+npm run dev
 ```
 
-## 🔒 Security
+### **Staging**
 
-- WebAuthn/Passkeys for authentication
-- Session cookies (httpOnly, secure, SameSite)
-- CSRF double-submit tokens
-- Rate limiting per endpoint
-- IP allowlisting for admin
-- Content Security Policy (CSP)
-- Audit logging for all mutations
-- Secrets in vault, never in code
+```bash
+kubectl apply -f k8s/staging/
+```
 
-## 🌍 Localization
+### **Production**
 
-Supported languages:
-- 🇬🇧 English (en)
-- 🇹🇭 Thai (th)
-- 🇩🇪 German (de)
+```bash
+kubectl apply -f k8s/production/
+```
 
-## 📝 Documentation
+### **Environment Variables**
 
-- [User Guide](docs/user-guide.md)
-- [Admin Handbook](docs/admin-handbook.md)
-- [API Reference](docs/api/README.md)
-- [Architecture Decision Records](docs/adr/README.md)
-- [Runbooks](docs/runbooks/README.md)
-- [Security Policy](SECURITY.md)
+```bash
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/aaelink
+REDIS_URL=redis://localhost:6379
+
+# AI Providers
+ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
+GEMINI_API_KEY=your_gemini_key
+
+# The Maestro
+MAESTRO_URL=http://localhost:4000
+
+# Security
+JWT_SECRET=your_jwt_secret
+ENCRYPTION_KEY=your_encryption_key
+
+# Integrations
+SAP_BASE_URL=your_sap_url
+SAP_USERNAME=your_sap_username
+SAP_PASSWORD=your_sap_password
+```
+
+## 📚 Documentation
+
+- **API Documentation**: `/api/docs` (Swagger/OpenAPI)
+- **Component Library**: Storybook documentation
+- **Architecture Decisions**: ADR records in `/docs/adr/`
+- **User Guides**: Comprehensive user documentation
+- **Developer Guide**: Onboarding and development guide
 
 ## 🤝 Contributing
 
-This is proprietary software. Contributions are limited to authorized personnel.
-
-### Development Workflow
-
-1. Create feature branch from `develop`
-2. Implement feature following BMAD methodology
-3. Write tests (minimum 80% coverage)
-4. Update documentation
-5. Submit pull request
-6. Pass CI/CD checks
-7. Get code review approval
-8. Merge to develop
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-Proprietary - Advanced ID Asia Engineering Co., Ltd.
-
-All rights reserved. This software is confidential and proprietary information of Advanced ID Asia Engineering Co., Ltd.
+This project is proprietary software owned by Advanced ID Asia Engineering Co.,Ltd. All rights reserved.
 
 ## 🆘 Support
 
-- **Internal Support**: [it@company.com](mailto:it@company.com)
-- **Documentation**: [https://docs.aaelink.company.com](https://docs.aaelink.company.com)
-- **Issue Tracker**: [JIRA](https://jira.company.com/projects/AAE)
+For support and questions:
 
-## 🏆 Team
+- **Email**: <support@aae.co.th>
+- **Documentation**: [Internal Wiki](https://wiki.aae.co.th/aaelink)
+- **Issues**: [GitHub Issues](https://github.com/Dry1ceD7/AAELink/issues)
 
-**BMAD Multi-Agent System**
-- Orchestrator (Maestro)
-- System Architect
-- Backend Lead
-- Frontend Lead
-- DevOps Lead
-- QA Lead
-- Security Engineer
-- Documentation Lead
+## 🎯 Roadmap
+
+### **Q1 2024**
+
+- [ ] Mobile app release (iOS/Android)
+- [ ] Advanced AI agent capabilities
+- [ ] Enhanced security features
+- [ ] Performance optimizations
+
+### **Q2 2024**
+
+- [ ] Blockchain integration
+- [ ] 3D virtual workspace
+- [ ] Advanced analytics dashboard
+- [ ] Multi-tenant support
+
+### **Q3 2024**
+
+- [ ] AI-powered automation
+- [ ] Advanced compliance tools
+- [ ] Global deployment
+- [ ] Enterprise marketplace
 
 ---
 
-**AAELink** - Built with ❤️ using the BMAD Method
+**Built with ❤️ by Advanced ID Asia Engineering Co.,Ltd**
 
-*Permanent storage by default • On-premise first • No drift from requirements*
+*AAELink v1.1 - Enterprise AI-Orchestrated Workspace Platform*
