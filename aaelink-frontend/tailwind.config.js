@@ -9,9 +9,24 @@ module.exports = {
     extend: {
       colors: {
         'aae-blue': '#2563eb',
-        'aae-light-blue': '#dbeafe',
-        'aae-dark-blue': '#1e40af',
-      }
+        'aae-blue-dark': '#1d4ed8',
+        'aae-gray': '#6b7280',
+        'aae-gray-dark': '#374151',
+      },
+      animation: {
+        'fade-in': 'fade-in 0.3s ease-in-out',
+        'slide-in': 'slide-in 0.3s ease-in-out',
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        'slide-in': {
+          '0%': { transform: 'translateY(20px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+      },
     },
   },
   plugins: [],
