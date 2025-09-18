@@ -103,6 +103,8 @@ export default function LoginPage() {
                     placeholder="Enter username or email"
                     required
                     disabled={isLoading}
+                    aria-label="Username or Email"
+                    aria-describedby="username-help"
                   />
                 </div>
               </div>
@@ -122,6 +124,8 @@ export default function LoginPage() {
                     placeholder="Enter password"
                     required
                     disabled={isLoading}
+                    aria-label="Password"
+                    aria-describedby="password-help"
                   />
                 </div>
               </div>

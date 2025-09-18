@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import multer from 'multer';
 import { logger } from '../lib/logger';
 
 export async function fileRoutes(fastify: FastifyInstance) {

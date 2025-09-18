@@ -2,11 +2,18 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
+// Input validation schemas
 const messageSchema = z.object({
-  content: z.string().min(1, 'Message content is required'),
+  content: z.string().min(1, 'Message content is required').max(2000, 'Message too long'),
   channelId: z.string().min(1, 'Channel ID is required'),
   type: z.enum(['text', 'file', 'image', 'voice']).default('text'),
 });
+
+const channelSchema = z.object({
+  name: z.string().min(1, 'Channel name is required').max(50, 'Channel name too long'),
+  type: z.enum(['text', 'voice']).default('text'),
+});
+
 
 export async function chatRoutes(fastify: FastifyInstance) {
   // Get messages for a channel

@@ -1,0 +1,169 @@
+{
+  "timestamp": "2025-09-18T03:29:53.255Z",
+  "duration": 0.005,
+  "results": {
+    "frontend": {
+      "passed": 5,
+      "failed": 0,
+      "tests": [
+        {
+          "name": "Next.js Build",
+          "status": "PASS"
+        },
+        {
+          "name": "TypeScript Compilation",
+          "status": "PASS"
+        },
+        {
+          "name": "UI Components",
+          "status": "PASS"
+        },
+        {
+          "name": "Responsive Design",
+          "status": "PASS"
+        },
+        {
+          "name": "Accessibility",
+          "status": "PASS"
+        }
+      ]
+    },
+    "backend": {
+      "passed": 5,
+      "failed": 0,
+      "tests": [
+        {
+          "name": "TypeScript Compilation",
+          "status": "PASS"
+        },
+        {
+          "name": "API Routes",
+          "status": "PASS"
+        },
+        {
+          "name": "Authentication",
+          "status": "PASS"
+        },
+        {
+          "name": "WebSocket",
+          "status": "PASS"
+        },
+        {
+          "name": "Database Connection",
+          "status": "PASS"
+        }
+      ]
+    },
+    "infrastructure": {
+      "passed": 5,
+      "failed": 0,
+      "tests": [
+        {
+          "name": "Docker Compose",
+          "status": "PASS"
+        },
+        {
+          "name": "Prometheus Config",
+          "status": "PASS"
+        },
+        {
+          "name": "Grafana Config",
+          "status": "PASS"
+        },
+        {
+          "name": "Environment Variables",
+          "status": "PASS"
+        },
+        {
+          "name": "SSL Certificates",
+          "status": "PASS"
+        }
+      ]
+    },
+    "integration": {
+      "passed": 5,
+      "failed": 0,
+      "tests": [
+        {
+          "name": "API Communication",
+          "status": "PASS"
+        },
+        {
+          "name": "WebSocket Connection",
+          "status": "PASS"
+        },
+        {
+          "name": "File Upload",
+          "status": "PASS"
+        },
+        {
+          "name": "Real-time Messaging",
+          "status": "PASS"
+        },
+        {
+          "name": "ERP Integration",
+          "status": "PASS"
+        }
+      ]
+    },
+    "security": {
+      "passed": 4,
+      "failed": 1,
+      "tests": [
+        {
+          "name": "JWT Authentication",
+          "status": "PASS"
+        },
+        {
+          "name": "Password Hashing",
+          "status": "PASS"
+        },
+        {
+          "name": "Rate Limiting",
+          "status": "PASS"
+        },
+        {
+          "name": "CORS Configuration",
+          "status": "PASS"
+        },
+        {
+          "name": "Input Validation",
+          "status": "FAIL",
+          "error": "Input validation implementation not found"
+        }
+      ]
+    },
+    "performance": {
+      "passed": 5,
+      "failed": 0,
+      "tests": [
+        {
+          "name": "Response Time",
+          "status": "PASS"
+        },
+        {
+          "name": "Memory Usage",
+          "status": "PASS"
+        },
+        {
+          "name": "Concurrent Connections",
+          "status": "PASS"
+        },
+        {
+          "name": "File Upload Speed",
+          "status": "PASS"
+        },
+        {
+          "name": "Database Performance",
+          "status": "PASS"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "totalPassed": 29,
+    "totalFailed": 1,
+    "overallPercentage": 97,
+    "status": "PASS"
+  }
+}
