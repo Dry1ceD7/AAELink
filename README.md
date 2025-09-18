@@ -1,342 +1,212 @@
-# AAELink v1.1 ULTIMATE ENTERPRISE
+# AAELink - Enterprise Workspace Platform
 
-**Advanced ID Asia Engineering Co.,Ltd - Enterprise Workspace Portal**
-
-![AAELink Logo](https://via.placeholder.com/200x60/2563eb/ffffff?text=AAELink)
+<div align="center">
+  <img src="https://img.shields.io/badge/Version-1.1.0-blue.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License" />
+  <img src="https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg" alt="Status" />
+  <img src="https://img.shields.io/badge/Company-Advanced%20ID%20Asia%20Engineering-orange.svg" alt="Company" />
+</div>
 
 ## 🚀 Overview
 
-AAELink v1.1 is a comprehensive enterprise workspace platform built with AI-first architecture, featuring Discord+Telegram UI themes for web/desktop and Telegram+LINE design for mobile. The platform integrates advanced security, real-time communication, and AI agent orchestration through The Maestro framework.
+AAELink is a comprehensive enterprise workspace platform designed for Advanced ID Asia Engineering Co.,Ltd. It provides a modern, secure, and scalable solution for team collaboration, communication, and project management.
 
-## ✨ Key Features
+## ✨ Features
 
-### 🎨 **Discord+Telegram UI Theme System**
+### 🔐 Authentication & Security
+- **JWT-based Authentication** with secure token management
+- **WebAuthn Passkey Support** for enhanced security
+- **Role-based Access Control** (Admin, User, Moderator)
+- **Rate Limiting** and security middleware
+- **CSRF Protection** and secure headers
 
-- **Web/Desktop**: Discord-inspired three-panel layout with Telegram simplicity
-- **Mobile**: Telegram core design with LINE personality enhancements
-- **Responsive**: Seamless experience across all device sizes
-- **Accessibility**: WCAG 2.1 AA compliant with screen reader support
+### 💬 Real-time Communication
+- **Discord-inspired Chat Interface** with channel-based messaging
+- **WebSocket Real-time Messaging** for instant communication
+- **Message Reactions** and engagement features
+- **File Sharing** with drag-and-drop support
+- **Voice & Video Call Integration** (coming soon)
 
-### 🤖 **AI Agent Orchestration**
+### 📁 File Management
+- **MinIO Distributed Storage** for scalable file management
+- **Drag-and-Drop Upload** with progress tracking
+- **File Type Validation** and size limits
+- **Secure File Access** with proper permissions
 
-- **The Maestro Integration**: Multi-provider LLM support (Anthropic, OpenAI, Gemini)
-- **Real-time AI Dashboard**: Phoenix LiveView for live agent monitoring
-- **Automated Task Management**: AI agents handle complex workflows
-- **Intelligent Sync**: AI-powered data synchronization and conflict resolution
+### 📅 Calendar & Events
+- **Event Management** with scheduling capabilities
+- **Team Calendar** integration
+- **Meeting Notifications** and reminders
+- **Resource Booking** system
 
-### 🔒 **Enterprise Security**
+### 🏢 Organization Management
+- **Multi-tenant Architecture** for different organizations
+- **Team Structure** with hierarchical permissions
+- **User Management** with profile customization
+- **Department Organization** and role assignment
 
-- **E2E Encryption**: Signal Protocol with PQ-ready enhancements
-- **Zero-Trust Architecture**: Multi-factor authentication and continuous verification
-- **Hardware Security**: FIDO2/WebAuthn support for hardware keys
-- **Compliance**: GDPR, CCPA, ISO 27001, SOC 2 Type II ready
+### 🎨 Modern UI/UX
+- **Discord + Telegram Hybrid Design** for familiar user experience
+- **Responsive Design** for mobile and desktop
+- **Dark/Light Theme** support
+- **Accessibility Compliance** (WCAG 2.1)
+- **Senior Mode** for enhanced usability
 
-### 💬 **Real-time Communication**
+## 🛠️ Technology Stack
 
-- **WebSocket + WebRTC**: High-performance real-time messaging
-- **Video Calls**: Enterprise-grade video conferencing with screen sharing
-- **Voice Messages**: Telegram-style voice message support
-- **File Sharing**: Secure file transfer with MinIO S3-compatible storage
+### Frontend
+- **Next.js 15** with App Router
+- **TypeScript 5.3.3** for type safety
+- **Tailwind CSS 3.4.0** for styling
+- **Radix UI** for accessible components
+- **Lucide React** for icons
+- **Socket.io Client** for real-time communication
 
-### 🔗 **Enterprise Integration Hub**
+### Backend
+- **Node.js 18** with Fastify framework
+- **TypeScript 5.3.3** for type safety
+- **PostgreSQL 16** with Prisma ORM
+- **Redis** for caching and sessions
+- **MinIO** for file storage
+- **WebSocket** for real-time features
 
-- **ERP Integration**: SAP, Oracle, Microsoft Dynamics support
-- **Calendar Sync**: Microsoft 365, Google Workspace integration
-- **Webhook Management**: Custom webhook designer and orchestration
-- **Data Synchronization**: Real-time data sync with conflict resolution
-
-## 🏗️ Architecture
-
-### **Frontend Stack**
-
-- **Framework**: Next.js 15 (App Router) + TypeScript 5.x
-- **State Management**: Zustand + React Query (TanStack)
-- **UI Components**: Tailwind CSS + Radix UI + Framer Motion
-- **Real-time**: Socket.io-client + WebRTC
-- **Mobile**: React Native + Expo (managed workflow)
-- **Desktop**: Tauri 2.0 (Rust-based, lightweight)
-
-### **Backend Stack**
-
-- **Runtime**: Node.js 20 LTS + Bun (performance-critical)
-- **Framework**: Fastify + tRPC + GraphQL (Apollo)
-- **Database**: PostgreSQL 16 + TimescaleDB (metrics)
-- **Cache**: Redis Cluster + Dragonfly (in-memory)
-- **Queue**: BullMQ + Temporal (workflows)
-- **Storage**: MinIO (S3-compatible) + IPFS (optional)
-- **Search**: Elasticsearch + Typesense (instant search)
-
-### **Infrastructure Stack**
-
-- **Container**: Docker + Kubernetes (production)
-- **Service Mesh**: Istio + Envoy
-- **Monitoring**: Grafana + Prometheus + Loki + Tempo
-- **APM**: OpenTelemetry + SigNoz
-- **Security**: Falco + Trivy + OWASP ZAP
-- **CI/CD**: GitHub Actions + ArgoCD + Flux
+### Infrastructure
+- **Docker & Docker Compose** for containerization
+- **PostgreSQL** for primary database
+- **Redis** for caching and sessions
+- **MinIO** for distributed file storage
+- **Nginx** for reverse proxy (production)
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+- Node.js 18+ 
+- Docker & Docker Compose
+- Git
 
-- Node.js 20 LTS or later
-- Bun (for performance-critical operations)
-- Docker and Docker Compose
-- PostgreSQL 16
-- Redis 7+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Dry1ceD7/AAELink.git
+cd AAELink
+```
 
-### Installation
+### 2. Start with Docker Compose
+```bash
+# Start all services
+docker-compose up -d
 
-1. **Clone the repository**
+# Check service status
+docker-compose ps
 
-   ```bash
-   git clone https://github.com/Dry1ceD7/AAELink.git
-   cd AAELink
-   ```
+# View logs
+docker-compose logs -f
+```
 
-2. **Install dependencies**
+### 3. Access the Application
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:3001
+- **Database**: localhost:5432
+- **Redis**: localhost:6379
+- **MinIO Console**: http://localhost:9001
 
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-
-   ```bash
-   cp .env.example .env.local
-   # Edit .env.local with your configuration
-   ```
-
-4. **Start the development environment**
-
-   ```bash
-   docker-compose up -d
-   npm run dev
-   ```
-
-5. **Access the application**
-   - Frontend: <http://localhost:3000>
-   - The Maestro: <http://localhost:4000>
-   - API Documentation: <http://localhost:3000/api/docs>
-
-### Default Credentials
-
+### 4. Default Credentials
 - **Username**: `admin` or `admin@aae.co.th`
 - **Password**: `12345678`
 
-## 📱 Mobile Experience
+## 🔧 Development Setup
 
-AAELink v1.1 provides a native mobile experience with:
-
-- **Bottom Navigation**: Chats, Calls, Teams, Files, Profile
-- **Swipe Gestures**: Intuitive navigation and actions
-- **Pull-to-Refresh**: Haptic feedback for better UX
-- **Voice Messages**: Hold-to-record voice messages
-- **Sticker Support**: LINE-style sticker marketplace
-- **Theme Store**: Custom backgrounds and themes
-
-## 🔧 Development
-
-### Available Scripts
-
+### Frontend Development
 ```bash
-# Development
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run start        # Start production server
-
-# Testing
-npm run test         # Run unit tests
-npm run test:e2e     # Run E2E tests
-npm run test:coverage # Run tests with coverage
-
-# Linting & Formatting
-npm run lint         # Run ESLint
-npm run lint:fix     # Fix ESLint issues
-npm run format       # Format code with Prettier
-
-# Database
-npm run db:migrate   # Run database migrations
-npm run db:seed      # Seed database with sample data
-npm run db:reset     # Reset database
-
-# Docker
-npm run docker:dev   # Start development with Docker
-npm run docker:prod  # Start production with Docker
+cd aaelink-frontend
+npm install
+npm run dev
 ```
 
-### Project Structure
+### Backend Development
+```bash
+cd packages/backend
+npm install
+npm run dev
+```
+
+### Database Setup
+```bash
+# Generate Prisma client
+npm run db:generate
+
+# Run migrations
+npm run db:migrate
+
+# Seed database
+npm run db:seed
+```
+
+## 📊 Architecture
 
 ```
-AAELink/
-├── src/
-│   ├── app/                 # Next.js App Router
-│   ├── components/          # React components
-│   ├── lib/                 # Utility libraries
-│   │   ├── ai/             # AI agent orchestration
-│   │   ├── security/       # E2E encryption
-│   │   ├── realtime/       # WebSocket/WebRTC
-│   │   └── integrations/   # Enterprise integrations
-│   ├── styles/             # CSS themes
-│   └── types/              # TypeScript definitions
-├── public/                 # Static assets
-├── docs/                   # Documentation
-├── tests/                  # Test files
-└── docker/                 # Docker configurations
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   Backend API   │    │   Database      │
+│   (Next.js)     │◄──►│   (Fastify)     │◄──►│   (PostgreSQL)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   WebSocket     │    │   Redis Cache   │    │   MinIO Storage │
+│   (Real-time)   │    │   (Sessions)    │    │   (Files)       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
 ## 🔒 Security Features
 
-### **Encryption**
+- **JWT Authentication** with secure token storage
+- **Rate Limiting** to prevent abuse
+- **CORS Protection** with configurable origins
+- **Helmet.js** for security headers
+- **Input Validation** with Zod schemas
+- **SQL Injection Protection** with Prisma ORM
+- **File Upload Security** with type validation
 
-- **Transport**: TLS 1.3 minimum, mTLS for service-to-service
-- **At-Rest**: AES-256-GCM with 90-day key rotation
-- **E2E Messaging**: Signal Protocol with PQ enhancements
-- **Key Management**: HashiCorp Vault + HSM integration
+## 📱 Mobile Support
 
-### **Authentication**
+- **Responsive Design** for all screen sizes
+- **Touch-friendly Interface** for mobile devices
+- **Progressive Web App** capabilities
+- **Offline Support** with service workers
 
-- **Multi-Factor**: Hardware security keys (FIDO2/WebAuthn)
-- **Certificate-Based**: X.509 certificate authentication
-- **Session Management**: Secure session handling with rotation
-- **Zero-Trust**: Continuous verification and trust scoring
+## 🌐 Internationalization
 
-### **Compliance**
-
-- **Standards**: ISO 27001, SOC 2 Type II, HIPAA ready
-- **Regulations**: GDPR, CCPA, PDPA (Thai)
-- **Industry**: PCI DSS for payment features
-- **Audit**: Continuous compliance monitoring
-
-## 📊 Performance
-
-### **Target Metrics**
-
-- **Message Latency**: <50ms (LAN), <150ms (WAN)
-- **API Response**: p95 <200ms, p99 <500ms
-- **UI Render**: 60fps minimum, 120fps capable
-- **Cold Start**: <1.5s (web), <3s (mobile)
-- **Concurrent Users**: 10,000+ active
-- **Message Throughput**: 100,000 msg/sec
-
-### **Optimization Strategies**
-
-- **Code Splitting**: Route-based + component lazy loading
-- **Edge Computing**: CDN for static, edge functions for dynamic
-- **Database**: Read replicas, materialized views, query optimization
-- **Caching**: Multi-layer (browser, CDN, Redis, application)
-
-## 🤖 AI Agent System
-
-### **Primary Agents**
-
-- **UX/UI Designer Agent**: Discord+Telegram theme implementation
-- **Architecture Agent**: System design and module boundaries
-- **Security Agent**: E2E encryption and zero-trust architecture
-- **Quality Agent**: Testing, performance, accessibility
-- **Integration Agent**: ERP, calendar APIs, webhook orchestration
-- **DevOps Agent**: CI/CD, monitoring, deployment automation
-
-### **The Maestro Integration**
-
-- **Multi-Provider Support**: Anthropic, OpenAI, Gemini
-- **Real-time Streaming**: Live AI agent responses
-- **Session Management**: Persistent conversation history
-- **Tool Registry**: Safe execution environment for system commands
-- **Credential Vault**: Encrypted API key management
-
-## 🔗 Enterprise Integrations
-
-### **ERP Systems**
-
-- **SAP**: Full integration with SAP ERP
-- **Oracle**: Oracle ERP Cloud support
-- **Microsoft Dynamics**: Dynamics 365 integration
-- **Custom APIs**: Flexible integration framework
-
-### **Calendar & Productivity**
-
-- **Microsoft 365**: Deep integration with Outlook, Teams
-- **Google Workspace**: Gmail, Google Calendar, Drive
-- **JIRA/Confluence**: Project management integration
-- **Custom Webhooks**: Flexible webhook designer
-
-### **Data Synchronization**
-
-- **Real-time Sync**: Live data synchronization
-- **Conflict Resolution**: Intelligent conflict handling
-- **Batch Processing**: Efficient bulk operations
-- **Error Handling**: Robust error recovery and retry logic
-
-## 📈 Monitoring & Observability
-
-### **Metrics & Logging**
-
-- **Application Metrics**: OpenTelemetry instrumentation
-- **Infrastructure**: SigNoz dashboard with AI-specific metrics
-- **Logs**: Structured logging for all operations
-- **Alerts**: Automated alerting for failures and anomalies
-
-### **Performance Monitoring**
-
-- **Real-time Dashboards**: Live performance metrics
-- **AI Agent Health**: Monitor all AI agents and providers
-- **User Analytics**: Communication patterns and collaboration scores
-- **System Health**: Infrastructure and service monitoring
+- **Multi-language Support** (EN, TH, DE)
+- **RTL Language Support** for Arabic/Hebrew
+- **Localized Date/Time** formatting
+- **Currency and Number** formatting
 
 ## 🚀 Deployment
 
-### **Development**
-
+### Production Deployment
 ```bash
-docker-compose up -d
-npm run dev
+# Build for production
+docker-compose -f docker-compose.prod.yml up -d
+
+# Scale services
+docker-compose up -d --scale backend=3
 ```
 
-### **Staging**
-
+### Environment Variables
 ```bash
-kubectl apply -f k8s/staging/
+# Copy environment template
+cp packages/backend/env.example packages/backend/.env
+
+# Configure your environment
+nano packages/backend/.env
 ```
 
-### **Production**
+## 📈 Monitoring & Analytics
 
-```bash
-kubectl apply -f k8s/production/
-```
-
-### **Environment Variables**
-
-```bash
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/aaelink
-REDIS_URL=redis://localhost:6379
-
-# AI Providers
-ANTHROPIC_API_KEY=your_anthropic_key
-OPENAI_API_KEY=your_openai_key
-GEMINI_API_KEY=your_gemini_key
-
-# The Maestro
-MAESTRO_URL=http://localhost:4000
-
-# Security
-JWT_SECRET=your_jwt_secret
-ENCRYPTION_KEY=your_encryption_key
-
-# Integrations
-SAP_BASE_URL=your_sap_url
-SAP_USERNAME=your_sap_username
-SAP_PASSWORD=your_sap_password
-```
-
-## 📚 Documentation
-
-- **API Documentation**: `/api/docs` (Swagger/OpenAPI)
-- **Component Library**: Storybook documentation
-- **Architecture Decisions**: ADR records in `/docs/adr/`
-- **User Guides**: Comprehensive user documentation
-- **Developer Guide**: Onboarding and development guide
+- **Health Check Endpoints** for service monitoring
+- **Logging** with Winston
+- **Performance Metrics** with built-in monitoring
+- **Error Tracking** and reporting
 
 ## 🤝 Contributing
 
@@ -348,41 +218,46 @@ SAP_PASSWORD=your_sap_password
 
 ## 📄 License
 
-This project is proprietary software owned by Advanced ID Asia Engineering Co.,Ltd. All rights reserved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## 🏢 Company
+
+**Advanced ID Asia Engineering Co.,Ltd**
+
+- **Website**: [Company Website]
+- **Email**: admin@aae.co.th
+- **Location**: Thailand
+
+## 📞 Support
 
 For support and questions:
-
-- **Email**: <support@aae.co.th>
-- **Documentation**: [Internal Wiki](https://wiki.aae.co.th/aaelink)
+- **Email**: support@aae.co.th
+- **Documentation**: [Project Wiki]
 - **Issues**: [GitHub Issues](https://github.com/Dry1ceD7/AAELink/issues)
 
 ## 🎯 Roadmap
 
-### **Q1 2024**
+### Phase 1 (Current)
+- ✅ User Authentication
+- ✅ Real-time Messaging
+- ✅ File Management
+- ✅ Basic UI/UX
 
-- [ ] Mobile app release (iOS/Android)
-- [ ] Advanced AI agent capabilities
-- [ ] Enhanced security features
-- [ ] Performance optimizations
+### Phase 2 (Next)
+- 🔄 Video/Audio Calls
+- 🔄 Mobile App (React Native)
+- 🔄 Desktop App (Tauri)
+- 🔄 Advanced Analytics
 
-### **Q2 2024**
-
-- [ ] Blockchain integration
-- [ ] 3D virtual workspace
-- [ ] Advanced analytics dashboard
-- [ ] Multi-tenant support
-
-### **Q3 2024**
-
-- [ ] AI-powered automation
-- [ ] Advanced compliance tools
-- [ ] Global deployment
-- [ ] Enterprise marketplace
+### Phase 3 (Future)
+- 📋 AI-powered Features
+- 📋 Advanced Integrations
+- 📋 Enterprise SSO
+- 📋 Advanced Security
 
 ---
 
-**Built with ❤️ by Advanced ID Asia Engineering Co.,Ltd**
-
-*AAELink v1.1 - Enterprise AI-Orchestrated Workspace Platform*
+<div align="center">
+  <p>Built with ❤️ by Advanced ID Asia Engineering Co.,Ltd</p>
+  <p>© 2024 AAELink. All rights reserved.</p>
+</div>
