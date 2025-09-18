@@ -4,7 +4,6 @@
  * BMAD Method: Security-first, accessible login
  */
 
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -14,109 +13,77 @@ import { Input } from '../components/ui/Input';
 import { LanguageSelector } from '../components/ui/LanguageSelector';
 import { Logo } from '../components/Logo';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
-import { toast } from '../hooks/useToast';
-import api from '../services/api';
-import { useAuthStore } from '../stores/authStore';
+import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const LoginPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { setUser, setAuthenticated } = useAuthStore();
+  const { login, register } = useAuth();
+  const { success: showSuccess, error: showError, warning: showWarning } = useToast();
 
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   /**
-   * Handle WebAuthn registration
+   * Handle user registration
    */
   const handleRegister = async () => {
-    if (!email || !displayName) {
-      toast.error(t('login.fillAllFields'));
+    if (!email || !password || !displayName) {
+      showError('Please fill in all fields');
+      return;
+    }
+
+    if (password.length < 8) {
+      showError('Password must be at least 8 characters long');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Get registration options from server
-      const optionsResponse = await api.post('/auth/webauthn/register/options', {
-        email,
-        displayName,
-      });
-
-      // Start WebAuthn registration
-      const attestation = await startRegistration(optionsResponse.data);
-
-      // Verify with server
-      const verifyResponse = await api.post('/auth/webauthn/register/verify', {
-        email,
-        displayName,
-        response: attestation,
-      });
-
-      if (verifyResponse.data.ok) {
-        setUser(verifyResponse.data.user);
-        setAuthenticated(true);
-
-        toast.success(t('login.registrationComplete'));
-
+      const success = await register(email, password, displayName);
+      
+      if (success) {
+        showSuccess('Registration successful! Welcome to AAELink!');
         navigate('/');
+      } else {
+        showError('Registration failed. Please try again.');
       }
-    } catch (error: any) {
-      console.error('Registration error:', error);
-
-      toast.error(error.message || t('login.registrationFailed'));
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      showError(err.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   /**
-   * Handle WebAuthn authentication
+   * Handle user authentication
    */
   const handleAuthenticate = async () => {
-    if (!email) {
-      toast.error(t('login.enterEmail'));
+    if (!email || !password) {
+      showError('Please enter both email and password');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Get authentication options from server
-      const optionsResponse = await api.post('/auth/webauthn/authenticate/options', {
-        email,
-      });
-
-      // Start WebAuthn authentication
-      const assertion = await startAuthentication(optionsResponse.data);
-
-      // Verify with server
-      const verifyResponse = await api.post('/auth/webauthn/authenticate/verify', {
-        email,
-        response: assertion,
-      });
-
-      if (verifyResponse.data.ok) {
-        setUser(verifyResponse.data.user);
-        setAuthenticated(true);
-
-        toast.success(t('login.welcomeBack'));
-
+      const success = await login(email, password);
+      
+      if (success) {
+        showSuccess('Login successful! Welcome back!');
         navigate('/');
-      }
-    } catch (error: any) {
-      console.error('Authentication error:', error);
-
-      // Check if user needs to register first
-      if (error.response?.data?.error === 'No passkeys registered') {
-        setIsRegistering(true);
-        toast.warning(t('login.pleaseRegister'));
       } else {
-        toast.error(error.message || t('login.authenticationFailed'));
+        showError('Invalid email or password. Please try again.');
       }
+    } catch (err: any) {
+      console.error('Authentication error:', err);
+      showError(err.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -158,7 +125,7 @@ const LoginPage: React.FC = () => {
               htmlFor="email"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              {t('login.email')}
+              Email
             </label>
             <Input
               id="email"
@@ -170,7 +137,29 @@ const LoginPage: React.FC = () => {
               disabled={isLoading}
               autoComplete="email"
               className="w-full"
-              aria-label={t('login.email')}
+              aria-label="Email"
+            />
+          </div>
+
+          {/* Password input */}
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Password
+            </label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+              disabled={isLoading}
+              autoComplete={isRegistering ? "new-password" : "current-password"}
+              className="w-full"
+              aria-label="Password"
             />
           </div>
 
@@ -181,19 +170,19 @@ const LoginPage: React.FC = () => {
                 htmlFor="displayName"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                {t('login.displayName')}
+                Full Name
               </label>
               <Input
                 id="displayName"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={t('login.displayNamePlaceholder')}
+                placeholder="Enter your full name"
                 required={isRegistering}
                 disabled={isLoading}
                 autoComplete="name"
                 className="w-full"
-                aria-label={t('login.displayName')}
+                aria-label="Full Name"
               />
             </div>
           )}
@@ -209,18 +198,12 @@ const LoginPage: React.FC = () => {
             {isLoading ? (
               <span className="flex items-center justify-center">
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                {t('login.loading')}
+                Loading...
               </span>
             ) : isRegistering ? (
-              <>
-                <KeyIcon className="w-5 h-5 mr-2" />
-                {t('login.registerWithPasskey')}
-              </>
+              'Create Account'
             ) : (
-              <>
-                <KeyIcon className="w-5 h-5 mr-2" />
-                {t('login.signInWithPasskey')}
-              </>
+              'Sign In'
             )}
           </Button>
 
@@ -233,8 +216,8 @@ const LoginPage: React.FC = () => {
               disabled={isLoading}
             >
               {isRegistering
-                ? t('login.alreadyHaveAccount')
-                : t('login.needToRegister')}
+                ? 'Already have an account? Sign in'
+                : 'Need an account? Sign up'}
             </button>
           </div>
         </form>
@@ -242,14 +225,14 @@ const LoginPage: React.FC = () => {
         {/* Help text */}
         <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
           <p className="text-sm text-center text-gray-600 dark:text-gray-400">
-            {t('login.helpText')}
+            Secure access to AAELink workspace
           </p>
           <p className="text-sm text-center mt-2">
             <a
               href="mailto:it@company.com"
               className="text-blue-600 dark:text-blue-400 hover:underline"
             >
-              {t('login.contactIT')}
+              Contact IT Support
             </a>
           </p>
         </div>
@@ -263,21 +246,5 @@ const LoginPage: React.FC = () => {
   );
 };
 
-// Key icon component
-const KeyIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-    />
-  </svg>
-);
 
 export default LoginPage;

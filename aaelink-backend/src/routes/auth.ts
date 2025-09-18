@@ -352,4 +352,41 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: 'Internal server error' })
     }
   })
+
+  // Session endpoint for frontend compatibility
+  fastify.get('/session', async (request, reply) => {
+    try {
+      // Try to verify JWT from cookie
+      try {
+        await request.jwtVerify()
+        
+        const user = await prisma.user.findUnique({
+          where: { id: request.user.userId },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            role: true,
+            lastSeen: true,
+            createdAt: true
+          }
+        })
+
+        if (!user) {
+          return reply.code(404).send({ user: null })
+        }
+
+        return { user }
+      } catch (jwtError) {
+        // JWT verification failed, return no user
+        return reply.code(200).send({ user: null })
+      }
+    } catch (error) {
+      logger.error('Session check error:', error)
+      return reply.code(200).send({ user: null })
+    }
+  })
 }

@@ -4,11 +4,14 @@ import api from '../services/api';
 interface User {
   id: string;
   email: string;
-  displayName: string;
-  role: 'user' | 'org_admin' | 'sysadmin';
-  locale: string;
-  theme: string;
-  seniorMode: boolean;
+  username: string;
+  firstName: string;
+  lastName: string;
+  displayName?: string;
+  avatar?: string;
+  role: 'USER' | 'ORG_ADMIN' | 'SYSADMIN';
+  lastSeen?: string;
+  createdAt: string;
 }
 
 interface AuthContextType {
@@ -75,9 +78,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       console.log('Attempting login for:', email);
-      const response = await api.post('/auth/login', { email, password });
+      const response = await api.post('/auth/login', { 
+        usernameOrEmail: email, 
+        password 
+      });
       
-      if (response.data.ok && response.data.user) {
+      if (response.data && response.data.user) {
         console.log('Login successful for:', email);
         setUser(response.data.user);
         setLoading(false);
@@ -93,8 +99,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, displayName: string): Promise<boolean> => {
     try {
-      const response = await api.post('/auth/register', { email, password, displayName });
-      if (response.data.ok) {
+      const [firstName, ...lastNameParts] = displayName.split(' ');
+      const lastName = lastNameParts.join(' ') || '';
+      
+      const response = await api.post('/auth/register', { 
+        email, 
+        username: email.split('@')[0], // Use email prefix as username
+        firstName: firstName || displayName,
+        lastName,
+        password 
+      });
+      
+      if (response.data && response.data.user) {
         setUser(response.data.user);
         return true;
       }

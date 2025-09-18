@@ -5,7 +5,7 @@ const pendingRequests = new Map<string, Promise<any>>();
 
 // Create axios instance with aggressive request deduplication
 const api = axios.create({
-  baseURL: 'http://localhost:3002/api',
+  baseURL: 'http://localhost:3001/api',
   withCredentials: true,
   timeout: 10000, // 10 second timeout
   headers: {

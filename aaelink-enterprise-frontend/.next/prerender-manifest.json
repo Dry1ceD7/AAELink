@@ -26,30 +26,6 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/dashboard": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/dashboard",
-      "dataRoute": "/dashboard.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
-    },
     "/": {
       "experimentalBypassFor": [
         {
@@ -73,13 +49,37 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
+    },
+    "/dashboard": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/dashboard",
+      "dataRoute": "/dashboard.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "878c1b3584d7cc84ed94e8a66445a02e",
-    "previewModeSigningKey": "2e08cc043dd2ac10e448e7cb9ddb4630c23f996801beb053e30fb77385b321f9",
-    "previewModeEncryptionKey": "986b585673d38b64130f771571585f1890d59661d93dd1d41e482d4f585b0ffe"
+    "previewModeId": "99feb9e52e2195886e9de939992f4568",
+    "previewModeSigningKey": "4a6badc1f1ca60fa32abdbb7f7bfdb9d5e0b50147e6b237b664ce69e48f52958",
+    "previewModeEncryptionKey": "6d8b77f9856c4bddf13cd2cb6e3499576faffae07a46882bf699c401f1bed45e"
   }
 }

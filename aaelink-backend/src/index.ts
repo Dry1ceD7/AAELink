@@ -33,8 +33,9 @@ export const minio = new MinioClient()
 const server = createServer()
 const io = new SocketIOServer(server, {
   cors: {
-    origin: env.FRONTEND_URL,
-    methods: ['GET', 'POST']
+    origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 })
 
@@ -45,8 +46,10 @@ const fastify = Fastify({
 
 // Register plugins
 await fastify.register(cors, {
-  origin: env.FRONTEND_URL,
-  credentials: true
+  origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id']
 })
 
 await fastify.register(helmet, {
@@ -232,14 +235,18 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 // Start server
 const start = async () => {
   try {
+    // Start Fastify server
     const address = await fastify.listen({
       port: env.PORT,
       host: '0.0.0.0'
     })
 
-    logger.info(`AAELink Backend server listening at ${address}`)
-    logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
-    logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
+    // Start Socket.IO server on the same port
+    server.listen(env.PORT, '0.0.0.0', () => {
+      logger.info(`AAELink Backend server listening at ${address}`)
+      logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
+      logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
+    })
   } catch (err) {
     logger.error('Error starting server:', err)
     process.exit(1)
