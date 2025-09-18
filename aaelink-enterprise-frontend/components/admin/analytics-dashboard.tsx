@@ -5,32 +5,29 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from '@/components/ui/select';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  TrendingDown,
-  Users, 
-  MessageSquare, 
-  FileText, 
-  Calendar,
-  Activity,
-  Download,
-  RefreshCw,
-  Filter,
-  Eye,
-  EyeOff
+import {
+    Activity,
+    BarChart3,
+    Download,
+    Eye,
+    EyeOff,
+    MessageSquare,
+    RefreshCw,
+    TrendingDown,
+    TrendingUp,
+    Users
 } from 'lucide-react';
+import { useState } from 'react';
 
 interface AnalyticsData {
   period: '7d' | '30d' | '90d' | '1y';
