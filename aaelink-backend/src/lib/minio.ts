@@ -1,12 +1,12 @@
-import { Client as MinioClient } from 'minio'
+import { Client as MinioClientType } from 'minio'
 import { env } from './env.js'
 import { logger } from './logger.js'
 
 export class MinioClient {
-  private client: MinioClient
+  private client: MinioClientType
 
   constructor() {
-    this.client = new MinioClient({
+    this.client = new MinioClientType({
       endPoint: env.MINIO_ENDPOINT,
       port: env.MINIO_PORT,
       useSSL: env.MINIO_USE_SSL,
@@ -47,7 +47,7 @@ export class MinioClient {
 
       const url = await this.client.presignedGetObject(env.MINIO_BUCKET, filename, 24 * 60 * 60) // 24 hours
 
-      return { url, etag }
+      return { url, etag: String(etag) }
     } catch (error) {
       logger.error('Failed to upload file:', error)
       throw new Error('File upload failed')
@@ -81,10 +81,7 @@ export class MinioClient {
       const uploadUrl = await this.client.presignedPutObject(
         env.MINIO_BUCKET,
         filename,
-        expiresIn,
-        {
-          'Content-Type': mimeType
-        }
+        expiresIn
       )
 
       const downloadUrl = await this.client.presignedGetObject(

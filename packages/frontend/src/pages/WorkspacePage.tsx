@@ -25,8 +25,8 @@ const WorkspacePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showAdminConsole, setShowAdminConsole] = useState(false);
+  // const [showCalendar, setShowCalendar] = useState(false);
+  // const [showAdminConsole, setShowAdminConsole] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'calendar' | 'admin'>('chat');
 
   useEffect(() => {

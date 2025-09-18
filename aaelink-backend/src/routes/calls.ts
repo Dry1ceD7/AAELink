@@ -120,7 +120,7 @@ export default async function callRoutes(fastify: FastifyInstance) {
       }
 
       // Emit real-time event
-      call.participants.forEach(participant => {
+      call.participants.forEach((participant: any) => {
         fastify.io.to(`user:${participant.userId}`).emit('user_joined_call', {
           callId,
           user: participant.user
@@ -188,7 +188,7 @@ export default async function callRoutes(fastify: FastifyInstance) {
       })
 
       // Emit real-time event
-      call.participants.forEach(participant => {
+      call.participants.forEach((participant: any) => {
         fastify.io.to(`user:${participant.userId}`).emit('call_ended', {
           callId,
           duration,

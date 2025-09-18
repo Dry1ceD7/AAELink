@@ -50,7 +50,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
     xl: 'px-8 py-4 text-lg rounded-lg',
   };
 
-  const Component = as;
+  const Component = as as any;
 
   const buttonProps = {
     className: cn(
