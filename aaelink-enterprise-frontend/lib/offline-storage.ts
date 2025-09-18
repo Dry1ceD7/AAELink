@@ -406,6 +406,7 @@ class OfflineStorage {
   }
 
   private getAuthToken(): string {
+    if (typeof window === 'undefined') return '';
     return localStorage.getItem('authToken') || '';
   }
 

@@ -21,6 +21,7 @@ import fileRoutes from './routes/files.js'
 import groupRoutes from './routes/groups.js'
 import marketplaceRoutes from './routes/marketplace.js'
 import messageRoutes from './routes/messages.js'
+import notificationRoutes from './routes/notifications.js'
 import searchRoutes from './routes/search.js'
 import userRoutes from './routes/users.js'
 
@@ -108,6 +109,7 @@ await fastify.register(userRoutes, { prefix: '/api/users' })
 await fastify.register(groupRoutes, { prefix: '/api/groups' })
 await fastify.register(calendarRoutes, { prefix: '/api/calendar' })
 await fastify.register(marketplaceRoutes, { prefix: '/api/marketplace' })
+await fastify.register(notificationRoutes, { prefix: '/api/notifications' })
 
 // Health check endpoints
 fastify.get('/api/healthz', async () => {

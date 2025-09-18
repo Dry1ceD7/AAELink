@@ -62,6 +62,7 @@ class OfflineManager {
   }
 
   private async loadLastSync(): Promise<void> {
+    if (typeof window === 'undefined') return;
     const lastSyncStr = localStorage.getItem('aaelink_last_sync');
     if (lastSyncStr) {
       this.lastSync = new Date(lastSyncStr);
@@ -69,6 +70,7 @@ class OfflineManager {
   }
 
   private async saveLastSync(): Promise<void> {
+    if (typeof window === 'undefined') return;
     this.lastSync = new Date();
     localStorage.setItem('aaelink_last_sync', this.lastSync.toISOString());
   }
@@ -195,7 +197,9 @@ class OfflineManager {
   async clearOfflineData(): Promise<void> {
     await offlineStorage.clearAllData();
     this.lastSync = null;
-    localStorage.removeItem('aaelink_last_sync');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aaelink_last_sync');
+    }
     this.notifyListeners();
   }
 
