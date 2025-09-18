@@ -38,15 +38,19 @@ model User {
   calls            CallParticipant[]
   searchHistory    SearchHistory[]
   notifications    Notification[]
+  createdGroups    Group[]
+  createdThreads   Thread[]
+  readReceipts     ReadReceipt[]
+  createdThemes    Theme[]
+  createdStickers  Sticker[]
 
   @@map("users")
 }
 
 enum UserRole {
-  ADMIN
-  MANAGER
   USER
-  GUEST
+  ORG_ADMIN
+  SYSADMIN
 }
 
 // Messaging System

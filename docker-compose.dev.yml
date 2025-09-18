@@ -1,104 +1,109 @@
-version: '3.9'
+version: '3.8'
 
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
-    container_name: aaelink-postgres-dev
+    image: postgres:15-alpine
+    container_name: aaelink-postgres
     environment:
+      POSTGRES_DB: aaelink
       POSTGRES_USER: aaelink
-      POSTGRES_PASSWORD: aaelink_dev
-      POSTGRES_DB: aaelink_db
-    volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
+      POSTGRES_PASSWORD: aaelink
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aaelink -d aaelink_db"]
+      test: ["CMD-SHELL", "pg_isready -U aaelink"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - aaelink-network-dev
 
   # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: aaelink-redis-dev
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data_dev:/data
+    container_name: aaelink-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - aaelink-network-dev
 
   # MinIO Object Storage
   minio:
     image: minio/minio:latest
-    container_name: aaelink-minio-dev
-    command: server /data --console-address ":9001"
+    container_name: aaelink-minio
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data_dev:/data
+      MINIO_ROOT_USER: aaelink_admin
+      MINIO_ROOT_PASSWORD: aaelink_minio_2024
     ports:
       - "9000:9000"
       - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
-    networks:
-      - aaelink-network-dev
 
-  # n8n Workflow Automation (Optional)
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: aaelink-n8n-dev
+  # Backend API
+  backend:
+    build:
+      context: ./aaelink-backend
+      dockerfile: Dockerfile
+    container_name: aaelink-backend
     environment:
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: admin
-      N8N_BASIC_AUTH_PASSWORD: admin
-      N8N_HOST: localhost
-      N8N_PORT: 5678
-      N8N_PROTOCOL: http
       NODE_ENV: development
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_DATABASE: n8n
-      DB_POSTGRESDB_USER: aaelink
-      DB_POSTGRESDB_PASSWORD: aaelink_dev
-    volumes:
-      - n8n_data_dev:/home/node/.n8n
+      PORT: 3001
+      DATABASE_URL: postgresql://aaelink:aaelink@postgres:5432/aaelink
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-super-secret-jwt-key-that-is-at-least-32-characters-long
+      FRONTEND_URL: http://localhost:5173
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: false
+      MINIO_ACCESS_KEY: aaelink_admin
+      MINIO_SECRET_KEY: aaelink_minio_2024
+      MINIO_BUCKET: aaelink-files
     ports:
-      - "5678:5678"
+      - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - aaelink-network-dev
-    profiles:
-      - full
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./aaelink-backend:/app
+      - /app/node_modules
+    command: npm run dev
 
-networks:
-  aaelink-network-dev:
-    driver: bridge
+  # Frontend
+  frontend:
+    build:
+      context: ./packages/frontend
+      dockerfile: Dockerfile
+    container_name: aaelink-frontend
+    environment:
+      VITE_API_URL: http://localhost:3001/api
+      VITE_WS_URL: ws://localhost:3001/ws
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./packages/frontend:/app
+      - /app/node_modules
+    command: npm run dev
 
 volumes:
-  postgres_data_dev:
-    driver: local
-  redis_data_dev:
-    driver: local
-  minio_data_dev:
-    driver: local
-  n8n_data_dev:
-    driver: local
+  postgres_data:
+  redis_data:
+  minio_data:

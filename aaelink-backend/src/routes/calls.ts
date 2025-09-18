@@ -8,16 +8,8 @@ const createCallSchema = z.object({
   participants: z.array(z.string()).min(1)
 })
 
-const joinCallSchema = z.object({
-  callId: z.string()
-})
-
-const endCallSchema = z.object({
-  callId: z.string()
-})
-
 export default async function callRoutes(fastify: FastifyInstance) {
-  // Create a new call
+  // Create call
   fastify.post('/create', {
     preHandler: [fastify.authenticate],
     schema: {
@@ -26,18 +18,14 @@ export default async function callRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     try {
       const userId = request.user.userId
-      const { type, participants } = request.body as z.infer<typeof createCallSchema>
-
-      // Add creator to participants
-      const allParticipants = [...participants, userId]
+      const callData = request.body as z.infer<typeof createCallSchema>
 
       // Create call
       const call = await prisma.call.create({
         data: {
-          type,
-          status: 'INITIATED',
+          type: callData.type,
           participants: {
-            create: allParticipants.map(participantId => ({
+            create: callData.participants.map(participantId => ({
               userId: participantId
             }))
           }
@@ -59,8 +47,8 @@ export default async function callRoutes(fastify: FastifyInstance) {
         }
       })
 
-      // Emit real-time event to all participants
-      allParticipants.forEach(participantId => {
+      // Emit real-time event
+      callData.participants.forEach(participantId => {
         fastify.io.to(`user:${participantId}`).emit('call_created', call)
       })
 
@@ -71,205 +59,116 @@ export default async function callRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // Join a call
-  fastify.post('/join', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      body: joinCallSchema
-    }
+  // Join call
+  fastify.post('/:callId/join', {
+    preHandler: [fastify.authenticate]
   }, async (request, reply) => {
     try {
+      const { callId } = request.params as { callId: string }
       const userId = request.user.userId
-      const { callId } = request.body as z.infer<typeof joinCallSchema>
 
-      // Check if call exists and user is a participant
-      const call = await prisma.call.findFirst({
-        where: {
-          id: callId,
-          participants: {
-            some: { userId }
-          }
-        },
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  firstName: true,
-                  lastName: true,
-                  avatar: true
-                }
-              }
-            }
-          }
-        }
+      // Check if call exists
+      const call = await prisma.call.findUnique({
+        where: { id: callId }
       })
 
       if (!call) {
-        return reply.code(404).send({ error: 'Call not found or not authorized' })
+        return reply.code(404).send({ error: 'Call not found' })
       }
 
-      // Update call status if needed
-      if (call.status === 'INITIATED') {
-        await prisma.call.update({
-          where: { id: callId },
-          data: { status: 'RINGING' }
-        })
-      }
-
-      // Emit real-time event
-      call.participants.forEach((participant: any) => {
-        fastify.io.to(`user:${participant.userId}`).emit('user_joined_call', {
+      // Add participant
+      await prisma.callParticipant.create({
+        data: {
           callId,
-          user: participant.user
-        })
+          userId
+        }
       })
 
-      return { call }
+      // Emit real-time event
+      fastify.io.to(`call:${callId}`).emit('user_joined', {
+        callId,
+        userId
+      })
+
+      return { success: true }
     } catch (error) {
       logger.error('Join call error:', error)
       return reply.code(500).send({ error: 'Internal server error' })
     }
   })
 
-  // End a call
-  fastify.post('/end', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      body: endCallSchema
-    }
+  // Leave call
+  fastify.post('/:callId/leave', {
+    preHandler: [fastify.authenticate]
   }, async (request, reply) => {
     try {
+      const { callId } = request.params as { callId: string }
       const userId = request.user.userId
-      const { callId } = request.body as z.infer<typeof endCallSchema>
 
-      // Check if call exists and user is a participant
-      const call = await prisma.call.findFirst({
+      // Remove participant
+      await prisma.callParticipant.updateMany({
         where: {
-          id: callId,
-          participants: {
-            some: { userId }
-          }
+          callId,
+          userId,
+          leftAt: null
         },
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  firstName: true,
-                  lastName: true,
-                  avatar: true
-                }
-              }
-            }
-          }
-        }
-      })
-
-      if (!call) {
-        return reply.code(404).send({ error: 'Call not found or not authorized' })
-      }
-
-      // Calculate duration
-      const duration = Math.floor((Date.now() - call.startedAt.getTime()) / 1000)
-
-      // Update call
-      await prisma.call.update({
-        where: { id: callId },
         data: {
-          status: 'ENDED',
-          endedAt: new Date(),
-          duration
+          leftAt: new Date()
         }
       })
 
       // Emit real-time event
-      call.participants.forEach((participant: any) => {
-        fastify.io.to(`user:${participant.userId}`).emit('call_ended', {
-          callId,
-          duration,
-          endedBy: userId
-        })
+      fastify.io.to(`call:${callId}`).emit('user_left', {
+        callId,
+        userId
       })
 
-      return { success: true, duration }
+      return { success: true }
     } catch (error) {
-      logger.error('End call error:', error)
+      logger.error('Leave call error:', error)
       return reply.code(500).send({ error: 'Internal server error' })
     }
   })
 
-  // Get call history
-  fastify.get('/history', {
-    preHandler: [fastify.authenticate],
-    schema: {
-      querystring: z.object({
-        limit: z.coerce.number().min(1).max(100).default(50),
-        cursor: z.string().optional()
-      })
-    }
-  }, async (request, reply) => {
-    try {
-      const userId = request.user.userId
-      const { limit, cursor } = request.query as { limit: number; cursor?: string }
-
-      const where: any = {
-        participants: {
-          some: { userId }
-        }
-      }
-
-      if (cursor) {
-        where.id = { lt: cursor }
-      }
-
-      const calls = await prisma.call.findMany({
-        where,
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  firstName: true,
-                  lastName: true,
-                  avatar: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { startedAt: 'desc' },
-        take: limit
-      })
-
-      return { calls }
-    } catch (error) {
-      logger.error('Get call history error:', error)
-      return reply.code(500).send({ error: 'Internal server error' })
-    }
-  })
-
-  // Get WebRTC configuration
-  fastify.get('/webrtc-config', {
+  // End call
+  fastify.post('/:callId/end', {
     preHandler: [fastify.authenticate]
   }, async (request, reply) => {
     try {
-      // TODO: Return TURN server configuration
-      const config = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
-        ]
+      const { callId } = request.params as { callId: string }
+      const userId = request.user.userId
+
+      // Check if user is participant
+      const participant = await prisma.callParticipant.findFirst({
+        where: {
+          callId,
+          userId,
+          leftAt: null
+        }
+      })
+
+      if (!participant) {
+        return reply.code(403).send({ error: 'Not a participant in this call' })
       }
 
-      return { config }
+      // End call
+      await prisma.call.update({
+        where: { id: callId },
+        data: {
+          status: 'ENDED',
+          endedAt: new Date()
+        }
+      })
+
+      // Emit real-time event
+      fastify.io.to(`call:${callId}`).emit('call_ended', {
+        callId,
+        endedBy: userId
+      })
+
+      return { success: true }
     } catch (error) {
-      logger.error('Get WebRTC config error:', error)
+      logger.error('End call error:', error)
       return reply.code(500).send({ error: 'Internal server error' })
     }
   })

@@ -68,12 +68,12 @@ export default async function messageRoutes(fastify: FastifyInstance) {
           content: messageData.content,
           type: messageData.type,
           senderId: userId,
-          receiverId: messageData.receiverId,
-          groupId: messageData.groupId,
-          threadId: messageData.threadId,
-          parentId: messageData.parentId,
-          encryptedContent: messageData.encryptedContent,
-          encryptionKey: messageData.encryptionKey
+          receiverId: messageData.receiverId || null,
+          groupId: messageData.groupId || null,
+          threadId: messageData.threadId || null,
+          parentId: messageData.parentId || null,
+          encryptedContent: messageData.encryptedContent || null,
+          encryptionKey: messageData.encryptionKey || null
         },
         include: {
           sender: {

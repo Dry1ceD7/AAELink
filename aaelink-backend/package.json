@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
+    "test:coverage": "vitest --coverage",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "typecheck": "tsc --noEmit",
@@ -20,8 +21,12 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx src/scripts/seed.ts",
+    "db:studio": "prisma studio",
     "graph": "madge --circular src || true",
-    "deps:check": "knip && depcheck || true"
+    "deps:check": "knip && depcheck || true",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean && npm run db:generate",
+    "postbuild": "echo 'Build completed successfully'"
   },
   "dependencies": {
     "@fastify/cors": "^8.4.0",

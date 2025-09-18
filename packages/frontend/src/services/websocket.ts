@@ -197,13 +197,21 @@ class WebSocketService {
 
   private scheduleReconnect(): void {
     this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      30000 // Max 30 seconds
+    );
 
     console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     setTimeout(() => {
-      if (this.userId) {
-        this.connect(this.userId).catch(console.error);
+      if (this.userId && this.reconnectAttempts <= this.maxReconnectAttempts) {
+        this.connect(this.userId).catch((error) => {
+          console.error('Reconnection failed:', error);
+          if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.callbacks.onError?.(new Error('Max reconnection attempts reached'));
+          }
+        });
       }
     }, delay);
   }

@@ -29,6 +29,12 @@ export const prisma = new PrismaClient()
 export const redis = new Redis(env.REDIS_URL)
 export const minio = new MinioClient()
 
+// Create Fastify instance
+const fastify = Fastify({
+  trustProxy: true,
+  logger: true
+})
+
 // Create HTTP server
 const server = createServer()
 const io = new SocketIOServer(server, {
@@ -37,11 +43,6 @@ const io = new SocketIOServer(server, {
     methods: ['GET', 'POST'],
     credentials: true
   }
-})
-
-// Create Fastify instance
-const fastify = Fastify({
-  trustProxy: true
 })
 
 // Register plugins
@@ -111,7 +112,13 @@ await fastify.register(marketplaceRoutes, { prefix: '/api/marketplace' })
 
 // Health check endpoints
 fastify.get('/api/healthz', async (request, reply) => {
-  return { status: 'ok', timestamp: new Date().toISOString() }
+  return { 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    version: process.env.npm_package_version || '1.0.0'
+  }
 })
 
 fastify.get('/api/readyz', async (request, reply) => {
@@ -139,6 +146,9 @@ fastify.register(async function (fastify) {
       socket.close(1008, 'Unauthorized')
       return
     }
+
+    // Store user ID on socket for room management
+    (socket as any).userId = userId
 
     // Handle incoming messages
     socket.on('message', async (message: Buffer) => {
@@ -241,12 +251,9 @@ const start = async () => {
       host: '0.0.0.0'
     })
 
-    // Start Socket.IO server on the same port
-    server.listen(env.PORT, '0.0.0.0', () => {
-      logger.info(`AAELink Backend server listening at ${address}`)
-      logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
-      logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
-    })
+    logger.info(`AAELink Backend server listening at ${address}`)
+    logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
+    logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
   } catch (err) {
     logger.error('Error starting server:', err)
     process.exit(1)
