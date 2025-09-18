@@ -92,7 +92,7 @@ export function FileUpload({
         file,
         progress: 0,
         status: error ? 'error' : 'pending',
-        error
+        ...(error && { error })
       };
       newFiles.push(fileItem);
     });

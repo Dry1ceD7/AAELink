@@ -4,6 +4,7 @@
   "description": "AAELink Enterprise Frontend - Discord + Telegram UI Fusion",
   "private": true,
   "scripts": {
+    "dev": "next dev",
     "build": "next build",
     "start": "next start"
   },
