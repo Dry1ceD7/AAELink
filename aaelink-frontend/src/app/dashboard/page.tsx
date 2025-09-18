@@ -1,15 +1,15 @@
 'use client'
 
-import { Bell, MessageCircle, Video, FileText, Calendar, Users, Store, Settings, Search } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { ChatWindow } from '@/components/chat/chat-window'
+import { FileUpload } from '@/components/files/file-upload'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { ChatWindow } from '@/components/chat/chat-window'
-import { FileUpload } from '@/components/files/file-upload'
-import { useToast } from '@/hooks/use-toast'
 import { Toaster } from '@/components/ui/toaster'
+import { useToast } from '@/hooks/use-toast'
+import { Bell, Calendar, FileText, MessageCircle, Search, Settings, Store, Users, Video } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function DashboardPage() {
   const [activeChannel, setActiveChannel] = useState('general')
@@ -217,7 +217,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="flex-1 overflow-hidden">
           {activeTab === 'messages' && (
             <ChatWindow
@@ -232,7 +232,7 @@ export default function DashboardPage() {
               isConnected={true}
             />
           )}
-          
+
           {activeTab === 'files' && (
             <div className="p-6">
               <div className="space-y-6">
@@ -247,7 +247,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          
+
           {activeTab === 'calendar' && (
             <div className="p-6">
               <div className="space-y-6">
@@ -262,7 +262,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          
+
           {activeTab === 'teams' && (
             <div className="p-6">
               <div className="space-y-6">
@@ -277,7 +277,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          
+
           {activeTab === 'settings' && (
             <div className="p-6">
               <div className="space-y-6">
@@ -317,7 +317,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      
+
       <Toaster />
     </div>
   )

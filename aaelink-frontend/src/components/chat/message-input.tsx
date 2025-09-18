@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Send, Paperclip, Smile, Mic, MicOff } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Mic, MicOff, Paperclip, Send, Smile } from 'lucide-react'
+import { KeyboardEvent, useRef, useState } from 'react'
 
 interface MessageInputProps {
   onSendMessage: (content: string) => void
@@ -16,11 +16,11 @@ interface MessageInputProps {
   disabled?: boolean
 }
 
-export function MessageInput({ 
-  onSendMessage, 
-  onSendFile, 
-  onStartVoice, 
-  onStopVoice, 
+export function MessageInput({
+  onSendMessage,
+  onSendFile,
+  onStartVoice,
+  onStopVoice,
   isRecording = false,
   placeholder = "Type a message...",
   disabled = false
@@ -80,7 +80,7 @@ export function MessageInput({
         >
           <Paperclip className="h-4 w-4" />
         </Button>
-        
+
         <div className="flex-1 relative">
           <Input
             ref={inputRef}
@@ -100,7 +100,7 @@ export function MessageInput({
             <Smile className="h-4 w-4" />
           </Button>
         </div>
-        
+
         <Button
           variant="ghost"
           size="icon"
@@ -110,7 +110,7 @@ export function MessageInput({
         >
           {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </Button>
-        
+
         <Button
           onClick={handleSend}
           disabled={!message.trim() || disabled}
@@ -119,7 +119,7 @@ export function MessageInput({
           <Send className="h-4 w-4" />
         </Button>
       </div>
-      
+
       <input
         ref={fileInputRef}
         type="file"
@@ -127,7 +127,7 @@ export function MessageInput({
         onChange={handleFileSelect}
         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
       />
-      
+
       {isTyping && (
         <div className="mt-2 text-xs text-gray-500">
           Typing...

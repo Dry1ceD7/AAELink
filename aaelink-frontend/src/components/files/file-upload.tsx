@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, DragEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
-import { Upload, File, Image, Video, Music, Archive, FileText, X } from 'lucide-react'
+import { Archive, File, FileText, Image, Music, Upload, Video, X } from 'lucide-react'
+import { DragEvent, useRef, useState } from 'react'
 
 interface FileUploadProps {
   onFileUpload: (files: File[]) => void
@@ -75,7 +75,7 @@ export function FileUpload({
   const handleFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files)
     const validFiles = fileArray.filter(validateFile)
-    
+
     if (validFiles.length === 0) return
 
     if (selectedFiles.length + validFiles.length > maxFiles) {
@@ -107,9 +107,9 @@ export function FileUpload({
   const handleDrop = (e: DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-    
+
     if (disabled) return
-    
+
     const files = e.dataTransfer.files
     handleFiles(files)
   }
@@ -127,7 +127,7 @@ export function FileUpload({
 
   const uploadFiles = () => {
     if (selectedFiles.length === 0) return
-    
+
     onFileUpload(selectedFiles)
     setSelectedFiles([])
     toast({

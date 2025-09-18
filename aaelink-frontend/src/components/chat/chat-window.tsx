@@ -1,12 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { MessageList } from './message-list'
-import { MessageInput } from './message-input'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import { formatRelativeTime } from '@/lib/utils'
+import { useState } from 'react'
+import { MessageInput } from './message-input'
+import { MessageList } from './message-list'
 
 interface Message {
   id: string

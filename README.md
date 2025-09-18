@@ -80,7 +80,8 @@ AAELink is a comprehensive enterprise workspace platform designed for Advanced I
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
+
+- Node.js 18+
 - Docker & Docker Compose
 - Git
 

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Card } from '@/components/ui/card'
 import { formatRelativeTime } from '@/lib/utils'
-import { MessageCircle, MoreVertical, Heart, Reply, Share } from 'lucide-react'
+import { Heart, MoreVertical, Reply, Share } from 'lucide-react'
+import { useState } from 'react'
 
 interface Message {
   id: string
@@ -64,7 +64,7 @@ export function MessageList({ messages, onReaction, onReply, onShare }: MessageL
               {message.user.initials}
             </AvatarFallback>
           </Avatar>
-          
+
           <div className={`flex-1 ${message.isOwn ? 'text-right' : ''}`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
@@ -78,15 +78,15 @@ export function MessageList({ messages, onReaction, onReply, onShare }: MessageL
                 {formatRelativeTime(message.timestamp)}
               </span>
             </div>
-            
+
             <Card className={`p-3 max-w-md ${
-              message.isOwn 
-                ? 'bg-aae-blue text-white ml-auto' 
+              message.isOwn
+                ? 'bg-aae-blue text-white ml-auto'
                 : 'bg-white dark:bg-gray-700'
             }`}>
               <p className="text-sm">{message.content}</p>
             </Card>
-            
+
             {message.reactions.length > 0 && (
               <div className="flex gap-1 mt-2">
                 {message.reactions.map((reaction, index) => (
@@ -102,7 +102,7 @@ export function MessageList({ messages, onReaction, onReply, onShare }: MessageL
               </div>
             )}
           </div>
-          
+
           {hoveredMessage === message.id && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button

@@ -1,14 +1,12 @@
-import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
-import rateLimit from '@fastify/rate-limit'
-import websocket from '@fastify/websocket'
 import jwt from '@fastify/jwt'
 import multipart from '@fastify/multipart'
+import rateLimit from '@fastify/rate-limit'
+import websocket from '@fastify/websocket'
 import { PrismaClient } from '@prisma/client'
-import { Server as SocketIOServer } from 'socket.io'
-import { createServer } from 'http'
 import dotenv from 'dotenv'
+import Fastify from 'fastify'
 
 // Load environment variables
 dotenv.config()
@@ -16,13 +14,7 @@ dotenv.config()
 const prisma = new PrismaClient()
 const fastify = Fastify({
   logger: {
-    level: process.env.LOG_LEVEL || 'info',
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true
-      }
-    }
+    level: process.env.LOG_LEVEL || 'info'
   }
 })
 
@@ -70,8 +62,8 @@ async function registerPlugins() {
 
 // Health check endpoint
 fastify.get('/health', async (request, reply) => {
-  return { 
-    status: 'ok', 
+  return {
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: process.env.npm_package_version || '1.0.0'
@@ -83,16 +75,16 @@ fastify.register(async function (fastify) {
   // Auth routes
   fastify.post('/api/auth/login', async (request, reply) => {
     const { username, password } = request.body as { username: string; password: string }
-    
+
     // Mock authentication - replace with real implementation
     if (username === 'admin' || username === 'admin@aae.co.th') {
       if (password === '12345678') {
-        const token = fastify.jwt.sign({ 
-          userId: '1', 
+        const token = fastify.jwt.sign({
+          userId: '1',
           username: 'admin',
           role: 'admin'
         })
-        
+
         return {
           success: true,
           token,
@@ -105,7 +97,7 @@ fastify.register(async function (fastify) {
         }
       }
     }
-    
+
     reply.code(401)
     return { success: false, message: 'Invalid credentials' }
   })
@@ -139,7 +131,7 @@ fastify.register(async function (fastify) {
     }
   }, async (request, reply) => {
     const { channelId } = request.params as { channelId: string }
-    
+
     // Mock messages - replace with database query
     const messages = [
       {
@@ -166,7 +158,7 @@ fastify.register(async function (fastify) {
         isOwn: true
       }
     ]
-    
+
     return { messages }
   })
 
@@ -181,15 +173,15 @@ fastify.register(async function (fastify) {
     }
   }, async (request, reply) => {
     const data = await request.file()
-    
+
     if (!data) {
       reply.code(400)
       return { success: false, message: 'No file uploaded' }
     }
-    
+
     // Mock file upload - replace with real implementation
     const fileId = Date.now().toString()
-    
+
     return {
       success: true,
       fileId,
@@ -204,12 +196,12 @@ fastify.register(async function (fastify) {
 fastify.register(async function (fastify) {
   fastify.get('/ws', { websocket: true }, (connection, req) => {
     fastify.log.info('WebSocket connection established')
-    
+
     connection.socket.on('message', (message) => {
       try {
         const data = JSON.parse(message.toString())
         fastify.log.info('Received message:', data)
-        
+
         // Echo back the message
         connection.socket.send(JSON.stringify({
           type: 'echo',
@@ -220,7 +212,7 @@ fastify.register(async function (fastify) {
         fastify.log.error('Error parsing message:', error)
       }
     })
-    
+
     connection.socket.on('close', () => {
       fastify.log.info('WebSocket connection closed')
     })
@@ -231,16 +223,16 @@ fastify.register(async function (fastify) {
 async function start() {
   try {
     await registerPlugins()
-    
+
     const port = parseInt(process.env.PORT || '3001')
     const host = process.env.HOST || '0.0.0.0'
-    
+
     await fastify.listen({ port, host })
-    
+
     fastify.log.info(`🚀 AAELink Backend Server running on http://${host}:${port}`)
     fastify.log.info(`📊 Health check: http://${host}:${port}/health`)
     fastify.log.info(`🔌 WebSocket: ws://${host}:${port}/ws`)
-    
+
   } catch (err) {
     fastify.log.error(err)
     process.exit(1)
