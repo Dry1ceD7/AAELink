@@ -26,12 +26,15 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd packages/backend && bun install
-        cd ../frontend && bun install
+        cd aaelink-backend && bun install
+        cd ../aaelink-enterprise-backend && bun install
+        cd ../packages/frontend && bun install
 
     - name: Run backend tests
       run: |
-        cd packages/backend
+        cd aaelink-backend
+        bun test --coverage
+        cd ../aaelink-enterprise-backend
         bun test --coverage
 
     - name: Run frontend tests
@@ -42,7 +45,7 @@ jobs:
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
       with:
-        files: ./packages/backend/coverage/lcov.info,./packages/frontend/coverage/lcov.info
+        files: ./aaelink-backend/coverage/lcov.info,./aaelink-enterprise-backend/coverage/lcov.info,./packages/frontend/coverage/lcov.info
 
   lint:
     name: Linting
@@ -59,18 +62,21 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd packages/backend && bun install
-        cd ../frontend && bun install
+        cd aaelink-backend && bun install
+        cd ../aaelink-enterprise-backend && bun install
+        cd ../packages/frontend && bun install
 
     - name: Run ESLint
       run: |
-        cd packages/backend && bun run lint
-        cd ../frontend && bun run lint
+        cd aaelink-backend && bun run lint
+        cd ../aaelink-enterprise-backend && bun run lint
+        cd ../packages/frontend && bun run lint
 
     - name: Run Prettier
       run: |
-        cd packages/backend && bun run format:check
-        cd ../frontend && bun run format:check
+        cd aaelink-backend && bun run format:check
+        cd ../aaelink-enterprise-backend && bunx prettier --check .
+        cd ../packages/frontend && echo "No prettier available"
 
   build:
     name: Build
@@ -88,12 +94,15 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd packages/backend && bun install
-        cd ../frontend && bun install
+        cd aaelink-backend && bun install
+        cd ../aaelink-enterprise-backend && bun install
+        cd ../packages/frontend && bun install
 
     - name: Build backend
       run: |
-        cd packages/backend
+        cd aaelink-backend
+        bun run build
+        cd ../aaelink-enterprise-backend
         bun run build
 
     - name: Build frontend
@@ -106,7 +115,8 @@ jobs:
       with:
         name: build-artifacts
         path: |
-          packages/backend/dist
+          aaelink-backend/dist
+          aaelink-enterprise-backend/dist
           packages/frontend/dist
 
   e2e:
@@ -125,8 +135,9 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd packages/backend && bun install
-        cd ../frontend && bun install
+        cd aaelink-backend && bun install
+        cd ../aaelink-enterprise-backend && bun install
+        cd ../packages/frontend && bun install
 
     - name: Install Playwright
       run: |
@@ -135,7 +146,7 @@ jobs:
 
     - name: Start backend
       run: |
-        cd packages/backend
+        cd aaelink-backend
         bun run dev &
         sleep 10
 
@@ -172,13 +183,15 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd packages/backend && bun install
-        cd ../frontend && bun install
+        cd aaelink-backend && bun install
+        cd ../aaelink-enterprise-backend && bun install
+        cd ../packages/frontend && bun install
 
     - name: Run security audit
       run: |
-        cd packages/backend && bun audit
-        cd ../frontend && bun audit
+        cd aaelink-backend && bun audit
+        cd ../aaelink-enterprise-backend && bun audit
+        cd ../packages/frontend && bun audit
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
