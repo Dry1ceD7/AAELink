@@ -3,7 +3,7 @@
 /**
  * BMAD Method Orchestrator - Updated for AAELink v1.1
  * Master AI Agent Coordinator for Enterprise Development
- * 
+ *
  * Current Status: Frontend Implementation Complete
  * Next Phase: Backend Integration & Advanced Features
  */
