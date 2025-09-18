@@ -29,7 +29,7 @@ class OfflineStorage {
   private version = 1;
   private db: IDBDatabase | null = null;
   private syncQueue: SyncQueue[] = [];
-  private isOnline = navigator.onLine;
+  private isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
   private syncInProgress = false;
 
   constructor() {
@@ -38,6 +38,8 @@ class OfflineStorage {
   }
 
   private async init(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.version);
 
@@ -94,6 +96,8 @@ class OfflineStorage {
   }
 
   private setupEventListeners(): void {
+    if (typeof window === 'undefined') return;
+    
     window.addEventListener('online', () => {
       this.isOnline = true;
       this.processSyncQueue();

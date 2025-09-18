@@ -23,7 +23,7 @@ export interface SyncProgress {
 }
 
 class OfflineManager {
-  private isOnline = navigator.onLine;
+  private isOnline = typeof window !== 'undefined' ? navigator.onLine : true;
   private lastSync: Date | null = null;
   private syncProgress: SyncProgress = {
     total: 0,
@@ -40,6 +40,8 @@ class OfflineManager {
   }
 
   private setupEventListeners(): void {
+    if (typeof window === 'undefined') return;
+    
     window.addEventListener('online', () => {
       this.isOnline = true;
       this.notifyListeners();
