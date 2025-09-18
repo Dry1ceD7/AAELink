@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import React, { forwardRef } from 'react';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
+  variant?: 'primary' | 'secondary' | 'danger' | 'destructive' | 'ghost' | 'outline';
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   loading?: boolean;
   leftIcon?: React.ReactNode;
@@ -37,6 +37,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
     primary: 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800',
     secondary: 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800',
     danger: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800',
+    destructive: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800',
     ghost: 'text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800',
     outline: 'border border-gray-300 bg-transparent text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800',
   };

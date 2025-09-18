@@ -2,7 +2,7 @@ import React from 'react';
 
 interface LogoProps {
   variant?: 'default' | 'text' | 'transparent';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -14,13 +14,15 @@ const Logo: React.FC<LogoProps> = ({
   const sizeClasses = {
     sm: 'h-8 w-8',
     md: 'h-12 w-12',
-    lg: 'h-16 w-16'
+    lg: 'h-16 w-16',
+    xl: 'h-20 w-20'
   };
 
   const textSizeClasses = {
     sm: 'text-lg',
     md: 'text-2xl',
-    lg: 'text-4xl'
+    lg: 'text-4xl',
+    xl: 'text-5xl'
   };
 
   if (variant === 'text') {

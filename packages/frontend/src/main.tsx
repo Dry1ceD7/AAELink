@@ -30,7 +30,7 @@ function renderApp() {
       <div style="padding: 20px; text-align: center; color: red;">
         <h1>Error Loading App</h1>
         <p>There was an error loading the application. Please refresh the page.</p>
-        <p>Error: ${error.message}</p>
+        <p>Error: ${error instanceof Error ? error.message : String(error)}</p>
       </div>
     `;
   }

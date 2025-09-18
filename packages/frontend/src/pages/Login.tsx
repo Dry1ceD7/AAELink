@@ -12,10 +12,10 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { LanguageSelector } from '../components/ui/LanguageSelector';
-import Logo from '../components/Logo';
+import { Logo } from '../components/Logo';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { toast } from '../hooks/useToast';
-import { api } from '../services/api';
+import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 
 const LoginPage: React.FC = () => {
@@ -33,11 +33,7 @@ const LoginPage: React.FC = () => {
    */
   const handleRegister = async () => {
     if (!email || !displayName) {
-      toast({
-        title: t('login.error'),
-        description: t('login.fillAllFields'),
-        variant: 'destructive',
-      });
+      toast.error(t('login.fillAllFields'));
       return;
     }
 
@@ -64,21 +60,14 @@ const LoginPage: React.FC = () => {
         setUser(verifyResponse.data.user);
         setAuthenticated(true);
 
-        toast({
-          title: t('login.success'),
-          description: t('login.registrationComplete'),
-        });
+        toast.success(t('login.registrationComplete'));
 
         navigate('/');
       }
     } catch (error: any) {
       console.error('Registration error:', error);
 
-      toast({
-        title: t('login.error'),
-        description: error.message || t('login.registrationFailed'),
-        variant: 'destructive',
-      });
+      toast.error(error.message || t('login.registrationFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -89,11 +78,7 @@ const LoginPage: React.FC = () => {
    */
   const handleAuthenticate = async () => {
     if (!email) {
-      toast({
-        title: t('login.error'),
-        description: t('login.enterEmail'),
-        variant: 'destructive',
-      });
+      toast.error(t('login.enterEmail'));
       return;
     }
 
@@ -118,10 +103,7 @@ const LoginPage: React.FC = () => {
         setUser(verifyResponse.data.user);
         setAuthenticated(true);
 
-        toast({
-          title: t('login.success'),
-          description: t('login.welcomeBack'),
-        });
+        toast.success(t('login.welcomeBack'));
 
         navigate('/');
       }
@@ -131,17 +113,9 @@ const LoginPage: React.FC = () => {
       // Check if user needs to register first
       if (error.response?.data?.error === 'No passkeys registered') {
         setIsRegistering(true);
-        toast({
-          title: t('login.noPasskeys'),
-          description: t('login.pleaseRegister'),
-          variant: 'warning',
-        });
+        toast.warning(t('login.pleaseRegister'));
       } else {
-        toast({
-          title: t('login.error'),
-          description: error.message || t('login.authenticationFailed'),
-          variant: 'destructive',
-        });
+        toast.error(error.message || t('login.authenticationFailed'));
       }
     } finally {
       setIsLoading(false);

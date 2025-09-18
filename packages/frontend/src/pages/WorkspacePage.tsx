@@ -4,7 +4,7 @@ import AdvancedSearch from '../components/AdvancedSearch';
 import Calendar from '../components/Calendar';
 import ChannelList from '../components/ChannelList';
 import FileUpload from '../components/FileUpload';
-import Logo from '../components/Logo';
+import { Logo } from '../components/Logo';
 import MessageInput from '../components/MessageInput';
 import MessageList from '../components/MessageList';
 import SearchBar from '../components/SearchBar';
@@ -17,7 +17,7 @@ import { WebSocketService } from '../services/websocket';
 const WorkspacePage: React.FC = () => {
   const { user, logout } = useAuth();
   const { theme, seniorMode, toggleTheme, setSeniorMode } = useTheme();
-  const { success } = useToast();
+  const { success, error } = useToast();
 
   const [selectedChannel, setSelectedChannel] = useState('general');
   const [messages, setMessages] = useState<any[]>([]);
@@ -266,9 +266,9 @@ const WorkspacePage: React.FC = () => {
       } else {
         throw new Error('Upload failed');
       }
-    } catch (error) {
-      console.error('Failed to upload file:', error);
-      success(`Failed to upload "${file.name}"`, 'error');
+    } catch (uploadError) {
+      console.error('Failed to upload file:', uploadError);
+      error(`Failed to upload "${file.name}"`);
     }
   };
 

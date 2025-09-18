@@ -1,5 +1,5 @@
 import React, { ReactNode, createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { api } from '../services/api';
+import api from '../services/api';
 
 interface User {
   id: string;
@@ -14,6 +14,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  setUser: (user: User | null) => void;
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string, displayName: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -134,6 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value = {
     user,
     loading,
+    setUser,
     login,
     register,
     logout,

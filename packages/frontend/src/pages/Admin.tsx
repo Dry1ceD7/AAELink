@@ -1,5 +1,5 @@
 import React from 'react';
-import Logo from '../components/Logo';
+import { Logo } from '../components/Logo';
 
 const AdminPage: React.FC = () => {
   return (
