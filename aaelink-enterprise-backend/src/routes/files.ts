@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -13,7 +13,7 @@ const fileDownloadSchema = z.object({
   fileId: z.string().min(1, 'File ID is required'),
 });
 
-export async function fileRoutes(fastify: FastifyInstance) {
+export async function fileRoutes(fastify: any) {
   // Upload file
   fastify.post('/upload', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {

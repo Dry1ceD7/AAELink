@@ -4,11 +4,14 @@ import { persist } from 'zustand/middleware';
 export interface User {
   id: string;
   email: string;
-  displayName: string;
-  role: 'user' | 'org_admin' | 'sysadmin';
+  username: string;
+  firstName: string;
+  lastName: string;
+  displayName?: string;
   avatar?: string;
+  role: 'USER' | 'ORG_ADMIN' | 'SYSADMIN';
+  lastSeen?: string;
   createdAt: string;
-  updatedAt: string;
 }
 
 interface AuthState {
@@ -32,13 +35,13 @@ export const useAuthStore = create<AuthState>()(
       
       checkSession: async () => {
         try {
-          const response = await fetch('/api/auth/session', {
+          const response = await fetch('http://localhost:3001/api/auth/session', {
             credentials: 'include',
           });
           
           if (response.ok) {
             const data = await response.json();
-            set({ user: data.user, isAuthenticated: true });
+            set({ user: data.user, isAuthenticated: !!data.user });
           } else {
             set({ user: null, isAuthenticated: false });
           }
@@ -51,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         set({ user: null, isAuthenticated: false });
         // Clear session on server
-        fetch('/api/auth/logout', {
+        fetch('http://localhost:3001/api/auth/logout', {
           method: 'POST',
           credentials: 'include',
         }).catch(console.error);

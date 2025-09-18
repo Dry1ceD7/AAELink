@@ -11,6 +11,10 @@ interface ToastContextType {
   toasts: Toast[];
   addToast: (message: string, type: Toast['type'], duration?: number) => void;
   removeToast: (id: string) => void;
+  success: (message: string, duration?: number) => void;
+  error: (message: string, duration?: number) => void;
+  warning: (message: string, duration?: number) => void;
+  info: (message: string, duration?: number) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -47,10 +51,30 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const success = (message: string, duration?: number) => {
+    addToast(message, 'success', duration);
+  };
+
+  const error = (message: string, duration?: number) => {
+    addToast(message, 'error', duration);
+  };
+
+  const warning = (message: string, duration?: number) => {
+    addToast(message, 'warning', duration);
+  };
+
+  const info = (message: string, duration?: number) => {
+    addToast(message, 'info', duration);
+  };
+
   const value = {
     toasts,
     addToast,
     removeToast,
+    success,
+    error,
+    warning,
+    info,
   };
 
   return (

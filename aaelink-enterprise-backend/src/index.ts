@@ -29,13 +29,15 @@ const prisma = new PrismaClient({
 });
 
 // Initialize Redis
-const redis = new Redis({
+const redisConfig: any = {
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  retryDelayOnFailover: 100,
   maxRetriesPerRequest: 3,
-});
+};
+if (process.env.REDIS_PASSWORD) {
+  redisConfig.password = process.env.REDIS_PASSWORD;
+}
+const redis = new Redis(redisConfig);
 
 // Initialize MinIO
 const minio = new MinioClient({
@@ -50,14 +52,16 @@ const minio = new MinioClient({
 const fastify = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
-    transport: process.env.NODE_ENV === 'development' ? {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        translateTime: 'HH:MM:ss Z',
-        ignore: 'pid,hostname',
+    ...(process.env.NODE_ENV === 'development' && {
+      transport: {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'HH:MM:ss Z',
+          ignore: 'pid,hostname',
+        },
       },
-    } : undefined,
+    }),
   },
   trustProxy: true,
 });
@@ -139,16 +143,16 @@ async function registerPlugins() {
       deepLinking: false,
     },
     uiHooks: {
-      onRequest: function (request, reply, next) {
+      onRequest: function (_request: any, _reply: any, next: any) {
         next();
       },
-      preHandler: function (request, reply, next) {
+      preHandler: function (_request: any, _reply: any, next: any) {
         next();
       },
     },
     staticCSP: true,
-    transformStaticCSP: (header) => header,
-    transformSpecification: (swaggerObject, request, reply) => {
+    transformStaticCSP: (header: any) => header,
+    transformSpecification: (swaggerObject: any, _request: any, _reply: any) => {
       return swaggerObject;
     },
     transformSpecificationClone: true,
@@ -158,7 +162,7 @@ async function registerPlugins() {
 // Register routes
 async function registerRoutes() {
   // Health check
-  fastify.get('/health', async (request, reply) => {
+  fastify.get('/health', async (_request: any, _reply: any) => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -180,13 +184,13 @@ async function registerRoutes() {
   await fastify.register(n8nRoutes, { prefix: '/api/n8n' });
 
   // WebSocket handler
-  fastify.register(async function (fastify) {
+  fastify.register(async function (fastify: any) {
     fastify.get('/ws', { websocket: true }, websocketHandler);
   });
 }
 
 // Error handler
-fastify.setErrorHandler((error, request, reply) => {
+fastify.setErrorHandler((error: any, _request: any, reply: any) => {
   logger.error(error);
 
   if (error.validation) {

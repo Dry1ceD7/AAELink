@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import LanguageSelector from '../components/LanguageSelector';
-import Logo from '../components/Logo';
+import { Logo } from '../components/Logo';
 import WebAuthnLogin from '../components/WebAuthnLogin';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';

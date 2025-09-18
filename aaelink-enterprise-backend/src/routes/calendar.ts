@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -19,9 +19,9 @@ const updateEventSchema = createEventSchema.partial().extend({
   id: z.string().min(1, 'Event ID is required'),
 });
 
-const deleteEventSchema = z.object({
-  id: z.string().min(1, 'Event ID is required'),
-});
+// const deleteEventSchema = z.object({
+//   id: z.string().min(1, 'Event ID is required'),
+// });
 
 const getEventsSchema = z.object({
   startDate: z.string().datetime().optional(),
@@ -30,7 +30,7 @@ const getEventsSchema = z.object({
   offset: z.number().min(0).default(0),
 });
 
-export async function calendarRoutes(fastify: FastifyInstance) {
+export async function calendarRoutes(fastify: any) {
   // Create event
   fastify.post('/events', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -211,7 +211,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
-      const updateData = updateEventSchema.parse({ id, ...request.body });
+      const updateData = updateEventSchema.parse({ id, ...(request.body as any) });
       const payload = request.user as any;
 
       // Check if event exists and user has permission
@@ -235,7 +235,6 @@ export async function calendarRoutes(fastify: FastifyInstance) {
 
       // Update event
       const updatedEvent = {
-        id,
         ...updateData,
         updatedAt: new Date().toISOString(),
         updatedBy: payload.userId,
@@ -320,7 +319,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
   });
 
   // Get meeting rooms
-  fastify.get('/meeting-rooms', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/meeting-rooms', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock meeting rooms - replace with database query
       const meetingRooms = [

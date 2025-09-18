@@ -235,7 +235,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
         distinct: ['query']
       })
 
-      suggestions.push(...recentSearches.map(s => s.query))
+      suggestions.push(...recentSearches.map((s: any) => s.query))
 
       // Get user suggestions
       const userSuggestions = await prisma.user.findMany({
@@ -256,7 +256,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
         take: 5
       })
 
-      suggestions.push(...userSuggestions.map(u => `@${u.username}`))
+      suggestions.push(...userSuggestions.map((u: any) => `@${u.username}`))
 
       return { suggestions: [...new Set(suggestions)].slice(0, 10) }
     } catch (error) {

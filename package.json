@@ -3,16 +3,24 @@
   "version": "2.0.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "aaelink-backend",
+    "aaelink-enterprise-backend",
+    "aaelink-enterprise-frontend"
   ],
   "scripts": {
-    "dev": "concurrently \"bun run dev --filter=@aaelink/backend\" \"bun run dev --filter=@aaelink/frontend\"",
-    "build": "bun run build --filter=@aaelink/backend && bun run build --filter=@aaelink/frontend",
-    "test": "bun run test --filter=@aaelink/backend && bun run test --filter=@aaelink/frontend",
-    "lint": "bun run lint --filter=@aaelink/backend && bun run lint --filter=@aaelink/frontend",
-    "typecheck": "cd packages/backend && bun run typecheck && cd ../frontend && bun run typecheck",
-    "e2e": "bun run e2e --filter=@aaelink/frontend",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist"
+    "dev": "concurrently \"npm run dev --workspace=aaelink-backend\" \"npm run dev --workspace=@aaelink/frontend\"",
+    "dev:enterprise": "concurrently \"npm run dev --workspace=aaelink-enterprise-backend\" \"npm run dev --workspace=aaelink-enterprise-frontend\"",
+    "build": "npm run build --workspace=aaelink-backend && npm run build --workspace=@aaelink/frontend",
+    "build:enterprise": "npm run build --workspace=aaelink-enterprise-backend && npm run build --workspace=aaelink-enterprise-frontend",
+    "test": "npm run test --workspace=aaelink-backend && npm run test --workspace=@aaelink/frontend",
+    "test:enterprise": "npm run test --workspace=aaelink-enterprise-backend && npm run test --workspace=aaelink-enterprise-frontend",
+    "lint": "npm run lint --workspace=aaelink-backend && npm run lint --workspace=@aaelink/frontend",
+    "lint:enterprise": "npm run lint --workspace=aaelink-enterprise-backend && npm run lint --workspace=aaelink-enterprise-frontend",
+    "typecheck": "cd packages/frontend && npm run typecheck && cd ../../aaelink-backend && npm run typecheck",
+    "typecheck:enterprise": "cd aaelink-enterprise-frontend && npm run type-check && cd ../aaelink-enterprise-backend && npm run type-check",
+    "e2e": "npm run e2e --workspace=@aaelink/frontend",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist aaelink-*/node_modules aaelink-*/dist"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

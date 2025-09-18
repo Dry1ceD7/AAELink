@@ -1,4 +1,4 @@
-// File: /Users/d7y1ce/AAELink-new/aaelink-enterprise-frontend/app/layout.tsx
+// File: /workspace/aaelink-enterprise-frontend/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

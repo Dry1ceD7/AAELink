@@ -1,7 +1,18 @@
 import React from 'react';
-import Logo from '../components/Logo';
+import { useNavigate } from 'react-router-dom';
+import { Logo } from '../components/Logo';
+import { Button } from '../components/ui/Button';
+import { useAuth } from '../contexts/AuthContext';
 
 const WorkspacePage: React.FC = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -12,9 +23,28 @@ const WorkspacePage: React.FC = () => {
               <Logo variant="text" size="md" />
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                Welcome to AAELink
-              </span>
+              {user ? (
+                <>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Welcome, {user.email}
+                  </span>
+                  <Button 
+                    onClick={handleLogout}
+                    variant="danger"
+                    size="sm"
+                  >
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <Button 
+                  onClick={() => navigate('/login')}
+                  variant="primary"
+                  size="sm"
+                >
+                  Login
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -57,12 +87,32 @@ const WorkspacePage: React.FC = () => {
               <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div className="text-3xl mb-4">🔐</div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  WebAuthn Security
+                  Secure Authentication
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Passwordless authentication with passkeys for maximum security
+                  JWT-based authentication with secure session management
                 </p>
               </div>
+            </div>
+
+            {/* Quick actions */}
+            <div className="mt-12 flex justify-center space-x-4">
+              <Button 
+                onClick={() => navigate('/test')}
+                variant="secondary"
+                size="lg"
+              >
+                Test Connection
+              </Button>
+              {!user && (
+                <Button 
+                  onClick={() => navigate('/login')}
+                  variant="primary"
+                  size="lg"
+                >
+                  Get Started
+                </Button>
+              )}
             </div>
           </div>
         </div>

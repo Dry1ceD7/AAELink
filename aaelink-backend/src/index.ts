@@ -1,5 +1,7 @@
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
 import helmet from '@fastify/helmet'
+import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import { PrismaClient } from '@prisma/client'
@@ -31,21 +33,23 @@ export const minio = new MinioClient()
 const server = createServer()
 const io = new SocketIOServer(server, {
   cors: {
-    origin: env.FRONTEND_URL,
-    methods: ['GET', 'POST']
+    origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 })
 
 // Create Fastify instance
 const fastify = Fastify({
-  logger: logger,
   trustProxy: true
 })
 
 // Register plugins
 await fastify.register(cors, {
-  origin: env.FRONTEND_URL,
-  credentials: true
+  origin: [env.FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id']
 })
 
 await fastify.register(helmet, {
@@ -70,6 +74,29 @@ await fastify.register(rateLimit, {
 })
 
 await fastify.register(websocket)
+
+await fastify.register(cookie, {
+  secret: env.JWT_SECRET
+})
+
+await fastify.register(jwt, {
+  secret: env.JWT_SECRET
+})
+
+// Add services to Fastify instance
+fastify.decorate('prisma', prisma)
+fastify.decorate('redis', redis)
+fastify.decorate('minio', minio)
+fastify.decorate('io', io)
+
+// Add authentication decorator
+fastify.decorate('authenticate', async function (request: any, reply: any) {
+  try {
+    await request.jwtVerify()
+  } catch (err) {
+    reply.send(err)
+  }
+})
 
 // Register routes
 await fastify.register(authRoutes, { prefix: '/api/auth' })
@@ -98,7 +125,7 @@ fastify.get('/api/readyz', async (request, reply) => {
     return { status: 'ready', timestamp: new Date().toISOString() }
   } catch (error) {
     reply.code(503)
-    return { status: 'not ready', error: error.message }
+    return { status: 'not ready', error: error instanceof Error ? error.message : String(error) }
   }
 })
 
@@ -113,17 +140,14 @@ fastify.register(async function (fastify) {
       return
     }
 
-    // Join user-specific room
-    socket.join(`user:${userId}`)
-
     // Handle incoming messages
-    socket.on('message', async (message) => {
+    socket.on('message', async (message: Buffer) => {
       try {
         const data = JSON.parse(message.toString())
 
         switch (data.type) {
           case 'typing':
-            socket.to(`room:${data.roomId}`).emit('typing', {
+            io.to(`room:${data.roomId}`).emit('typing', {
               userId,
               isTyping: data.isTyping
             })
@@ -131,18 +155,28 @@ fastify.register(async function (fastify) {
 
           case 'presence':
             await redis.setex(`presence:${userId}`, 30, 'online')
-            socket.to(`user:${userId}`).emit('presence', {
+            io.emit('presence', {
               userId,
               status: 'online'
             })
             break
 
           case 'join_room':
-            socket.join(`room:${data.roomId}`)
+            // Use Socket.IO for room management
+            io.sockets.sockets.forEach((s: any) => {
+              if (s.userId === userId) {
+                s.join(`room:${data.roomId}`)
+              }
+            })
             break
 
           case 'leave_room':
-            socket.leave(`room:${data.roomId}`)
+            // Use Socket.IO for room management
+            io.sockets.sockets.forEach((s: any) => {
+              if (s.userId === userId) {
+                s.leave(`room:${data.roomId}`)
+              }
+            })
             break
         }
       } catch (error) {
@@ -153,7 +187,7 @@ fastify.register(async function (fastify) {
     // Handle disconnect
     socket.on('close', async () => {
       await redis.del(`presence:${userId}`)
-      socket.to(`user:${userId}`).emit('presence', {
+      io.emit('presence', {
         userId,
         status: 'offline'
       })
@@ -201,14 +235,18 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 // Start server
 const start = async () => {
   try {
+    // Start Fastify server
     const address = await fastify.listen({
       port: env.PORT,
       host: '0.0.0.0'
     })
 
-    logger.info(`AAELink Backend server listening at ${address}`)
-    logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
-    logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
+    // Start Socket.IO server on the same port
+    server.listen(env.PORT, '0.0.0.0', () => {
+      logger.info(`AAELink Backend server listening at ${address}`)
+      logger.info(`Health check: http://localhost:${env.PORT}/api/healthz`)
+      logger.info(`WebSocket: ws://localhost:${env.PORT}/ws`)
+    })
   } catch (err) {
     logger.error('Error starting server:', err)
     process.exit(1)

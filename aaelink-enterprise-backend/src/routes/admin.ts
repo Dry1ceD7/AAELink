@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
-export async function adminRoutes(fastify: FastifyInstance) {
+export async function adminRoutes(fastify: any) {
   // Admin dashboard stats
   fastify.get('/stats', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -22,7 +22,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock admin stats - replace with real data
       const stats = {
@@ -51,7 +51,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
   });
 
   // System health check
-  fastify.get('/health', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/health', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const health = {
         status: 'healthy',

@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
-export async function userRoutes(fastify: FastifyInstance) {
+export async function userRoutes(fastify: any) {
   // Get user profile
   fastify.get('/profile', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -44,7 +44,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   // Get online users
-  fastify.get('/online', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/online', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock online users - replace with real-time data
       const onlineUsers = [

@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -9,13 +9,13 @@ const messageSchema = z.object({
   type: z.enum(['text', 'file', 'image', 'voice']).default('text'),
 });
 
-const channelSchema = z.object({
-  name: z.string().min(1, 'Channel name is required').max(50, 'Channel name too long'),
-  type: z.enum(['text', 'voice']).default('text'),
-});
+// const channelSchema = z.object({
+//   name: z.string().min(1, 'Channel name is required').max(50, 'Channel name too long'),
+//   type: z.enum(['text', 'voice']).default('text'),
+// });
 
 
-export async function chatRoutes(fastify: FastifyInstance) {
+export async function chatRoutes(fastify: any) {
   // Get messages for a channel
   fastify.get('/messages/:channelId', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -116,7 +116,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
   });
 
   // Get channels
-  fastify.get('/channels', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/channels', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock channels - replace with database query
       const channels = [

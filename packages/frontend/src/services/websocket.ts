@@ -77,7 +77,7 @@ class WebSocketService {
         this.ws.onerror = (error) => {
           console.error('WebSocket error:', error);
           this.isConnecting = false;
-          this.callbacks.onError?.(error as Error);
+          this.callbacks.onError?.(error instanceof Error ? error : new Error('WebSocket error'));
           reject(error);
         };
 
@@ -218,7 +218,7 @@ class WebSocketService {
 }
 
 // Create singleton instance
-const wsService = new WebSocketService('ws://localhost:3002/ws');
+const wsService = new WebSocketService('ws://localhost:3001/ws');
 
 export { wsService as WebSocketService };
 export type { WebSocketCallbacks, WebSocketMessage };

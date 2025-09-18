@@ -5,6 +5,7 @@ interface ThemeContextType {
   seniorMode: boolean;
   toggleTheme: () => void;
   toggleSeniorMode: () => void;
+  setSeniorMode: (enabled: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -57,6 +58,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     seniorMode,
     toggleTheme,
     toggleSeniorMode,
+    setSeniorMode,
   };
 
   return (
