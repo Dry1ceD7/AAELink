@@ -62,31 +62,31 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-aae-blue-900 via-aae-blue-800 to-aae-blue-700 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-aae-blue-900 via-aae-blue-800 to-aae-blue-700 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="w-full max-w-md mx-auto sm:max-w-lg lg:max-w-xl">
         {/* Logo and Branding */}
         <div className="text-center mb-8 animate-fade-in">
-          <div className="mx-auto w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-lg">
-            <span className="text-aae-blue-600 text-2xl font-bold">AAE</span>
+          <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 bg-white rounded-full flex items-center justify-center mb-4 shadow-lg">
+            <span className="text-aae-blue-600 text-xl sm:text-2xl lg:text-3xl font-bold">AAE</span>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">AAELink Enterprise</h1>
-          <p className="text-aae-blue-100 text-sm">Advanced ID Asia Engineering Co.,Ltd</p>
-          <p className="text-aae-blue-200 text-xs mt-1">Secure Enterprise Workspace Portal</p>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2">AAELink Enterprise</h1>
+          <p className="text-aae-blue-100 text-xs sm:text-sm lg:text-base">Advanced ID Asia Engineering Co.,Ltd</p>
+          <p className="text-aae-blue-200 text-xs sm:text-sm mt-1">Secure Enterprise Workspace Portal</p>
         </div>
 
         {/* Login Form */}
         <Card className="telegram-card animate-slide-in shadow-xl">
-          <CardHeader className="text-center pb-4">
-            <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center justify-center gap-2">
-              <Shield className="h-5 w-5 text-aae-blue-600" />
+          <CardHeader className="text-center pb-4 px-4 sm:px-6">
+            <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center justify-center gap-2">
+              <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-aae-blue-600" />
               Secure Access
             </CardTitle>
-            <CardDescription className="text-gray-600 dark:text-gray-400">
+            <CardDescription className="text-sm text-gray-600 dark:text-gray-400">
               Enter your credentials to access AAELink
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 px-4 sm:px-6">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -170,10 +170,10 @@ export default function LoginPage() {
         </Card>
 
         {/* Security Notice */}
-        <div className="mt-6 p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-          <div className="flex items-start gap-3">
-            <Lock className="h-5 w-5 text-aae-blue-200 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-aae-blue-100">
+        <div className="mt-6 p-3 sm:p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+          <div className="flex items-start gap-2 sm:gap-3">
+            <Lock className="h-4 w-4 sm:h-5 sm:w-5 text-aae-blue-200 mt-0.5 flex-shrink-0" />
+            <div className="text-xs sm:text-sm text-aae-blue-100">
               <p className="font-medium mb-1">🔒 Secure AAELink Access</p>
               <p className="text-xs text-aae-blue-200">
                 Authorized AAE personnel only. All activities are logged and monitored for security compliance.
@@ -183,7 +183,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="text-center mt-8 text-aae-blue-200 text-xs">
+        <div className="text-center mt-6 sm:mt-8 text-aae-blue-200 text-xs sm:text-sm">
           <p>© 2024 Advanced ID Asia Engineering Co.,Ltd</p>
           <p className="mt-1">Version 1.2.0 | Local-First Architecture</p>
         </div>
