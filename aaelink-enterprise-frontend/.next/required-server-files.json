@@ -206,10 +206,6 @@
       "devtoolSegmentExplorer": true,
       "browserDebugInfoInTerminal": false,
       "optimizeRouterScrolling": false,
-      "serverComponentsExternalPackages": [
-        "sharp",
-        "onnxruntime-node"
-      ],
       "optimizePackageImports": [
         "lucide-react",
         "date-fns",
