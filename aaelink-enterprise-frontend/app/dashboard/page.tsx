@@ -1,301 +1,364 @@
+/**
+ * AAELink Enterprise Dashboard
+ * Main workspace interface with offline support
+ * Version: 1.2.0
+ */
+
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
-import { Bell, Calendar, FileText, Hash, MessageCircle, Mic, MicOff, Phone, PhoneOff, Plus, Search, Settings, Users, Volume2 } from 'lucide-react';
-import { useState } from 'react';
+import { offlineManager } from '@/lib/offline-manager';
+import { offlineStorage } from '@/lib/offline-storage';
+import {
+    Calendar,
+    FileText,
+    MessageSquare,
+    Plus,
+    RefreshCw,
+    Search,
+    Settings,
+    Users,
+    Wifi,
+    WifiOff
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 
-export default function DashboardPage() {
-  const [activeChannel, setActiveChannel] = useState('general');
+interface DashboardProps {}
+
+export default function Dashboard({}: DashboardProps) {
+  const [isOnline, setIsOnline] = useState(true);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isVoiceConnected, setIsVoiceConnected] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [activeTab, setActiveTab] = useState<'messages' | 'calendar' | 'files' | 'users'>('messages');
 
-  const channels = [
-    { id: 'general', name: 'general', type: 'text', unread: 0 },
-    { id: 'announcements', name: 'announcements', type: 'text', unread: 3 },
-    { id: 'development', name: 'development', type: 'text', unread: 0 },
-    { id: 'design', name: 'design', type: 'text', unread: 1 },
-    { id: 'marketing', name: 'marketing', type: 'text', unread: 0 },
-    { id: 'voice-general', name: 'General Voice', type: 'voice', unread: 0 },
-    { id: 'voice-meeting', name: 'Meeting Room', type: 'voice', unread: 0 },
-  ];
+  useEffect(() => {
+    // Set up offline status listener
+    const unsubscribe = offlineManager.addStatusListener((status) => {
+      setIsOnline(status.isOnline);
+      setLastSync(status.lastSync);
+    });
 
-  const messages = [
-    {
-      id: '1',
-      author: 'John Doe',
-      avatar: 'JD',
-      content: 'Hey team! How is the project going?',
-      timestamp: new Date(Date.now() - 2 * 60 * 1000),
-      reactions: [
-        { emoji: '👍', count: 3, users: ['user1', 'user2', 'user3'] },
-        { emoji: '❤️', count: 1, users: ['user1'] }
-      ]
-    },
-    {
-      id: '2',
-      author: 'Alice Smith',
-      avatar: 'AS',
-      content: 'Great progress! We should schedule a meeting to discuss the next phase.',
-      timestamp: new Date(Date.now() - 5 * 60 * 1000),
-      reactions: [
-        { emoji: '👍', count: 2, users: ['user2', 'user3'] }
-      ]
-    },
-    {
-      id: '3',
-      author: 'Mike Johnson',
-      avatar: 'MJ',
-      content: 'I\'ve uploaded the latest design mockups to the files section.',
-      timestamp: new Date(Date.now() - 10 * 60 * 1000),
-      reactions: []
+    // Load initial data
+    loadDashboardData();
+
+    return unsubscribe;
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      // Load messages
+      const messageData = await offlineStorage.getMessages();
+      setMessages(messageData);
+
+      // Load events
+      const eventData = await offlineEvents();
+      setEvents(eventData);
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
     }
-  ];
+  };
 
-  const onlineUsers = [
-    { id: '1', name: 'John Doe', status: 'online', avatar: 'JD' },
-    { id: '2', name: 'Alice Smith', status: 'away', avatar: 'AS' },
-    { id: '3', name: 'Mike Johnson', status: 'online', avatar: 'MJ' },
-    { id: '4', name: 'Sarah Wilson', status: 'busy', avatar: 'SW' },
-  ];
+  const handleSendMessage = async (content: string) => {
+    const message = {
+      id: Date.now().toString(),
+      content,
+      channelId: 'general',
+      userId: 'current-user',
+      timestamp: Date.now(),
+      type: 'text'
+    };
+
+    try {
+      await offlineStorage.saveMessage(message);
+      setMessages(prev => [...prev, message]);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  };
+
+  const handleCreateEvent = async (eventData: any) => {
+    try {
+      await offlineStorage.saveEvent(eventData);
+      setEvents(prev => [...prev, eventData]);
+    } catch (error) {
+      console.error('Failed to create event:', error);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    // Implement search functionality
+  };
+
+  const handleForceSync = async () => {
+    try {
+      await offlineManager.forceSync();
+      await loadDashboardData();
+    } catch (error) {
+      console.error('Force sync failed:', error);
+    }
+  };
+
+  const formatLastSync = () => {
+    if (!lastSync) return 'Never';
+
+    const now = new Date();
+    const diff = now.getTime() - lastSync.getTime();
+    const minutes = Math.floor(diff / (1000 * 60));
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
 
   return (
-    <div className="discord-layout">
-      {/* Left Sidebar */}
-      <div className="discord-sidebar">
-        {/* Server List */}
-        <div className="discord-server-list">
-          <div className="discord-server-item">
-            <span className="text-white text-lg font-bold">AAE</span>
-          </div>
-        </div>
-
-        {/* Channel List */}
-        <div className="discord-channel-list scrollbar-thin">
-          <div className="discord-channel-section">
-            <h3 className="discord-channel-section-title">AAELink Workspace</h3>
-            <div className="space-y-1">
-              {channels.map((channel) => (
-                <button
-                  key={channel.id}
-                  onClick={() => setActiveChannel(channel.id)}
-                  className={`discord-channel-item w-full text-left ${
-                    activeChannel === channel.id ? 'active' : ''
-                  }`}
-                >
-                  {channel.type === 'text' ? (
-                    <Hash className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                  <span className="flex-1">#{channel.name}</span>
-                  {channel.unread > 0 && (
-                    <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
-                      {channel.unread}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="discord-channel-section">
-            <h3 className="discord-channel-section-title">Direct Messages</h3>
-            <div className="space-y-1">
-              <button className="discord-channel-item w-full text-left">
-                <MessageCircle className="h-4 w-4" />
-                <span>Alice Smith</span>
-                <span className="bg-green-500 w-2 h-2 rounded-full ml-auto"></span>
-              </button>
-              <button className="discord-channel-item w-full text-left">
-                <MessageCircle className="h-4 w-4" />
-                <span>Mike Johnson</span>
-                <span className="bg-yellow-500 w-2 h-2 rounded-full ml-auto"></span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="discord-main">
-        {/* Message Header */}
-        <div className="discord-message-header">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-xl font-semibold text-white">
-                #{channels.find(c => c.id === activeChannel)?.name}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center space-x-4">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                AAELink Enterprise
               </h1>
-              <div className="flex items-center gap-2">
-                <Button variant="discord" size="sm">
-                  <MessageCircle className="h-4 w-4 mr-2" />
+              <Badge variant={isOnline ? "default" : "destructive"}>
+                {isOnline ? (
+                  <><Wifi className="w-3 h-3 mr-1" /> Online</>
+                ) : (
+                  <><WifiOff className="w-3 h-3 mr-1" /> Offline</>
+                )}
+              </Badge>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Last sync: {formatLastSync()}
+              </div>
+
+              {isOnline && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleForceSync}
+                  className="flex items-center space-x-1"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Sync</span>
+                </Button>
+              )}
+
+              <Button variant="outline" size="sm">
+                <Settings className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sidebar */}
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Navigation</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button
+                  variant={activeTab === 'messages' ? 'default' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('messages')}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
                   Messages
                 </Button>
-                <Button variant="discord-secondary" size="sm">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Files
-                </Button>
-                <Button variant="discord-secondary" size="sm">
-                  <Calendar className="h-4 w-4 mr-2" />
+
+                <Button
+                  variant={activeTab === 'calendar' ? 'default' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('calendar')}
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
                   Calendar
                 </Button>
-                <Button variant="discord-secondary" size="sm">
-                  <Users className="h-4 w-4 mr-2" />
-                  Teams
+
+                <Button
+                  variant={activeTab === 'files' ? 'default' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('files')}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Files
                 </Button>
-                <Button variant="discord-secondary" size="sm">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
+
+                <Button
+                  variant={activeTab === 'users' ? 'default' : 'ghost'}
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('users')}
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  Users
                 </Button>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
+              </CardContent>
+            </Card>
+
+            {/* Quick Stats */}
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle className="text-lg">Quick Stats</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+                  <span className="text-sm font-medium">{messages.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Events</span>
+                  <span className="text-sm font-medium">{events.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                  <Badge variant={isOnline ? "default" : "destructive"} className="text-xs">
+                    {isOnline ? 'Online' : 'Offline'}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Content */}
+          <div className="lg:col-span-3">
+            {/* Search Bar */}
+            <div className="mb-6">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  placeholder="Search..."
+                  placeholder="Search messages, files, events..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 w-64 bg-discord-dark border-discord-dark text-white placeholder-gray-400"
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="pl-10"
                 />
               </div>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
-              </Button>
-              <div className="text-sm text-gray-300">
-                Welcome, <span className="font-medium text-white">Admin User</span>
-              </div>
-              <Button variant="ghost" className="text-white hover:bg-discord-dark">
-                Logout
-              </Button>
             </div>
-          </div>
-        </div>
 
-        {/* Message Area */}
-        <div className="discord-message-area">
-          <div className="flex items-center justify-between p-4 border-b bg-gray-50 dark:bg-discord-dark">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <h2 className="text-lg font-semibold">#{channels.find(c => c.id === activeChannel)?.name}</h2>
-              <span className="text-sm text-gray-500">{messages.length} messages</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">Search</Button>
-              <Button variant="outline" size="sm">Members</Button>
-              <Button variant="outline" size="sm">Settings</Button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-hidden">
-            <div className="flex h-full">
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-                {messages.map((message) => (
-                  <div key={message.id} className="discord-message">
-                    <div className="discord-message-avatar">
-                      {message.avatar}
-                    </div>
-                    <div className="discord-message-content">
-                      <div className="discord-message-header">
-                        <span className="discord-message-author">{message.author}</span>
-                        <span className="discord-message-timestamp">
-                          {message.timestamp.toLocaleTimeString()}
-                        </span>
-                      </div>
-                      <div className="discord-message-text">{message.content}</div>
-                      {message.reactions.length > 0 && (
-                        <div className="flex gap-1 mt-2">
-                          {message.reactions.map((reaction, index) => (
-                            <button
-                              key={index}
-                              className="flex items-center gap-1 px-2 py-1 bg-discord-dark rounded-full text-xs hover:bg-discord-dark/80 transition-colors"
-                            >
-                              <span>{reaction.emoji}</span>
-                              <span>{reaction.count}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+            {/* Tab Content */}
+            {activeTab === 'messages' && (
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle>Messages</CardTitle>
+                    <Button size="sm">
+                      <Plus className="w-4 h-4 mr-1" />
+                      New Message
+                    </Button>
                   </div>
-                ))}
-              </div>
-
-              {/* Right Panel */}
-              <div className="discord-user-panel">
-                <div className="mb-4">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    Online
-                  </h3>
-                  <div className="space-y-2">
-                    {onlineUsers.map((user) => (
-                      <div key={user.id} className="flex items-center space-x-2">
-                        <div className="relative">
-                          <div className="w-6 h-6 bg-discord-blurple rounded-full flex items-center justify-center text-xs font-semibold">
-                            {user.avatar}
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {messages.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        No messages yet. Start a conversation!
+                      </div>
+                    ) : (
+                      messages.map((message) => (
+                        <div key={message.id} className="border-b border-gray-200 dark:border-gray-700 pb-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                {message.userId}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                {message.content}
+                              </p>
+                            </div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(message.timestamp).toLocaleTimeString()}
+                            </span>
                           </div>
-                          <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-discord-darker ${
-                            user.status === 'online' ? 'bg-green-500' :
-                            user.status === 'away' ? 'bg-yellow-500' :
-                            user.status === 'busy' ? 'bg-red-500' : 'bg-gray-500'
-                          }`}></div>
                         </div>
-                        <span className="text-sm text-gray-300">{user.name}</span>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {activeTab === 'calendar' && (
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle>Calendar</CardTitle>
+                    <Button size="sm">
+                      <Plus className="w-4 h-4 mr-1" />
+                      New Event
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {events.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        No events scheduled. Create your first event!
                       </div>
-                    ))}
+                    ) : (
+                      events.map((event) => (
+                        <div key={event.id} className="border-b border-gray-200 dark:border-gray-700 pb-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                {event.title}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                {event.description}
+                              </p>
+                            </div>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(event.startDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            )}
 
-                <Separator className="my-4 bg-discord-dark" />
-
-                <div className="mb-4">
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    Voice Controls
-                  </h3>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={isVoiceConnected ? "destructive" : "discord"}
-                      size="sm"
-                      onClick={() => setIsVoiceConnected(!isVoiceConnected)}
-                    >
-                      {isVoiceConnected ? <PhoneOff className="h-4 w-4" /> : <Phone className="h-4 w-4" />}
-                    </Button>
-                    <Button
-                      variant={isMuted ? "destructive" : "discord-secondary"}
-                      size="sm"
-                      onClick={() => setIsMuted(!isMuted)}
-                    >
-                      {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    </Button>
+            {activeTab === 'files' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Files</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    File management coming soon...
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                </CardContent>
+              </Card>
+            )}
 
-          {/* Message Input */}
-          <div className="discord-message-input">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon">
-                <Plus className="h-4 w-4" />
-              </Button>
-              <div className="flex-1 relative">
-                <Input
-                  placeholder={`Message #${channels.find(c => c.id === activeChannel)?.name}`}
-                  className="pr-10"
-                />
-                <Button variant="ghost" size="icon" className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                  <MessageCircle className="h-4 w-4" />
-                </Button>
-              </div>
-              <Button variant="discord" disabled>
-                Send
-              </Button>
-            </div>
+            {activeTab === 'users' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    User management coming soon...
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

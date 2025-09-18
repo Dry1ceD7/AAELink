@@ -19,6 +19,7 @@ import { calendarRoutes } from './routes/calendar';
 import { chatRoutes } from './routes/chat';
 import { erpRoutes } from './routes/erp';
 import { fileRoutes } from './routes/files';
+import { n8nRoutes } from './routes/n8n';
 import { searchRoutes } from './routes/search';
 import { userRoutes } from './routes/users';
 
@@ -180,6 +181,7 @@ async function registerRoutes() {
   await fastify.register(userRoutes, { prefix: '/api/users' });
   await fastify.register(adminRoutes, { prefix: '/api/admin' });
   await fastify.register(erpRoutes, { prefix: '/api/erp' });
+  await fastify.register(n8nRoutes, { prefix: '/api/n8n' });
 
   // WebSocket handler
   fastify.register(async function (fastify: any) {
