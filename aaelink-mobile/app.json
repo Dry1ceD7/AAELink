@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "AAELink Enterprise",
+    "slug": "aaelink-enterprise",
+    "version": "1.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3b82f6"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aae.aaelink",
+      "buildNumber": "1.2.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3b82f6"
+      },
+      "package": "com.aae.aaelink",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-camera",
+      "expo-media-library",
+      "expo-file-system",
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "aaelink-enterprise-mobile"
+      }
+    }
+  }
+}
