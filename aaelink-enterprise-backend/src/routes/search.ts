@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -24,7 +24,7 @@ const advancedSearchSchema = z.object({
   offset: z.number().min(0).default(0),
 });
 
-export async function searchRoutes(fastify: FastifyInstance) {
+export async function searchRoutes(fastify: any) {
   // Basic search
   fastify.get('/search', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -202,12 +202,12 @@ export async function searchRoutes(fastify: FastifyInstance) {
         }
         if (filters.author) {
           filteredResults = filteredResults.filter(item =>
-            item.authorId === filters.author || item.authorName?.includes(filters.author)
+            item.authorId === filters.author || item.authorName?.includes(filters.author || '')
           );
         }
         if (filters.channel) {
           filteredResults = filteredResults.filter(item =>
-            item.channelId === filters.channel || item.channelName?.includes(filters.channel)
+            item.channelId === filters.channel || item.channelName?.includes(filters.channel || '')
           );
         }
       }

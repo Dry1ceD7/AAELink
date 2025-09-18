@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -15,7 +15,7 @@ const registerSchema = z.object({
   role: z.enum(['admin', 'user', 'moderator']).default('user'),
 });
 
-export async function authRoutes(fastify: FastifyInstance) {
+export async function authRoutes(fastify: any) {
   // Login endpoint
   fastify.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -109,10 +109,10 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const { username, email, password, role } = registerSchema.parse(request.body);
+      const { username, email, role } = registerSchema.parse(request.body);
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
+      // const hashedPassword = await bcrypt.hash(password, 10);
 
       // In production, save to database
       logger.info(`User registered: ${username} (${email}) with role: ${role}`);
@@ -172,7 +172,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   // Logout endpoint
-  fastify.post('/logout', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.post('/logout', async (_request: FastifyRequest, reply: FastifyReply) => {
     // In production, add token to blacklist
     logger.info('User logged out');
 

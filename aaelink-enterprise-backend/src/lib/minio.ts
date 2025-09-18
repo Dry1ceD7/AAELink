@@ -1,8 +1,8 @@
-import { Client as MinioClient } from 'minio';
+import { Client as MinioClientType } from 'minio';
 import { logger } from './logger';
 
 export class MinioClient {
-  private client: MinioClient;
+  private client: MinioClientType;
   private bucketName: string;
 
   constructor(config: {
@@ -12,7 +12,7 @@ export class MinioClient {
     accessKey: string;
     secretKey: string;
   }) {
-    this.client = new MinioClient({
+    this.client = new MinioClientType({
       endPoint: config.endPoint,
       port: config.port,
       useSSL: config.useSSL,

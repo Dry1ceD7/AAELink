@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
-export async function erpRoutes(fastify: FastifyInstance) {
+export async function erpRoutes(fastify: any) {
   // Get inventory
   fastify.get('/inventory', {
     preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -14,7 +14,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock inventory data - replace with ERP4All integration
       const inventory = [
@@ -49,7 +49,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       // Mock orders data - replace with ERP4All integration
       const orders = [
@@ -84,9 +84,9 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const payload = request.user as any;
+      const payload = _request.user as any;
 
       // Mock timesheets data - replace with ERP4All integration
       const timesheets = [
