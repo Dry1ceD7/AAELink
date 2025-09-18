@@ -182,11 +182,14 @@ export class WebRTCService {
       this.peers.forEach((peerConnection) => {
         const videoTrack = screenStream.getVideoTracks()[0];
         if (videoTrack) {
-          const sender = peerConnection.peer.getSenders().find(s =>
-            s.track && s.track.kind === 'video'
-          );
-          if (sender) {
-            sender.replaceTrack(videoTrack);
+          const peer = peerConnection.peer as any;
+          if (peer._pc) {
+            const sender = peer._pc.getSenders().find((s: any) =>
+              s.track && s.track.kind === 'video'
+            );
+            if (sender) {
+              sender.replaceTrack(videoTrack);
+            }
           }
         }
       });

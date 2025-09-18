@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { Redis } from 'ioredis'
 import { Server as SocketIOServer } from 'socket.io'
+import { FastifyRequest, FastifyReply } from 'fastify'
 import { MinioClient } from '../lib/minio.js'
 
 declare module 'fastify' {

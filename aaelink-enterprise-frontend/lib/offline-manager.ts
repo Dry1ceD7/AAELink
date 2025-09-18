@@ -62,6 +62,7 @@ class OfflineManager {
   }
 
   private async loadLastSync(): Promise<void> {
+    if (typeof window === 'undefined') return;
     const lastSyncStr = localStorage.getItem('aaelink_last_sync');
     if (lastSyncStr) {
       this.lastSync = new Date(lastSyncStr);
@@ -69,6 +70,7 @@ class OfflineManager {
   }
 
   private async saveLastSync(): Promise<void> {
+    if (typeof window === 'undefined') return;
     this.lastSync = new Date();
     localStorage.setItem('aaelink_last_sync', this.lastSync.toISOString());
   }
@@ -195,7 +197,9 @@ class OfflineManager {
   async clearOfflineData(): Promise<void> {
     await offlineStorage.clearAllData();
     this.lastSync = null;
-    localStorage.removeItem('aaelink_last_sync');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aaelink_last_sync');
+    }
     this.notifyListeners();
   }
 
@@ -238,10 +242,13 @@ class OfflineManager {
     if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
       try {
         const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register('offline-messages');
-        await registration.sync.register('offline-files');
-        await registration.sync.register('offline-events');
-        console.log('[OfflineManager] Background sync registered');
+        const syncManager = (registration as any).sync;
+        if (syncManager) {
+          await syncManager.register('offline-messages');
+          await syncManager.register('offline-files');
+          await syncManager.register('offline-events');
+          console.log('[OfflineManager] Background sync registered');
+        }
       } catch (error) {
         console.error('[OfflineManager] Failed to register background sync:', error);
       }

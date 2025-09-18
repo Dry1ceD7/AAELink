@@ -290,7 +290,7 @@ class OfflineStorageService {
           body: JSON.stringify(action.data)
         });
         break;
-      case 'file':
+      case 'file': {
         const formData = new FormData();
         formData.append('file', action.data.file);
         formData.append('channelId', action.data.channelId);
@@ -299,6 +299,7 @@ class OfflineStorageService {
           body: formData
         });
         break;
+      }
       default:
         throw new Error(`Unknown action type: ${action.type}`);
     }

@@ -1,0 +1,164 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  name      String
+  avatar    String?
+  role      String   @default("USER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  messages     Message[]
+  channels     Channel[] @relation("ChannelMembers")
+  createdChannels Channel[] @relation("ChannelCreator")
+  reactions    Reaction[]
+  notifications Notification[]
+  files        File[]
+  events       Event[]
+  threads      Thread[]
+
+  @@map("users")
+}
+
+model Channel {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  type        String      @default("PUBLIC")
+  isPrivate   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  createdBy   String
+
+  // Relations
+  creator       User           @relation("ChannelCreator", fields: [createdBy], references: [id])
+  members       User[]         @relation("ChannelMembers")
+  messages      Message[]
+  threads       Thread[]
+  notifications Notification[]
+
+  @@map("channels")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  type      String      @default("TEXT")
+  channelId String
+  userId    String
+  threadId  String?
+  isPinned  Boolean  @default(false)
+  isEdited  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  channel   Channel    @relation(fields: [channelId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  thread    Thread?    @relation(fields: [threadId], references: [id])
+  reactions Reaction[]
+  files     File[]
+
+  @@map("messages")
+}
+
+model Thread {
+  id        String   @id @default(cuid())
+  title     String
+  channelId String
+  userId    String
+  isPinned  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  channel  Channel   @relation(fields: [channelId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
+  messages Message[]
+
+  @@map("threads")
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+  @@map("reactions")
+}
+
+model File {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  size      Int
+  type      String
+  messageId String?
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  message Message? @relation(fields: [messageId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+
+  @@map("files")
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  location    String?
+  isAllDay    Boolean   @default(false)
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("events")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String
+  type      String
+  isRead    Boolean          @default(false)
+  userId    String
+  channelId String?
+  messageId String?
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  channel Channel? @relation(fields: [channelId], references: [id])
+
+  @@map("notifications")
+}
+
+// Note: Using String types instead of enums for SQLite compatibility

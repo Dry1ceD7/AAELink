@@ -28,6 +28,8 @@ import {
 import {
     Download,
     Edit,
+    FileText,
+    MessageSquare,
     Search,
     Trash2,
     UserPlus

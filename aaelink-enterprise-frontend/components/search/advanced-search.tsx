@@ -259,7 +259,7 @@ export function AdvancedSearch({
                       <Checkbox
                         id="attachments"
                         checked={filters.hasAttachments}
-                        onCheckedChange={(checked) => handleFilterChange('hasAttachments', checked)}
+                        onCheckedChange={(checked: boolean) => handleFilterChange('hasAttachments', checked)}
                       />
                       <Label htmlFor="attachments">Has Attachments</Label>
                     </div>
@@ -267,7 +267,7 @@ export function AdvancedSearch({
                       <Checkbox
                         id="pinned"
                         checked={filters.isPinned}
-                        onCheckedChange={(checked) => handleFilterChange('isPinned', checked)}
+                        onCheckedChange={(checked: boolean) => handleFilterChange('isPinned', checked)}
                       />
                       <Label htmlFor="pinned">Pinned Messages</Label>
                     </div>
@@ -275,7 +275,7 @@ export function AdvancedSearch({
                       <Checkbox
                         id="starred"
                         checked={filters.isStarred}
-                        onCheckedChange={(checked) => handleFilterChange('isStarred', checked)}
+                        onCheckedChange={(checked: boolean) => handleFilterChange('isStarred', checked)}
                       />
                       <Label htmlFor="starred">Starred Messages</Label>
                     </div>

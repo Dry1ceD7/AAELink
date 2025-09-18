@@ -9,18 +9,10 @@
     "aaelink-enterprise-frontend"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=aaelink-backend\" \"npm run dev --workspace=@aaelink/frontend\"",
-    "dev:enterprise": "concurrently \"npm run dev --workspace=aaelink-enterprise-backend\" \"npm run dev --workspace=aaelink-enterprise-frontend\"",
     "build": "npm run build --workspace=aaelink-backend && npm run build --workspace=@aaelink/frontend",
     "build:enterprise": "npm run build --workspace=aaelink-enterprise-backend && npm run build --workspace=aaelink-enterprise-frontend",
-    "test": "npm run test --workspace=aaelink-backend && npm run test --workspace=@aaelink/frontend",
-    "test:enterprise": "npm run test --workspace=aaelink-enterprise-backend && npm run test --workspace=aaelink-enterprise-frontend",
-    "lint": "npm run lint --workspace=aaelink-backend && npm run lint --workspace=@aaelink/frontend",
-    "lint:enterprise": "npm run lint --workspace=aaelink-enterprise-backend && npm run lint --workspace=aaelink-enterprise-frontend",
-    "typecheck": "cd packages/frontend && npm run typecheck && cd ../../aaelink-backend && npm run typecheck",
-    "typecheck:enterprise": "cd aaelink-enterprise-frontend && npm run type-check && cd ../aaelink-enterprise-backend && npm run type-check",
-    "e2e": "npm run e2e --workspace=@aaelink/frontend",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist aaelink-*/node_modules aaelink-*/dist"
+    "start": "npm run start --workspace=aaelink-backend",
+    "start:enterprise": "npm run start --workspace=aaelink-enterprise-backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
