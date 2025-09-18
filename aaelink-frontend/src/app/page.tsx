@@ -13,18 +13,33 @@ export default function LoginPage() {
     e.preventDefault()
     setIsLoading(true)
 
-    // Simulate authentication
-    if (usernameOrEmail === 'admin' || usernameOrEmail === 'admin@aae.co.th') {
-      if (password === '12345678') {
-        // Redirect to dashboard
-        router.push('/dashboard')
-        return
-      }
-    }
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: usernameOrEmail,
+          password: password,
+        }),
+      })
 
-    // Show error (in a real app, you'd show a proper error message)
-    alert('Invalid credentials. Use admin/admin@aae.co.th and password 12345678')
-    setIsLoading(false)
+      const data = await response.json()
+
+      if (data.success && data.token) {
+        // Store token and redirect
+        localStorage.setItem('auth_token', data.token)
+        router.push('/dashboard')
+      } else {
+        alert(data.message || 'Invalid credentials. Use admin/admin@aae.co.th and password 12345678')
+      }
+    } catch (error) {
+      console.error('Login error:', error)
+      alert('Login failed. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handlePasskeyLogin = () => {
