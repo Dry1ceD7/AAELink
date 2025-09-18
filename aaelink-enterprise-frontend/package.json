@@ -4,18 +4,8 @@
   "description": "AAELink Enterprise Frontend - Discord + Telegram UI Fusion",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "type-check": "tsc --noEmit",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui"
+    "start": "next start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.0",
@@ -79,32 +69,10 @@
     "zustand": "^4.4.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.40.0",
-    "@storybook/addon-essentials": "^8.0.0",
-    "@storybook/addon-interactions": "^8.0.0",
-    "@storybook/addon-links": "^8.0.0",
-    "@storybook/blocks": "^8.0.0",
-    "@storybook/nextjs": "^8.0.0",
-    "@storybook/react": "^8.0.0",
-    "@storybook/testing-library": "^0.2.0",
     "@types/react-window": "^1.8.8",
     "@types/simple-peer": "^9.11.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "@vitejs/plugin-react": "^4.1.0",
-    "@vitest/coverage-v8": "^1.0.0",
-    "@vitest/ui": "^1.0.0",
     "autoprefixer": "^10.4.0",
-    "concurrently": "^8.2.0",
-    "eslint": "^8.0.0",
-    "eslint-config-next": "^15.0.3",
-    "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-prettier": "^5.0.0",
-    "jsdom": "^23.0.0",
-    "postcss": "^8.4.0",
-    "prettier": "^3.0.0",
-    "storybook": "^8.0.0",
-    "vitest": "^1.0.0"
+    "postcss": "^8.4.0"
   },
   "engines": {
     "node": ">=20.0.0",

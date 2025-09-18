@@ -200,4 +200,4 @@ For technical support and issues, contact the internal IT team at Advanced ID As
 
 **Built with ❤️ by Advanced ID Asia Engineering Co.,Ltd**
 
-*Version 1.2.0 | Local-First Architecture | Zero Cloud Dependencies | BMAD-Orchestrated*
+*Version 1.2.0 | Local-First Architecture | Zero Cloud Dependencies*
