@@ -1,6 +1,6 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { z } from 'zod';
 import bcrypt from 'bcrypt';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { logger } from '../lib/logger';
 
 const loginSchema = z.object({
@@ -29,7 +29,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       ];
 
       const user = validUsers.find(u => u.username === username || u.email === username);
-      
+
       if (!user) {
         return reply.status(401).send({
           success: false,
@@ -39,7 +39,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       // In production, use bcrypt.compare with hashed password
       const isValidPassword = password === '12345678' || await bcrypt.compare(password, user.password);
-      
+
       if (!isValidPassword) {
         return reply.status(401).send({
           success: false,
@@ -71,7 +71,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     } catch (error) {
       logger.error('Login error:', error);
-      
+
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
           success: false,
@@ -93,7 +93,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       try {
         await request.jwtVerify();
         const payload = request.user as any;
-        
+
         if (payload.role !== 'admin') {
           return reply.status(403).send({
             success: false,
@@ -129,7 +129,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     } catch (error) {
       logger.error('Registration error:', error);
-      
+
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
           success: false,
@@ -159,7 +159,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const payload = request.user as any;
-    
+
     return reply.send({
       success: true,
       user: {
@@ -175,7 +175,7 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/logout', async (request: FastifyRequest, reply: FastifyReply) => {
     // In production, add token to blacklist
     logger.info('User logged out');
-    
+
     return reply.send({
       success: true,
       message: 'Logged out successfully',

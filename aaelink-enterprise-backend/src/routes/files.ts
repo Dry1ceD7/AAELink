@@ -1,5 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import multer from 'multer';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
 export async function fileRoutes(fastify: FastifyInstance) {
@@ -18,7 +17,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const data = await request.file();
-      
+
       if (!data) {
         return reply.status(400).send({
           success: false,
@@ -32,7 +31,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
 
       // In production, upload to MinIO
       const fileId = `file_${Date.now()}_${fileName}`;
-      
+
       logger.info(`File uploaded: ${fileName} (${buffer.length} bytes)`);
 
       return reply.send({
@@ -59,7 +58,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
   fastify.get('/:fileId', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { fileId } = request.params as { fileId: string };
-      
+
       // In production, get file from MinIO
       logger.info(`File requested: ${fileId}`);
 

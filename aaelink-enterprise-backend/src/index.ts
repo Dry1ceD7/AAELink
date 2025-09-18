@@ -1,24 +1,24 @@
-import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import jwt from '@fastify/jwt';
-import websocket from '@fastify/websocket';
 import helmet from '@fastify/helmet';
+import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import websocket from '@fastify/websocket';
 import { PrismaClient } from '@prisma/client';
+import Fastify from 'fastify';
 import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
 import { Redis } from 'ioredis';
-import { MinioClient } from './lib/minio';
+import { Server as SocketIOServer } from 'socket.io';
 import { logger } from './lib/logger';
+import { MinioClient } from './lib/minio';
+import { websocketHandler } from './lib/websocket';
+import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { chatRoutes } from './routes/chat';
+import { erpRoutes } from './routes/erp';
 import { fileRoutes } from './routes/files';
 import { userRoutes } from './routes/users';
-import { adminRoutes } from './routes/admin';
-import { erpRoutes } from './routes/erp';
-import { websocketHandler } from './lib/websocket';
 
 // Initialize Prisma
 const prisma = new PrismaClient({
@@ -182,7 +182,7 @@ async function registerRoutes() {
 // Error handler
 fastify.setErrorHandler((error, request, reply) => {
   logger.error(error);
-  
+
   if (error.validation) {
     reply.status(400).send({
       success: false,
@@ -201,13 +201,13 @@ fastify.setErrorHandler((error, request, reply) => {
 // Graceful shutdown
 async function gracefulShutdown() {
   logger.info('Starting graceful shutdown...');
-  
+
   try {
     await fastify.close();
     await prisma.$disconnect();
     await redis.quit();
     await minio.disconnect();
-    
+
     logger.info('Graceful shutdown completed');
     process.exit(0);
   } catch (error) {
@@ -224,18 +224,18 @@ async function start() {
   try {
     await registerPlugins();
     await registerRoutes();
-    
+
     const port = parseInt(process.env.PORT || '3000');
     const host = process.env.HOST || '0.0.0.0';
-    
+
     await fastify.listen({ port, host });
-    
+
     logger.info(`🚀 AAELink Enterprise Backend v1.2.0`);
     logger.info(`📡 Server running on http://${host}:${port}`);
     logger.info(`📚 API Documentation: http://${host}:${port}/docs`);
     logger.info(`🔗 WebSocket: ws://${host}:${port}/ws`);
     logger.info(`🏢 Advanced ID Asia Engineering Co.,Ltd`);
-    
+
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
@@ -248,18 +248,18 @@ async function initialize() {
     // Test database connection
     await prisma.$connect();
     logger.info('✅ Database connected');
-    
+
     // Test Redis connection
     await redis.ping();
     logger.info('✅ Redis connected');
-    
+
     // Test MinIO connection
     await minio.healthCheck();
     logger.info('✅ MinIO connected');
-    
+
     // Start server
     await start();
-    
+
   } catch (error) {
     logger.error('Initialization failed:', error);
     process.exit(1);

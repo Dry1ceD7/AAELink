@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
 export async function erpRoutes(fastify: FastifyInstance) {
@@ -87,7 +87,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const payload = request.user as any;
-      
+
       // Mock timesheets data - replace with ERP4All integration
       const timesheets = [
         { id: '1', userId: payload.userId, date: '2024-01-15', hours: 8.0, project: 'AAELink Development' },

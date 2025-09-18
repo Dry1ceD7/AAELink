@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
 export async function userRoutes(fastify: FastifyInstance) {
@@ -17,7 +17,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const payload = request.user as any;
-      
+
       // Mock user profile - replace with database query
       const profile = {
         id: payload.userId,

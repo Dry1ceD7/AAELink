@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { logger } from '../lib/logger';
 
 export async function adminRoutes(fastify: FastifyInstance) {
@@ -8,7 +8,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
       try {
         await request.jwtVerify();
         const payload = request.user as any;
-        
+
         if (payload.role !== 'admin') {
           return reply.status(403).send({
             success: false,

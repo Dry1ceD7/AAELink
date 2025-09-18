@@ -3,14 +3,14 @@ import { logger } from './logger';
 
 export async function websocketHandler(connection: SocketStream, req: any) {
   const socket = connection.socket;
-  
+
   logger.info(`WebSocket connection established: ${req.socket.remoteAddress}`);
 
   socket.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
       logger.info('WebSocket message received:', data);
-      
+
       // Echo back the message for now
       socket.send(JSON.stringify({
         type: 'echo',

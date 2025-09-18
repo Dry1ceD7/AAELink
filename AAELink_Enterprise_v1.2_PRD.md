@@ -58,7 +58,7 @@
 
 ### 1.3 Error-Prevention Loop Protocol
 ```
-PHASE START → Error Scan → Problem Detection → 
+PHASE START → Error Scan → Problem Detection →
 IF (Problems > 0):
   → Fix Implementation → Validation → Re-scan
   → REPEAT until Problems = 0
@@ -501,12 +501,12 @@ Production Server:
 Certificate Authority:
   Root CA: Internal AAE Root Certificate
   Intermediate CA: Department-specific CAs
-  
+
 Certificate Types:
   - Server certificates (wildcard *.aae.local)
   - Client certificates (per device)
   - Code signing certificates
-  
+
 Automation:
   - Auto-renewal 30 days before expiry
   - Certificate rotation without downtime
@@ -589,22 +589,22 @@ enum AuditAction {
   LOGIN = 'auth.login',
   LOGOUT = 'auth.logout',
   PASSWORD_CHANGE = 'auth.password.change',
-  
+
   // Messages
   MESSAGE_SEND = 'message.send',
   MESSAGE_EDIT = 'message.edit',
   MESSAGE_DELETE = 'message.delete',
-  
+
   // Files
   FILE_UPLOAD = 'file.upload',
   FILE_DOWNLOAD = 'file.download',
   FILE_DELETE = 'file.delete',
-  
+
   // Admin
   USER_CREATE = 'admin.user.create',
   USER_MODIFY = 'admin.user.modify',
   PERMISSION_CHANGE = 'admin.permission.change',
-  
+
   // Data Access
   ERP_QUERY = 'erp.query',
   REPORT_GENERATE = 'report.generate',
@@ -632,15 +632,15 @@ class ERP4AllConnector {
   // Inventory Management
   async getInventory(filters: InventoryFilter): Promise<InventoryItem[]>
   async updateStock(itemId: string, quantity: number): Promise<void>
-  
-  // Order Management  
+
+  // Order Management
   async getOrders(status?: OrderStatus): Promise<Order[]>
   async createOrder(order: OrderRequest): Promise<Order>
-  
+
   // Timesheet Management
   async submitTimesheet(data: TimesheetEntry): Promise<void>
   async getTimesheets(userId: string, period: DateRange): Promise<Timesheet[]>
-  
+
   // Calendar Sync
   async syncCalendar(userId: string): Promise<CalendarEvent[]>
   async createMeeting(meeting: MeetingRequest): Promise<CalendarEvent>

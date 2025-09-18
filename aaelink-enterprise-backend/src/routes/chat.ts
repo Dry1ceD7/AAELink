@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
 
@@ -20,7 +20,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
   fastify.get('/messages/:channelId', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { channelId } = request.params as { channelId: string };
-      
+
       // Mock messages - replace with database query
       const messages = [
         {
@@ -99,7 +99,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
 
     } catch (error) {
       logger.error('Send message error:', error);
-      
+
       if (error instanceof z.ZodError) {
         return reply.status(400).send({
           success: false,
