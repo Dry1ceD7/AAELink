@@ -159,7 +159,6 @@ export default function LoginPage() {
 
             <Button
               type="button"
-              variant="outline"
               className="w-full telegram-button-secondary"
               onClick={handlePasskeyLogin}
               disabled={isLoading}

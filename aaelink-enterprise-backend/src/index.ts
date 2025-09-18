@@ -15,9 +15,11 @@ import { MinioClient } from './lib/minio';
 import { websocketHandler } from './lib/websocket';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { calendarRoutes } from './routes/calendar';
 import { chatRoutes } from './routes/chat';
 import { erpRoutes } from './routes/erp';
 import { fileRoutes } from './routes/files';
+import { searchRoutes } from './routes/search';
 import { userRoutes } from './routes/users';
 
 // Initialize Prisma
@@ -168,7 +170,9 @@ async function registerRoutes() {
   // API routes
   await fastify.register(authRoutes, { prefix: '/api/auth' });
   await fastify.register(chatRoutes, { prefix: '/api/chat' });
+  await fastify.register(calendarRoutes, { prefix: '/api/calendar' });
   await fastify.register(fileRoutes, { prefix: '/api/files' });
+  await fastify.register(searchRoutes, { prefix: '/api/search' });
   await fastify.register(userRoutes, { prefix: '/api/users' });
   await fastify.register(adminRoutes, { prefix: '/api/admin' });
   await fastify.register(erpRoutes, { prefix: '/api/erp' });

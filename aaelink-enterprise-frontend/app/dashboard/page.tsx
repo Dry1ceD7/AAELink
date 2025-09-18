@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { MessageCircle, Video, FileText, Calendar, Users, Store, Settings, Search, Bell, Plus, Hash, Lock, Volume2, Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Bell, Calendar, FileText, Hash, MessageCircle, Mic, MicOff, Phone, PhoneOff, Plus, Search, Settings, Users, Volume2 } from 'lucide-react';
+import { useState } from 'react';
 
 export default function DashboardPage() {
   const [activeChannel, setActiveChannel] = useState('general');

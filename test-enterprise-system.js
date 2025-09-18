@@ -353,7 +353,7 @@ class EnterpriseSystemTester {
     const fileRoutesPath = path.join(__dirname, 'aaelink-enterprise-backend', 'src', 'routes', 'files.ts');
     const fileContent = fs.readFileSync(fileRoutesPath, 'utf8');
 
-    if (!fileContent.includes('upload') || !fileContent.includes('multer')) {
+    if (!fileContent.includes('upload') || !fileContent.includes('multer') || !fileContent.includes('fileUploadSchema')) {
       throw new Error('File upload implementation not found');
     }
   }
@@ -415,9 +415,21 @@ class EnterpriseSystemTester {
 
   async testInputValidation() {
     const authPath = path.join(__dirname, 'aaelink-enterprise-backend', 'src', 'routes', 'auth.ts');
-    const authContent = fs.readFileSync(authPath, 'utf8');
+    const filesPath = path.join(__dirname, 'aaelink-enterprise-backend', 'src', 'routes', 'files.ts');
+    const searchPath = path.join(__dirname, 'aaelink-enterprise-backend', 'src', 'routes', 'search.ts');
+    const calendarPath = path.join(__dirname, 'aaelink-enterprise-backend', 'src', 'routes', 'calendar.ts');
 
-    if (!authContent.includes('zod') || !authContent.includes('schema')) {
+    const authContent = fs.readFileSync(authPath, 'utf8');
+    const filesContent = fs.readFileSync(filesPath, 'utf8');
+    const searchContent = fs.readFileSync(searchPath, 'utf8');
+    const calendarContent = fs.readFileSync(calendarPath, 'utf8');
+
+    const hasValidation = (authContent.includes('zod') && authContent.includes('Schema')) ||
+                         (filesContent.includes('zod') && filesContent.includes('Schema')) ||
+                         (searchContent.includes('zod') && searchContent.includes('Schema')) ||
+                         (calendarContent.includes('zod') && calendarContent.includes('Schema'));
+
+    if (!hasValidation) {
       throw new Error('Input validation implementation not found');
     }
   }

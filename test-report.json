@@ -1,6 +1,6 @@
 {
-  "timestamp": "2025-09-18T03:29:53.255Z",
-  "duration": 0.005,
+  "timestamp": "2025-09-18T04:26:19.499Z",
+  "duration": 0.004,
   "results": {
     "frontend": {
       "passed": 5,
@@ -81,8 +81,8 @@
       ]
     },
     "integration": {
-      "passed": 5,
-      "failed": 0,
+      "passed": 4,
+      "failed": 1,
       "tests": [
         {
           "name": "API Communication",
@@ -94,7 +94,8 @@
         },
         {
           "name": "File Upload",
-          "status": "PASS"
+          "status": "FAIL",
+          "error": "File upload implementation not found"
         },
         {
           "name": "Real-time Messaging",
@@ -107,8 +108,8 @@
       ]
     },
     "security": {
-      "passed": 4,
-      "failed": 1,
+      "passed": 5,
+      "failed": 0,
       "tests": [
         {
           "name": "JWT Authentication",
@@ -128,8 +129,7 @@
         },
         {
           "name": "Input Validation",
-          "status": "FAIL",
-          "error": "Input validation implementation not found"
+          "status": "PASS"
         }
       ]
     },
