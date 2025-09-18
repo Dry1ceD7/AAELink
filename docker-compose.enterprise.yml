@@ -1,0 +1,261 @@
+version: '3.9'
+
+services:
+  # Core Database - PostgreSQL 16 with Replication
+  postgres_primary:
+    image: postgres:16-alpine
+    container_name: aaelink-postgres-primary
+    environment:
+      POSTGRES_REPLICATION_MODE: master
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${REPL_PASSWORD:-aaelink_repl_2024}
+      POSTGRES_DB: aaelink
+      POSTGRES_USER: aaelink
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aaelink_secure_2024}
+    volumes:
+      - postgres_primary:/var/lib/postgresql/data
+      - ./backup:/backup
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - aaelink-internal
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aaelink -d aaelink"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres_replica:
+    image: postgres:16-alpine
+    container_name: aaelink-postgres-replica
+    environment:
+      POSTGRES_REPLICATION_MODE: slave
+      POSTGRES_MASTER_HOST: postgres_primary
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${REPL_PASSWORD:-aaelink_repl_2024}
+      POSTGRES_DB: aaelink
+      POSTGRES_USER: aaelink
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aaelink_secure_2024}
+    volumes:
+      - postgres_replica:/var/lib/postgresql/data
+    networks:
+      - aaelink-internal
+    depends_on:
+      - postgres_primary
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aaelink -d aaelink"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Caching & Queues - Redis Stack
+  redis_master:
+    image: redis:7-alpine
+    container_name: aaelink-redis-master
+    command: redis-server --appendonly yes --maxmemory 4gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_master:/data
+    networks:
+      - aaelink-internal
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # File Storage - MinIO S3-Compatible
+  minio:
+    image: minio/minio:latest
+    container_name: aaelink-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-aaelink_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-aaelink_minio_2024}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - aaelink-internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Search Engine - Elasticsearch
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: aaelink-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-aaelink_elastic_2024}
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - aaelink-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring Stack - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aaelink-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=90d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    networks:
+      - aaelink-internal
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring Stack - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aaelink-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-aaelink_grafana_2024}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    networks:
+      - aaelink-internal
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Workflow Automation - n8n
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: aaelink-n8n
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-aaelink_admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-aaelink_n8n_2024}
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    networks:
+      - aaelink-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backup Service
+  postgres_backup:
+    image: postgres:16-alpine
+    container_name: aaelink-backup
+    environment:
+      PGPASSWORD: ${DB_PASSWORD:-aaelink_secure_2024}
+    volumes:
+      - ./backup:/backup
+      - ./scripts:/scripts
+    command: |
+      sh -c '
+        apk add --no-cache curl &&
+        while true; do
+          echo "Starting backup at $$(date)"
+          pg_dump -h postgres_primary -U aaelink -d aaelink > /backup/aaelink_$$(date +%Y%m%d_%H%M%S).sql
+          find /backup -name "*.sql" -mtime +30 -delete
+          echo "Backup completed at $$(date)"
+          sleep 3600
+        done
+      '
+    networks:
+      - aaelink-internal
+    depends_on:
+      - postgres_primary
+
+  # Reverse Proxy - Nginx
+  nginx:
+    image: nginx:alpine
+    container_name: aaelink-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - aaelink-internal
+    depends_on:
+      - postgres_primary
+      - redis_master
+      - minio
+      - elasticsearch
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_primary:
+    driver: local
+  postgres_replica:
+    driver: local
+  redis_master:
+    driver: local
+  minio_data:
+    driver: local
+  elastic_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  n8n_data:
+    driver: local
+
+networks:
+  aaelink-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    labels:
+      - "aaelink.network=internal"
+      - "aaelink.tier=database"

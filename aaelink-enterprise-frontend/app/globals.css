@@ -1,0 +1,295 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Discord + Telegram UI Styles */
+@layer components {
+  /* Discord Layout */
+  .discord-layout {
+    @apply flex h-screen bg-discord-darkest text-white;
+  }
+
+  .discord-sidebar {
+    @apply w-72 bg-discord-darker border-r border-discord-dark flex flex-col;
+  }
+
+  .discord-main {
+    @apply flex-1 flex flex-col bg-discord-dark;
+  }
+
+  .discord-content {
+    @apply flex-1 overflow-hidden;
+  }
+
+  .discord-user-panel {
+    @apply w-60 bg-discord-darker border-l border-discord-dark p-4;
+  }
+
+  /* Server List */
+  .discord-server-list {
+    @apply p-3 border-b border-discord-dark;
+  }
+
+  .discord-server-item {
+    @apply w-12 h-12 bg-discord-blurple rounded-full flex items-center justify-center mb-2 cursor-pointer hover:bg-discord-blurple/80 transition-colors;
+  }
+
+  /* Channel List */
+  .discord-channel-list {
+    @apply flex-1 p-3 overflow-y-auto;
+  }
+
+  .discord-channel-section {
+    @apply mb-4;
+  }
+
+  .discord-channel-section-title {
+    @apply text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2;
+  }
+
+  .discord-channel-item {
+    @apply p-2 text-sm text-gray-300 hover:bg-discord-dark rounded cursor-pointer flex items-center gap-2;
+  }
+
+  .discord-channel-item.active {
+    @apply bg-discord-dark text-white;
+  }
+
+  /* Message Area */
+  .discord-message-area {
+    @apply flex-1 flex flex-col;
+  }
+
+  .discord-message-header {
+    @apply bg-discord-dark border-b border-discord-dark px-6 py-4;
+  }
+
+  .discord-message-content {
+    @apply flex-1 overflow-y-auto p-4 space-y-4;
+  }
+
+  .discord-message-input {
+    @apply bg-discord-dark border-t border-discord-dark p-4;
+  }
+
+  /* Message Components */
+  .discord-message {
+    @apply flex gap-3 group hover:bg-discord-dark/50 p-2 rounded-lg transition-colors;
+  }
+
+  .discord-message-avatar {
+    @apply w-10 h-10 rounded-full bg-discord-blurple flex items-center justify-center text-sm font-semibold;
+  }
+
+  .discord-message-content {
+    @apply flex-1;
+  }
+
+  .discord-message-header {
+    @apply flex items-center gap-2 mb-1;
+  }
+
+  .discord-message-author {
+    @apply font-medium text-sm;
+  }
+
+  .discord-message-timestamp {
+    @apply text-xs text-gray-400;
+  }
+
+  .discord-message-text {
+    @apply text-sm text-gray-100;
+  }
+
+  /* Telegram UI Components */
+  .telegram-card {
+    @apply bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700;
+  }
+
+  .telegram-input {
+    @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-aae-blue-500 focus:border-transparent;
+  }
+
+  .telegram-button {
+    @apply inline-flex items-center justify-center px-4 py-2 bg-aae-blue-600 hover:bg-aae-blue-700 text-white font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-aae-blue-500 focus:ring-offset-2;
+  }
+
+  .telegram-button-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-900 dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-100;
+  }
+
+  /* Mobile Telegram + LINE Styles */
+  .mobile-telegram-layout {
+    @apply flex flex-col h-screen bg-gray-50 dark:bg-gray-900;
+  }
+
+  .mobile-telegram-header {
+    @apply bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3;
+  }
+
+  .mobile-telegram-content {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .mobile-telegram-bottom-nav {
+    @apply bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-around py-2;
+  }
+
+  .mobile-telegram-nav-item {
+    @apply flex flex-col items-center gap-1 p-2 rounded-lg transition-colors;
+  }
+
+  .mobile-telegram-nav-item.active {
+    @apply bg-aae-blue-50 dark:bg-aae-blue-900/20 text-aae-blue-600 dark:text-aae-blue-400;
+  }
+
+  /* LINE Timeline Styles */
+  .line-timeline {
+    @apply space-y-4 p-4;
+  }
+
+  .line-message {
+    @apply flex gap-3;
+  }
+
+  .line-message.own {
+    @apply flex-row-reverse;
+  }
+
+  .line-message-avatar {
+    @apply w-8 h-8 rounded-full bg-line-green flex items-center justify-center text-white text-xs font-semibold;
+  }
+
+  .line-message-bubble {
+    @apply max-w-xs px-3 py-2 rounded-lg;
+  }
+
+  .line-message-bubble.own {
+    @apply bg-line-green text-white;
+  }
+
+  .line-message-bubble.other {
+    @apply bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100;
+  }
+
+  /* Senior Mode Styles */
+  .senior-mode {
+    @apply text-lg;
+  }
+
+  .senior-mode .discord-channel-item,
+  .senior-mode .discord-message-text {
+    @apply text-base;
+  }
+
+  .senior-mode .telegram-button {
+    @apply px-6 py-3 text-lg;
+  }
+
+  .senior-mode .mobile-telegram-nav-item {
+    @apply p-3;
+  }
+
+  /* Accessibility Improvements */
+  .focus-visible {
+    @apply focus:outline-none focus:ring-2 focus:ring-aae-blue-500 focus:ring-offset-2;
+  }
+
+  .sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+  }
+
+  /* Animation Classes */
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* Custom Scrollbars */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(156 163 175);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(107 114 128);
+  }
+}
