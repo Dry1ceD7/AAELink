@@ -1,6 +1,7 @@
 {
   "/_not-found/page": "/_not-found",
   "/api/auth/login/route": "/api/auth/login",
-  "/page": "/",
-  "/dashboard/page": "/dashboard"
+  "/admin/page": "/admin",
+  "/dashboard/page": "/dashboard",
+  "/page": "/"
 }

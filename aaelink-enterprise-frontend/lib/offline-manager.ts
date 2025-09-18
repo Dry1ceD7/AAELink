@@ -238,10 +238,13 @@ class OfflineManager {
     if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
       try {
         const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register('offline-messages');
-        await registration.sync.register('offline-files');
-        await registration.sync.register('offline-events');
-        console.log('[OfflineManager] Background sync registered');
+        const syncManager = (registration as any).sync;
+        if (syncManager) {
+          await syncManager.register('offline-messages');
+          await syncManager.register('offline-files');
+          await syncManager.register('offline-events');
+          console.log('[OfflineManager] Background sync registered');
+        }
       } catch (error) {
         console.error('[OfflineManager] Failed to register background sync:', error);
       }

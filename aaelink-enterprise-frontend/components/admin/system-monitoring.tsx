@@ -94,12 +94,17 @@ export function SystemMonitoring({ metrics, logs, onRefresh, onExportLogs }: Sys
 
       return () => clearInterval(interval);
     }
+    return undefined;
   }, [autoRefresh, onRefresh]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await onRefresh();
     setIsRefreshing(false);
+  };
+
+  const handleExportLogs = () => {
+    onExportLogs();
   };
 
   const getStatusColor = (status: string) => {

@@ -3,13 +3,6 @@ import { z } from 'zod'
 import { minio, prisma } from '../index.js'
 import { logger } from '../lib/logger.js'
 
-const uploadFileSchema = z.object({
-  filename: z.string().min(1),
-  mimeType: z.string().min(1),
-  size: z.number().min(1),
-  messageId: z.string().optional()
-})
-
 const getUploadUrlSchema = z.object({
   filename: z.string().min(1),
   mimeType: z.string().min(1),

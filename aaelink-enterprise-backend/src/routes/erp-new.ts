@@ -30,14 +30,9 @@ const timesheetQuerySchema = z.object({
   status: z.string().optional(),
 });
 
-const reportQuerySchema = z.object({
-  startDate: z.string(),
-  endDate: z.string(),
-});
-
-export async function erpRoutes(fastify: FastifyInstance) {
+export async function erpRoutes(fastify: FastifyInstance<any, any, any, any, any>) {
   // Health Check
-  fastify.get('/health', async (request: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/health', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const result = await erp4AllService.healthCheck();
       return reply.status(result.success ? 200 : 500).send(result);
@@ -65,7 +60,13 @@ export async function erpRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const query = employeeQuerySchema.parse(request.query);
-      const result = await erp4AllService.getEmployees(query);
+      const result = await erp4AllService.getEmployees({
+        page: query.page,
+        limit: query.limit,
+        ...(query.department && { department: query.department }),
+        ...(query.status && { status: query.status }),
+        ...(query.search && { search: query.search }),
+      });
 
       return reply.status(result.success ? 200 : 400).send(result);
     } catch (error) {
@@ -92,7 +93,15 @@ export async function erpRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const query = timesheetQuerySchema.parse(request.query);
-      const result = await erp4AllService.getTimesheets(query);
+      const result = await erp4AllService.getTimesheets({
+        page: query.page,
+        limit: query.limit,
+        ...(query.employeeId && { employeeId: query.employeeId }),
+        ...(query.projectId && { projectId: query.projectId }),
+        ...(query.startDate && { startDate: query.startDate }),
+        ...(query.endDate && { endDate: query.endDate }),
+        ...(query.status && { status: query.status }),
+      });
 
       return reply.status(result.success ? 200 : 400).send(result);
     } catch (error) {
@@ -154,7 +163,13 @@ export async function erpRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const query = projectQuerySchema.parse(request.query);
-      const result = await erp4AllService.getProjects(query);
+      const result = await erp4AllService.getProjects({
+        page: query.page,
+        limit: query.limit,
+        ...(query.status && { status: query.status }),
+        ...(query.managerId && { managerId: query.managerId }),
+        ...(query.search && { search: query.search }),
+      });
 
       return reply.status(result.success ? 200 : 400).send(result);
     } catch (error) {
@@ -178,7 +193,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const result = await erp4AllService.syncEmployees();
       return reply.status(result.success ? 200 : 400).send(result);
@@ -202,7 +217,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const result = await erp4AllService.syncProjects();
       return reply.status(result.success ? 200 : 400).send(result);
@@ -226,7 +241,7 @@ export async function erpRoutes(fastify: FastifyInstance) {
         });
       }
     }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const result = await erp4AllService.syncTimesheets();
       return reply.status(result.success ? 200 : 400).send(result);

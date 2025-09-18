@@ -18,6 +18,7 @@ import {
 import {
     Activity,
     BarChart3,
+    Clock,
     Download,
     Eye,
     EyeOff,

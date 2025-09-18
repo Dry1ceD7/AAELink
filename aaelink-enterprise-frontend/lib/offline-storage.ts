@@ -18,6 +18,7 @@ interface OfflineData {
 interface SyncQueue {
   id: string;
   action: 'create' | 'update' | 'delete';
+  type: string;
   data: any;
   timestamp: number;
   retries: number;
@@ -322,6 +323,7 @@ class OfflineStorage {
     const syncItem: SyncQueue = {
       id: this.generateId(),
       action,
+      type,
       data,
       timestamp: Date.now(),
       retries: 0,

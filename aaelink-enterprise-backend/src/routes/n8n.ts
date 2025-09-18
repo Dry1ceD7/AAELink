@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { n8nService } from '../services/n8n-automation';
 
@@ -16,9 +16,9 @@ const executionSchema = z.object({
   data: z.any().optional()
 });
 
-export async function n8nRoutes(fastify: FastifyInstance) {
+export async function n8nRoutes(fastify: FastifyInstance<any, any, any, any, any>) {
   // Get all workflows
-  fastify.get('/workflows', async (request, reply) => {
+  fastify.get('/workflows', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const workflows = await n8nService.getWorkflows();
       return { success: true, data: workflows };
@@ -32,7 +32,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Get specific workflow
-  fastify.get('/workflows/:id', async (request, reply) => {
+  fastify.get('/workflows/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const workflow = await n8nService.getWorkflow(id);
@@ -51,7 +51,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     schema: {
       body: workflowSchema
     }
-  }, async (request, reply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const workflowData = request.body as any;
       const workflow = await n8nService.createWorkflow(workflowData);
@@ -70,7 +70,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     schema: {
       body: workflowSchema.partial()
     }
-  }, async (request, reply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const workflowData = request.body as any;
@@ -86,7 +86,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Delete workflow
-  fastify.delete('/workflows/:id', async (request, reply) => {
+  fastify.delete('/workflows/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       await n8nService.deleteWorkflow(id);
@@ -101,7 +101,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Activate workflow
-  fastify.post('/workflows/:id/activate', async (request, reply) => {
+  fastify.post('/workflows/:id/activate', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       await n8nService.activateWorkflow(id);
@@ -116,7 +116,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Deactivate workflow
-  fastify.post('/workflows/:id/deactivate', async (request, reply) => {
+  fastify.post('/workflows/:id/deactivate', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       await n8nService.deactivateWorkflow(id);
@@ -131,7 +131,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Get executions
-  fastify.get('/executions', async (request, reply) => {
+  fastify.get('/executions', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { workflowId, limit } = request.query as { 
         workflowId?: string; 
@@ -152,7 +152,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Get specific execution
-  fastify.get('/executions/:id', async (request, reply) => {
+  fastify.get('/executions/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const execution = await n8nService.getExecution(id);
@@ -171,7 +171,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     schema: {
       body: executionSchema.omit({ workflowId: true })
     }
-  }, async (request, reply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const { data } = request.body as any;
@@ -187,7 +187,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Stop execution
-  fastify.post('/executions/:id/stop', async (request, reply) => {
+  fastify.post('/executions/:id/stop', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       await n8nService.stopExecution(id);
@@ -202,7 +202,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Test N8N connection
-  fastify.get('/test-connection', async (request, reply) => {
+  fastify.get('/test-connection', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const isConnected = await n8nService.testConnection();
       return { 
@@ -220,7 +220,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Get workflow statistics
-  fastify.get('/stats', async (request, reply) => {
+  fastify.get('/stats', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const stats = await n8nService.getWorkflowStats();
       return { success: true, data: stats };
@@ -234,7 +234,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Create pre-built workflows
-  fastify.post('/workflows/create-user-provisioning', async (request, reply) => {
+  fastify.post('/workflows/create-user-provisioning', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const workflow = await n8nService.createUserProvisioningWorkflow();
       return { success: true, data: workflow };
@@ -247,7 +247,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/workflows/create-erp-sync', async (request, reply) => {
+  fastify.post('/workflows/create-erp-sync', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const workflow = await n8nService.createERPSyncWorkflow();
       return { success: true, data: workflow };
@@ -260,7 +260,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/workflows/create-notification', async (request, reply) => {
+  fastify.post('/workflows/create-notification', async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
       const workflow = await n8nService.createNotificationWorkflow();
       return { success: true, data: workflow };
@@ -274,7 +274,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
   });
 
   // Webhook endpoints for workflow triggers
-  fastify.post('/webhooks/user-created', async (request, reply) => {
+  fastify.post('/webhooks/user-created', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const userData = request.body as any;
       fastify.log.info('User created webhook triggered:', userData);
@@ -292,7 +292,7 @@ export async function n8nRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/webhooks/notification', async (request, reply) => {
+  fastify.post('/webhooks/notification', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const notificationData = request.body as any;
       fastify.log.info('Notification webhook triggered:', notificationData);

@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react';
 
 interface DashboardProps {}
 
-export default function Dashboard({}: DashboardProps) {
+export default function Dashboard(_props: DashboardProps) {
   const [isOnline, setIsOnline] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -56,7 +56,7 @@ export default function Dashboard({}: DashboardProps) {
       setMessages(messageData);
 
       // Load events
-      const eventData = await offlineEvents();
+      const eventData = await offlineStorage.getEvents();
       setEvents(eventData);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);

@@ -5,7 +5,7 @@ import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import { PrismaClient } from '@prisma/client'
-import Fastify from 'fastify'
+import Fastify, { FastifyRequest, FastifyReply } from 'fastify'
 import { createServer } from 'http'
 import Redis from 'ioredis'
 import { Server as SocketIOServer } from 'socket.io'
@@ -90,7 +90,7 @@ fastify.decorate('minio', minio)
 fastify.decorate('io', io)
 
 // Add authentication decorator
-fastify.decorate('authenticate', async function (request: any, reply: any) {
+fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
   try {
     await request.jwtVerify()
   } catch (err) {
@@ -110,7 +110,7 @@ await fastify.register(calendarRoutes, { prefix: '/api/calendar' })
 await fastify.register(marketplaceRoutes, { prefix: '/api/marketplace' })
 
 // Health check endpoints
-fastify.get('/api/healthz', async (request, reply) => {
+fastify.get('/api/healthz', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() }
 })
 
@@ -163,8 +163,8 @@ fastify.register(async function (fastify) {
 
           case 'join_room':
             // Use Socket.IO for room management
-            io.sockets.sockets.forEach((s: any) => {
-              if (s.userId === userId) {
+            io.sockets.sockets.forEach((s) => {
+              if ((s as any).userId === userId) {
                 s.join(`room:${data.roomId}`)
               }
             })
@@ -172,8 +172,8 @@ fastify.register(async function (fastify) {
 
           case 'leave_room':
             // Use Socket.IO for room management
-            io.sockets.sockets.forEach((s: any) => {
-              if (s.userId === userId) {
+            io.sockets.sockets.forEach((s) => {
+              if ((s as any).userId === userId) {
                 s.leave(`room:${data.roomId}`)
               }
             })

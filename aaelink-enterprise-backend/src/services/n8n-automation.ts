@@ -207,52 +207,33 @@ export class N8NAutomationService {
           }
         }
       ],
-      connections: {
-        'User Created Webhook': {
-          main: [
-            [
-              {
-                node: 'Validate User Data',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+      connections: [
+        {
+          node: 'webhook-trigger',
+          type: 'main',
+          index: 0
         },
-        'Validate User Data': {
-          main: [
-            [
-              {
-                node: 'Create AAELink User',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'validate-user',
+          type: 'main',
+          index: 0
         },
-        'Create AAELink User': {
-          main: [
-            [
-              {
-                node: 'Send Welcome Email',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'create-user',
+          type: 'main',
+          index: 0
         },
-        'Send Welcome Email': {
-          main: [
-            [
-              {
-                node: 'Webhook Response',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'send-welcome-email',
+          type: 'main',
+          index: 0
+        },
+        {
+          node: 'webhook-response',
+          type: 'main',
+          index: 0
         }
-      },
+      ],
       settings: {
         executionOrder: 'v1',
         saveManualExecutions: true,
@@ -342,41 +323,28 @@ export class N8NAutomationService {
           }
         }
       ],
-      connections: {
-        'Schedule Trigger': {
-          main: [
-            [
-              {
-                node: 'Fetch ERP Data',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+      connections: [
+        {
+          node: 'schedule-trigger',
+          type: 'main',
+          index: 0
         },
-        'Fetch ERP Data': {
-          main: [
-            [
-              {
-                node: 'Process ERP Data',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'fetch-erp-data',
+          type: 'main',
+          index: 0
         },
-        'Process ERP Data': {
-          main: [
-            [
-              {
-                node: 'Update AAELink',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'process-data',
+          type: 'main',
+          index: 0
+        },
+        {
+          node: 'update-aaelink',
+          type: 'main',
+          index: 0
         }
-      },
+      ],
       settings: {
         executionOrder: 'v1',
         saveManualExecutions: true,
@@ -490,77 +458,38 @@ export class N8NAutomationService {
           }
         }
       ],
-      connections: {
-        'Notification Webhook': {
-          main: [
-            [
-              {
-                node: 'Determine Notification Type',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+      connections: [
+        {
+          node: 'webhook-trigger',
+          type: 'main',
+          index: 0
         },
-        'Determine Notification Type': {
-          main: [
-            [
-              {
-                node: 'Send Email',
-                type: 'main',
-                index: 0
-              }
-            ],
-            [
-              {
-                node: 'Send Push Notification',
-                type: 'main',
-                index: 0
-              }
-            ],
-            [
-              {
-                node: 'Send SMS',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'determine-type',
+          type: 'main',
+          index: 0
         },
-        'Send Email': {
-          main: [
-            [
-              {
-                node: 'Webhook Response',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'send-email',
+          type: 'main',
+          index: 0
         },
-        'Send Push Notification': {
-          main: [
-            [
-              {
-                node: 'Webhook Response',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'send-push',
+          type: 'main',
+          index: 0
         },
-        'Send SMS': {
-          main: [
-            [
-              {
-                node: 'Webhook Response',
-                type: 'main',
-                index: 0
-              }
-            ]
-          ]
+        {
+          node: 'send-sms',
+          type: 'main',
+          index: 0
+        },
+        {
+          node: 'webhook-response',
+          type: 'main',
+          index: 0
         }
-      },
+      ],
       settings: {
         executionOrder: 'v1',
         saveManualExecutions: true,
