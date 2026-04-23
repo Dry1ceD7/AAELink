@@ -1,34 +1,61 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/config"
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/db"
+	authhttp "github.com/Dry1ceD7/AAELink/services/auth/internal/http"
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/repository"
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/security"
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/service"
 )
 
 func main() {
-	// Configure structured JSON logging
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	if os.Getenv("APP_ENV") == "development" {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	}
 
-	port := os.Getenv("HTTP_PORT")
-	if port == "" {
-		port = "8001"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal().Err(err).Msg("config load failed")
 	}
+
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("db connect failed")
+	}
+	defer pool.Close()
+
+	tokens := security.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
+	users := repository.NewUserRepository(pool)
+	sessions := repository.NewSessionRepository(pool)
+	authSvc := service.New(users, sessions, tokens)
+	handlers := authhttp.NewHandlers(authSvc, tokens)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "AAELink Auth Service v0.1.0",
 		ErrorHandler: errorHandler,
 	})
 
-	// Health check — required by Docker and Traefik
 	app.Get("/health", func(c fiber.Ctx) error {
+		if err := pool.Ping(c.Context()); err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"status":  "unhealthy",
+				"service": "auth",
+				"error":   err.Error(),
+			})
+		}
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "auth",
@@ -36,28 +63,27 @@ func main() {
 		})
 	})
 
-	// Metrics endpoint placeholder (Prometheus)
 	app.Get("/metrics", func(c fiber.Ctx) error {
 		return c.SendString("# AAELink auth metrics\n")
 	})
 
-	// TODO: Register routes (Layer 4)
-	// auth.RegisterRoutes(app, deps)
+	handlers.Register(app)
 
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Info().Str("port", port).Msg("auth service starting")
-		if err := app.Listen(":" + port); err != nil {
+		log.Info().Str("port", cfg.HTTPPort).Msg("auth service starting")
+		if err := app.Listen(":" + cfg.HTTPPort); err != nil {
 			log.Fatal().Err(err).Msg("server error")
 		}
 	}()
 
 	<-quit
 	log.Info().Msg("shutting down auth service")
-	if err := app.Shutdown(); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("shutdown error")
 	}
 }

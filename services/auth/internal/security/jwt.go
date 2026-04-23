@@ -1,0 +1,91 @@
+package security
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+)
+
+type Claims struct {
+	UserID uuid.UUID `json:"sub"`
+	Email  string    `json:"email"`
+	jwt.RegisteredClaims
+}
+
+type TokenIssuer struct {
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
+}
+
+func NewTokenIssuer(secret []byte, accessTTL, refreshTTL time.Duration) *TokenIssuer {
+	return &TokenIssuer{secret: secret, accessTTL: accessTTL, refreshTTL: refreshTTL}
+}
+
+func (t *TokenIssuer) AccessTTL() time.Duration  { return t.accessTTL }
+func (t *TokenIssuer) RefreshTTL() time.Duration { return t.refreshTTL }
+
+// IssueAccess returns a signed JWT access token.
+func (t *TokenIssuer) IssueAccess(userID uuid.UUID, email string) (string, time.Time, error) {
+	now := time.Now().UTC()
+	exp := now.Add(t.accessTTL)
+	claims := Claims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "aaelink-auth",
+			Subject:   userID.String(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(exp),
+			ID:        uuid.NewString(),
+		},
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := tok.SignedString(t.secret)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, exp, nil
+}
+
+// ParseAccess validates and returns the access claims.
+func (t *TokenIssuer) ParseAccess(tokenStr string) (*Claims, error) {
+	claims := &Claims{}
+	tok, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return t.secret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !tok.Valid {
+		return nil, errors.New("invalid token")
+	}
+	return claims, nil
+}
+
+// NewRefreshToken returns an opaque random refresh token (base64) and its sha256 hash.
+func NewRefreshToken() (token string, hash string, err error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", err
+	}
+	token = hex.EncodeToString(buf)
+	sum := sha256.Sum256([]byte(token))
+	hash = hex.EncodeToString(sum[:])
+	return token, hash, nil
+}
+
+// HashRefreshToken hashes a refresh token for lookup.
+func HashRefreshToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
