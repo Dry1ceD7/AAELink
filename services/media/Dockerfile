@@ -1,24 +1,29 @@
-# ── Build stage ──────────────────────────────────────────────
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
-RUN apk add --no-cache git ca-certificates tzdata
+WORKDIR /app
 
-WORKDIR /build
+RUN apk add --no-cache git ca-certificates
 
-COPY go.mod go.sum ./
+COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-w -s" -o /media ./cmd/server
 
-# ── Runtime stage ─────────────────────────────────────────────
-FROM scratch
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=builder /media /media
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates curl && \
+    adduser -D -u 1000 appuser
+
+WORKDIR /app
+COPY --from=builder /app/server /app/server
+
+USER appuser
 
 EXPOSE 8004
 
-ENTRYPOINT ["/media"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8004/health || exit 1
+
+ENTRYPOINT ["/app/server"]

@@ -293,12 +293,25 @@ services:
     env_file: .env
     environment:
       SERVICE_NAME: media
+      APP_ENV: ${APP_ENV:-development}
       HTTP_PORT: ${MEDIA_SERVICE_PORT:-8004}
+      MEDIA_SERVICE_PORT: ${MEDIA_SERVICE_PORT:-8004}
+      TICKET_DATABASE_URL: "postgres://${POSTGRES_USER:-aaelink}:${POSTGRES_PASSWORD:-change_me_dev_only}@postgres:5432/${POSTGRES_DB_TICKET:-aaelink_tickets}?sslmode=disable"
+      JWT_SECRET: ${JWT_SECRET}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me_dev_only}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_BUCKET_ATTACHMENTS: ${MINIO_BUCKET_ATTACHMENTS:-aaelink-attachments}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
+      MEDIA_MAX_UPLOAD_MB: ${MEDIA_MAX_UPLOAD_MB:-200}
     networks:
       - aaelink-net
     depends_on:
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.media.rule=Host(`localhost`) && PathPrefix(`/api/media`)"
