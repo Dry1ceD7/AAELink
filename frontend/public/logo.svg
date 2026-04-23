@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 96" role="img" aria-label="AAELink">
+  <g fill="none" stroke-linecap="round">
+    <path d="M12 80 C 28 16, 76 16, 92 80" stroke="#0a2342" stroke-width="10"/>
+    <path d="M22 80 C 36 28, 68 28, 82 80" stroke="#1e63b3" stroke-width="8"/>
+    <path d="M32 80 C 42 42, 62 42, 72 80" stroke="#5cb8e4" stroke-width="6"/>
+  </g>
+  <text x="110" y="62" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+        font-size="40" font-weight="700" fill="#0a2342" letter-spacing="-1">AAELink</text>
+</svg>

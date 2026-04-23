@@ -22,9 +22,9 @@ services:
     command:
       - "--configFile=/etc/traefik/traefik.yml"
     ports:
-      - "80:80"
-      - "443:443"
-      - "${PORT_TRAEFIK_DASHBOARD:-8080}:8080"
+      - "${PORT_TRAEFIK_HTTP:-18080}:80"
+      - "${PORT_TRAEFIK_HTTPS:-18443}:443"
+      - "${PORT_TRAEFIK_DASHBOARD:-18081}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
@@ -55,7 +55,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5432:5432"
+      - "${PORT_POSTGRES:-15432}:5432"
 
   # ─── Cache ──────────────────────────────────────────────────
   redis:
@@ -73,7 +73,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "6379:6379"
+      - "${PORT_REDIS:-16379}:6379"
 
   # ─── Event Bus ──────────────────────────────────────────────
   nats:
@@ -86,8 +86,8 @@ services:
     networks:
       - aaelink-net
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "${PORT_NATS:-14222}:4222"
+      - "${PORT_NATS_HTTP:-18222}:8222"
 
   # ─── Object Storage ─────────────────────────────────────────
   minio:
@@ -108,8 +108,8 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "9000:9000"
-      - "${PORT_MINIO_CONSOLE:-9001}:9001"
+      - "${PORT_MINIO:-19000}:9000"
+      - "${PORT_MINIO_CONSOLE:-19001}:9001"
 
   # ─── Dev Email ──────────────────────────────────────────────
   mailhog:
@@ -119,8 +119,8 @@ services:
     networks:
       - aaelink-net
     ports:
-      - "${PORT_MAILHOG:-8025}:8025"
-      - "1025:1025"
+      - "${PORT_MAILHOG:-18025}:8025"
+      - "${PORT_MAILHOG_SMTP:-11025}:1025"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.mailhog.rule=Host(`mail.localhost`)"
@@ -143,7 +143,7 @@ services:
     networks:
       - aaelink-net
     ports:
-      - "${PORT_PROMETHEUS:-9090}:9090"
+      - "${PORT_PROMETHEUS:-19090}:9090"
 
   grafana:
     image: grafana/grafana:latest
@@ -152,14 +152,14 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_SERVER_ROOT_URL: "http://localhost:${PORT_GRAFANA:-13000}"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - aaelink-net
     ports:
-      - "${PORT_GRAFANA:-3000}:3000"
+      - "${PORT_GRAFANA:-13000}:3000"
     depends_on:
       - prometheus
       - loki
@@ -175,7 +175,7 @@ services:
     networks:
       - aaelink-net
     ports:
-      - "3100:3100"
+      - "${PORT_LOKI:-13100}:3100"
 
   promtail:
     image: grafana/promtail:latest
