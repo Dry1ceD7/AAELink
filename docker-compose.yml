@@ -2,6 +2,7 @@ name: aaelink
 
 networks:
   aaelink-net:
+    name: aaelink-net
     driver: bridge
 
 volumes:
