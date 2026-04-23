@@ -58,6 +58,37 @@ export interface Comment {
   created_at: string
 }
 
+export interface AdminUser {
+  id: string
+  email: string
+  display_name: string
+  preferred_locale: string
+  is_active: boolean
+  roles: Role[]
+  department_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminUsersList {
+  users: AdminUser[]
+  count: number
+}
+
+export interface Department {
+  id: string
+  slug: string
+  name: Record<string, string>
+  is_it_dept: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DepartmentsList {
+  departments: Department[]
+  count: number
+}
+
 export interface MediaFile {
   id: string
   ticket_id: string

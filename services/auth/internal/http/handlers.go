@@ -18,11 +18,17 @@ type Handlers struct {
 	validate *validator.Validate
 }
 
+// sharedValidator is reused by admin handlers to keep validation consistent.
+var sharedValidator = validator.New(validator.WithRequiredStructEnabled())
+
+// getValidator exposes the package-level validator for sibling handlers.
+func getValidator() *validator.Validate { return sharedValidator }
+
 func NewHandlers(auth *service.AuthService, tokens *security.TokenIssuer) *Handlers {
 	return &Handlers{
 		auth:     auth,
 		tokens:   tokens,
-		validate: validator.New(validator.WithRequiredStructEnabled()),
+		validate: sharedValidator,
 	}
 }
 

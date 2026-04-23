@@ -236,7 +236,7 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.auth.rule=Host(`localhost`) && PathPrefix(`/api/v1/auth`)"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/api/v1/auth`) || PathPrefix(`/api/v1/admin`)"
       - "traefik.http.services.auth.loadbalancer.server.port=${AUTH_SERVICE_PORT:-8001}"
     logging:
       driver: "json-file"
@@ -267,7 +267,7 @@ services:
         condition: service_started
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ticket.rule=Host(`localhost`) && PathPrefix(`/api/v1/tickets`)"
+      - "traefik.http.routers.ticket.rule=PathPrefix(`/api/v1/tickets`)"
       - "traefik.http.services.ticket.loadbalancer.server.port=${TICKET_SERVICE_PORT:-8002}"
     logging:
       driver: "json-file"
@@ -336,7 +336,7 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.media.rule=Host(`localhost`) && PathPrefix(`/api/media`)"
+      - "traefik.http.routers.media.rule=PathPrefix(`/api/media`)"
       - "traefik.http.services.media.loadbalancer.server.port=${MEDIA_SERVICE_PORT:-8004}"
     logging:
       driver: "json-file"
@@ -360,7 +360,7 @@ services:
       - media
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`localhost`)"
+      - "traefik.http.routers.frontend.rule=HostRegexp(`.+`)"
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
       - "traefik.http.routers.frontend.priority=1"
     logging:

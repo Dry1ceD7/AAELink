@@ -1,7 +1,12 @@
 import type {
+  AdminUser,
+  AdminUsersList,
   AuthResponse,
   Comment,
+  Department,
+  DepartmentsList,
   MediaFile,
+  Role,
   Ticket,
   TicketPriority,
   TicketStatus,
@@ -154,6 +159,82 @@ export const ticketsApi = {
       method: 'POST',
       body: JSON.stringify({ content, is_internal }),
     }),
+}
+
+export const adminApi = {
+  listUsers: () => request<AdminUsersList>('/api/v1/admin/users'),
+  createUser: (data: {
+    email: string
+    password: string
+    display_name: string
+    locale?: string
+    roles?: Role[]
+    is_active?: boolean
+  }) =>
+    request<AdminUser>('/api/v1/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateUser: (
+    id: string,
+    data: Partial<{
+      email: string
+      display_name: string
+      preferred_locale: string
+      department_id: string | null
+    }>,
+  ) => {
+    const body: Record<string, unknown> = {}
+    if (data.email !== undefined) body.email = data.email
+    if (data.display_name !== undefined) body.display_name = data.display_name
+    if (data.preferred_locale !== undefined)
+      body.preferred_locale = data.preferred_locale
+    if (data.department_id === null) body.clear_department = true
+    else if (data.department_id !== undefined)
+      body.department_id = data.department_id
+    return request<AdminUser>(`/api/v1/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+  updatePassword: (id: string, password: string) =>
+    request<void>(`/api/v1/admin/users/${id}/password`, {
+      method: 'PATCH',
+      body: JSON.stringify({ password }),
+    }),
+  updateRoles: (id: string, roles: Role[]) =>
+    request<AdminUser>(`/api/v1/admin/users/${id}/roles`, {
+      method: 'PATCH',
+      body: JSON.stringify({ roles }),
+    }),
+  setActive: (id: string, is_active: boolean) =>
+    request<AdminUser>(`/api/v1/admin/users/${id}/active`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active }),
+    }),
+  deleteUser: (id: string) =>
+    request<void>(`/api/v1/admin/users/${id}`, { method: 'DELETE' }),
+  listDepartments: () =>
+    request<DepartmentsList>('/api/v1/admin/departments'),
+  createDepartment: (data: {
+    slug: string
+    name: Record<string, string>
+    is_it_dept?: boolean
+  }) =>
+    request<Department>('/api/v1/admin/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateDepartment: (
+    id: string,
+    data: Partial<{ slug: string; name: Record<string, string>; is_it_dept: boolean }>,
+  ) =>
+    request<Department>(`/api/v1/admin/departments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteDepartment: (id: string) =>
+    request<void>(`/api/v1/admin/departments/${id}`, { method: 'DELETE' }),
 }
 
 export const mediaApi = {

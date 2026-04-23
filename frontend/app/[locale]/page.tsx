@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter } from '@/i18n/navigation'
 import { useEffect } from 'react'
 import { Logo } from '@/components/brand/logo'
 import { useAuthStore } from '@/lib/store'

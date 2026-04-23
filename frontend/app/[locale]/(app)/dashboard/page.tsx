@@ -1,12 +1,12 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { Link } from '@/i18n/navigation'
 import { Badge, Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ticketsApi } from '@/lib/api'
-import { useAuthStore } from '@/lib/store'
+import { hasRole, useAuthStore } from '@/lib/store'
 import type { Ticket } from '@/lib/types'
 import { cn, priorityColor, statusColor } from '@/lib/utils'
 
@@ -60,6 +60,40 @@ export default function DashboardPage() {
         <StatCard label={t('dashboard.resolved')} value={resolved} tint="green" />
       </div>
 
+      {hasRole(user, 'it_admin') && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('admin.title')}</CardTitle>
+          </CardHeader>
+          <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <AdminShortcut
+              href="/admin"
+              icon="🛡️"
+              label={t('admin.title')}
+              hint={t('admin.subtitle')}
+            />
+            <AdminShortcut
+              href="/admin/users"
+              icon="👥"
+              label={t('admin.usersTitle')}
+              hint={t('admin.createUserHint')}
+            />
+            <AdminShortcut
+              href="/admin/departments"
+              icon="🏢"
+              label={t('admin.departmentsTitle')}
+              hint={t('admin.departments.subtitle')}
+            />
+            <AdminShortcut
+              href="/admin/system"
+              icon="⚙️"
+              label={t('admin.systemTitle')}
+              hint={t('admin.system.subtitle')}
+            />
+          </CardBody>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="flex items-center justify-between">
           <CardTitle>{t('dashboard.recentTickets')}</CardTitle>
@@ -105,6 +139,35 @@ export default function DashboardPage() {
         </CardBody>
       </Card>
     </div>
+  )
+}
+
+function AdminShortcut({
+  href,
+  icon,
+  label,
+  hint,
+}: {
+  href: string
+  icon: string
+  label: string
+  hint: string
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-start gap-3 rounded-md border border-[color:var(--border)] p-3 transition-colors hover:border-[color:var(--accent)] hover:bg-[color:var(--accent)]/5"
+    >
+      <span className="text-xl leading-none">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-[color:var(--fg)] group-hover:text-[color:var(--accent)]">
+          {label}
+        </p>
+        <p className="mt-0.5 text-xs text-[color:var(--muted)] line-clamp-2">
+          {hint}
+        </p>
+      </div>
+    </Link>
   )
 }
 

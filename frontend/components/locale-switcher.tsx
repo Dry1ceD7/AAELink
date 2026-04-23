@@ -1,10 +1,10 @@
 'use client'
 
 import { useLocale } from 'next-intl'
-import { usePathname, useRouter } from 'next/navigation'
 import { startTransition } from 'react'
 import { Select } from './ui/input'
 import { routing } from '@/i18n/routing'
+import { usePathname, useRouter } from '@/i18n/navigation'
 
 const labels: Record<string, string> = {
   en: 'English',
@@ -18,21 +18,9 @@ export function LocaleSwitcher() {
   const pathname = usePathname()
 
   const change = (next: string) => {
-    let rest = pathname ?? '/'
-    for (const l of routing.locales) {
-      if (rest === `/${l}`) {
-        rest = '/'
-        break
-      }
-      if (rest.startsWith(`/${l}/`)) {
-        rest = rest.slice(l.length + 1)
-        break
-      }
-    }
-    const target = next === routing.defaultLocale ? rest : `/${next}${rest}`
+    if (next === locale) return
     startTransition(() => {
-      router.replace(target)
-      router.refresh()
+      router.replace(pathname, { locale: next as 'en' | 'th' | 'de' })
     })
   }
 

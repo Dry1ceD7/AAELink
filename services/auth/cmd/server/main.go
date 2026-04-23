@@ -41,8 +41,10 @@ func main() {
 	tokens := security.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 	users := repository.NewUserRepository(pool)
 	sessions := repository.NewSessionRepository(pool)
+	depts := repository.NewDepartmentRepository(pool)
 	authSvc := service.New(users, sessions, tokens)
 	handlers := authhttp.NewHandlers(authSvc, tokens)
+	adminHandlers := authhttp.NewAdminHandlers(users, depts, authSvc)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "AAELink Auth Service v0.1.0",
@@ -69,6 +71,12 @@ func main() {
 	app.Get("/metrics", metrics.Handler())
 
 	handlers.Register(app)
+
+	adminGroup := app.Group("/api/v1/admin",
+		authhttp.AuthRequired(tokens),
+		authhttp.RequireRole(users, "it_admin"),
+	)
+	adminHandlers.Register(adminGroup)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

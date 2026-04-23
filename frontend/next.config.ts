@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: '/api/v1/auth/:path*', destination: `${AUTH_URL}/api/v1/auth/:path*` },
+      { source: '/api/v1/admin/:path*', destination: `${AUTH_URL}/api/v1/admin/:path*` },
       { source: '/api/v1/tickets/:path*', destination: `${TICKET_URL}/api/v1/tickets/:path*` },
       { source: '/api/v1/tickets', destination: `${TICKET_URL}/api/v1/tickets` },
       { source: '/api/media/:path*', destination: `${MEDIA_URL}/api/media/:path*` },

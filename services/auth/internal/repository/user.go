@@ -122,3 +122,154 @@ WHERE ur.user_id = $1`
 	}
 	return roles, rows.Err()
 }
+
+// UserWithRoles is a user joined with their role names.
+type UserWithRoles struct {
+	User
+	Roles []string
+}
+
+// ListAll returns all non-deleted users with their roles, newest first.
+func (r *UserRepository) ListAll(ctx context.Context, limit, offset int) ([]UserWithRoles, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	const q = `
+SELECT u.id, u.email, u.password_hash, u.display_name, u.department_id,
+       u.preferred_locale, u.is_active, u.created_at, u.updated_at,
+       COALESCE(ARRAY_AGG(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+FROM users u
+LEFT JOIN user_roles ur ON ur.user_id = u.id
+LEFT JOIN roles r ON r.id = ur.role_id
+WHERE u.deleted_at IS NULL
+GROUP BY u.id
+ORDER BY u.created_at DESC
+LIMIT $1 OFFSET $2`
+	rows, err := r.pool.Query(ctx, q, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]UserWithRoles, 0, 32)
+	for rows.Next() {
+		var u UserWithRoles
+		if err := rows.Scan(
+			&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
+			&u.DepartmentID, &u.PreferredLocale, &u.IsActive,
+			&u.CreatedAt, &u.UpdatedAt, &u.Roles,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// AssignRoleByName grants a role (by name) to a user; idempotent.
+func (r *UserRepository) AssignRoleByName(ctx context.Context, userID uuid.UUID, roleName string) error {
+	const q = `
+INSERT INTO user_roles (user_id, role_id)
+SELECT $1, id FROM roles WHERE name = $2
+ON CONFLICT DO NOTHING`
+	_, err := r.pool.Exec(ctx, q, userID, roleName)
+	return err
+}
+
+// ReplaceRoles replaces the user's role assignments with the provided role names.
+func (r *UserRepository) ReplaceRoles(ctx context.Context, userID uuid.UUID, roleNames []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	for _, name := range roleNames {
+		if name == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE name = $2`,
+			userID, name,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// SetActive toggles the user's active flag.
+func (r *UserRepository) SetActive(ctx context.Context, userID uuid.UUID, active bool) error {
+	const q = `UPDATE users SET is_active = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.pool.Exec(ctx, q, userID, active)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateProfileParams carries optional fields for profile patching.
+type UpdateProfileParams struct {
+	Email           *string
+	DisplayName     *string
+	PreferredLocale *string
+	DepartmentID    *uuid.UUID
+	ClearDepartment bool
+}
+
+// UpdateProfile patches mutable user attributes. Nil pointers are ignored.
+func (r *UserRepository) UpdateProfile(ctx context.Context, userID uuid.UUID, p UpdateProfileParams) error {
+	const q = `
+UPDATE users SET
+  email            = COALESCE($2, email),
+  display_name     = COALESCE($3, display_name),
+  preferred_locale = COALESCE($4, preferred_locale),
+  department_id    = CASE WHEN $6::boolean THEN NULL ELSE COALESCE($5, department_id) END,
+  updated_at       = NOW()
+WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.pool.Exec(ctx, q,
+		userID, p.Email, p.DisplayName, p.PreferredLocale, p.DepartmentID, p.ClearDepartment,
+	)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdatePasswordHash replaces the user's password hash.
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, userID uuid.UUID, hash string) error {
+	const q = `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.pool.Exec(ctx, q, userID, hash)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SoftDelete marks the user as deleted and disables the account.
+func (r *UserRepository) SoftDelete(ctx context.Context, userID uuid.UUID) error {
+	const q = `UPDATE users SET deleted_at = NOW(), is_active = false, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.pool.Exec(ctx, q, userID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
