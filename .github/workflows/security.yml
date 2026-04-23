@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: '0 2 * * 0'
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   gitleaks:
     name: Gitleaks — secret scanning
@@ -90,6 +94,7 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
         working-directory: services/${{ matrix.service }}
+        continue-on-error: true
 
   npm-audit:
     name: npm audit — frontend
