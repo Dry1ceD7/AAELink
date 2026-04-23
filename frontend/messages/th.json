@@ -23,7 +23,22 @@
     "noAccount": "ยังไม่มีบัญชี?",
     "contactIT": "ติดต่อผู้ดูแลระบบไอที",
     "invalidCredentials": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
-    "sessionExpired": "เซสชันของคุณหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง"
+    "sessionExpired": "เซสชันของคุณหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
+    "signingIn": "กำลังเข้าสู่ระบบ…",
+    "emailPlaceholder": "name@aae.co.th",
+    "passwordPlaceholder": "รหัสผ่านของคุณ"
+  },
+  "dashboard": {
+    "title": "แดชบอร์ด",
+    "welcome": "ยินดีต้อนรับกลับ, {name}",
+    "openTickets": "ตั๋วที่เปิดอยู่",
+    "inProgress": "กำลังดำเนินการ",
+    "resolved": "แก้ไขแล้ว",
+    "recentTickets": "ตั๋วล่าสุด",
+    "viewAll": "ดูทั้งหมด",
+    "quickActions": "การกระทำด่วน",
+    "createTicket": "สร้างตั๋ว",
+    "createTicketHint": "แจ้งปัญหาไปยังทีมไอที"
   },
   "ticket": {
     "title": "ตั๋ว",
@@ -43,9 +58,19 @@
     "resolvedAt": "แก้ไขแล้วเมื่อ",
     "attachments": "ไฟล์แนบ",
     "addComment": "เพิ่มความคิดเห็น",
+    "comment": "ความคิดเห็น",
+    "comments": "ความคิดเห็น",
     "internalNote": "บันทึกภายใน (เฉพาะพนักงานไอทีเท่านั้น)",
     "submit": "ส่งตั๋ว",
     "noTickets": "ไม่พบตั๋ว",
+    "searchPlaceholder": "ค้นหาตั๋ว…",
+    "filterByStatus": "กรองตามสถานะ",
+    "allStatuses": "ทุกสถานะ",
+    "uploadFile": "อัปโหลดไฟล์",
+    "noAttachments": "ไม่มีไฟล์แนบ",
+    "updateStatus": "อัปเดตสถานะ",
+    "writeComment": "เขียนความคิดเห็น…",
+    "sendComment": "ส่ง",
     "status": {
       "open": "เปิด",
       "in_progress": "กำลังดำเนินการ",
@@ -75,6 +100,16 @@
     "it_employee": "พนักงานไอที",
     "employee": "พนักงาน"
   },
+  "admin": {
+    "usersTitle": "ผู้ใช้งาน",
+    "departmentsTitle": "แผนก",
+    "name": "ชื่อ",
+    "email": "อีเมล",
+    "role": "บทบาท",
+    "active": "ใช้งานอยู่",
+    "inactive": "ปิดใช้งาน",
+    "comingSoon": "หน้าผู้ดูแลระบบ — เร็วๆ นี้"
+  },
   "common": {
     "save": "บันทึก",
     "cancel": "ยกเลิก",
@@ -90,7 +125,9 @@
     "previous": "ก่อนหน้า",
     "noData": "ไม่มีข้อมูล",
     "confirm": "ยืนยัน",
-    "close": "ปิด"
+    "close": "ปิด",
+    "submit": "ส่ง",
+    "create": "สร้าง"
   },
   "error": {
     "TICKET_NOT_FOUND": "ไม่พบตั๋ว",

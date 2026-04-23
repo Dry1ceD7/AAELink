@@ -7,7 +7,7 @@
     "dashboard": "Dashboard",
     "tickets": "Tickets",
     "newTicket": "Neues Ticket",
-    "admin": "Admin",
+    "admin": "Administration",
     "users": "Benutzer",
     "departments": "Abteilungen",
     "settings": "Einstellungen",
@@ -22,8 +22,23 @@
     "loginSubtitle": "IT-Support-Portal",
     "noAccount": "Kein Konto?",
     "contactIT": "Wenden Sie sich an Ihren IT-Administrator",
-    "invalidCredentials": "Ungültige E-Mail-Adresse oder Passwort",
-    "sessionExpired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
+    "invalidCredentials": "Ungültige E-Mail oder Passwort",
+    "sessionExpired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
+    "signingIn": "Anmelden…",
+    "emailPlaceholder": "name@aae.co.th",
+    "passwordPlaceholder": "Ihr Passwort"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Willkommen zurück, {name}",
+    "openTickets": "Offene Tickets",
+    "inProgress": "In Bearbeitung",
+    "resolved": "Gelöst",
+    "recentTickets": "Neueste Tickets",
+    "viewAll": "Alle anzeigen",
+    "quickActions": "Schnellaktionen",
+    "createTicket": "Ticket erstellen",
+    "createTicketHint": "Ein Problem an die IT melden"
   },
   "ticket": {
     "title": "Ticket",
@@ -43,16 +58,26 @@
     "resolvedAt": "Gelöst",
     "attachments": "Anhänge",
     "addComment": "Kommentar hinzufügen",
+    "comment": "Kommentar",
+    "comments": "Kommentare",
     "internalNote": "Interne Notiz (nur IT-Mitarbeiter)",
-    "submit": "Ticket einreichen",
+    "submit": "Ticket absenden",
     "noTickets": "Keine Tickets gefunden",
+    "searchPlaceholder": "Tickets durchsuchen…",
+    "filterByStatus": "Nach Status filtern",
+    "allStatuses": "Alle Status",
+    "uploadFile": "Datei hochladen",
+    "noAttachments": "Keine Anhänge",
+    "updateStatus": "Status aktualisieren",
+    "writeComment": "Kommentar schreiben…",
+    "sendComment": "Senden",
     "status": {
       "open": "Offen",
       "in_progress": "In Bearbeitung",
-      "pending_employee": "Wartet auf Mitarbeiter",
+      "pending_employee": "Warten auf Mitarbeiter",
       "resolved": "Gelöst",
       "closed": "Geschlossen",
-      "cancelled": "Storniert"
+      "cancelled": "Abgebrochen"
     },
     "priority": {
       "low": "Niedrig",
@@ -75,30 +100,42 @@
     "it_employee": "IT-Mitarbeiter",
     "employee": "Mitarbeiter"
   },
+  "admin": {
+    "usersTitle": "Benutzer",
+    "departmentsTitle": "Abteilungen",
+    "name": "Name",
+    "email": "E-Mail",
+    "role": "Rolle",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "comingSoon": "Administrationsoberfläche — demnächst verfügbar"
+  },
   "common": {
     "save": "Speichern",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "edit": "Bearbeiten",
     "search": "Suchen",
-    "filter": "Filtern",
-    "loading": "Wird geladen...",
+    "filter": "Filter",
+    "loading": "Lädt...",
     "error": "Etwas ist schiefgelaufen",
     "notFound": "Nicht gefunden",
     "back": "Zurück",
     "next": "Weiter",
-    "previous": "Zurück",
+    "previous": "Vorheriges",
     "noData": "Keine Daten verfügbar",
     "confirm": "Bestätigen",
-    "close": "Schließen"
+    "close": "Schließen",
+    "submit": "Absenden",
+    "create": "Erstellen"
   },
   "error": {
     "TICKET_NOT_FOUND": "Ticket nicht gefunden",
     "INSUFFICIENT_PERMISSIONS": "Sie haben keine Berechtigung für diese Aktion",
-    "INVALID_CREDENTIALS": "Ungültige E-Mail-Adresse oder Passwort",
+    "INVALID_CREDENTIALS": "Ungültige E-Mail oder Passwort",
     "USER_NOT_FOUND": "Benutzer nicht gefunden",
-    "EMAIL_ALREADY_EXISTS": "Ein Konto mit dieser E-Mail-Adresse existiert bereits",
-    "SESSION_EXPIRED": "Sitzung abgelaufen — bitte erneut anmelden",
+    "EMAIL_ALREADY_EXISTS": "Ein Konto mit dieser E-Mail existiert bereits",
+    "SESSION_EXPIRED": "Sitzung abgelaufen — bitte melden Sie sich erneut an",
     "INTERNAL_ERROR": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
   }
 }

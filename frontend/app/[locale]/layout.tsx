@@ -3,6 +3,8 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import { notFound } from 'next/navigation'
 import { routing } from '@/i18n/routing'
+import { AuthProvider } from '@/components/auth-provider'
+import { ThemeInit } from '@/components/theme-init'
 import '../globals.css'
 
 export const metadata: Metadata = {
@@ -25,10 +27,13 @@ export default async function LocaleLayout({ children, params }: Props) {
   const messages = await getMessages()
 
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        <ThemeInit />
+      </head>
       <body>
         <NextIntlClientProvider messages={messages}>
-          {children}
+          <AuthProvider>{children}</AuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>

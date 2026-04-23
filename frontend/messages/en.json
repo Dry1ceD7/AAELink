@@ -23,7 +23,22 @@
     "noAccount": "Don't have an account?",
     "contactIT": "Contact your IT administrator",
     "invalidCredentials": "Invalid email or password",
-    "sessionExpired": "Your session has expired. Please log in again."
+    "sessionExpired": "Your session has expired. Please log in again.",
+    "signingIn": "Signing in…",
+    "emailPlaceholder": "name@aae.co.th",
+    "passwordPlaceholder": "Your password"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back, {name}",
+    "openTickets": "Open tickets",
+    "inProgress": "In progress",
+    "resolved": "Resolved",
+    "recentTickets": "Recent tickets",
+    "viewAll": "View all",
+    "quickActions": "Quick actions",
+    "createTicket": "Create a ticket",
+    "createTicketHint": "Report an issue to IT"
   },
   "ticket": {
     "title": "Ticket",
@@ -43,9 +58,19 @@
     "resolvedAt": "Resolved",
     "attachments": "Attachments",
     "addComment": "Add Comment",
+    "comment": "Comment",
+    "comments": "Comments",
     "internalNote": "Internal Note (IT staff only)",
     "submit": "Submit Ticket",
     "noTickets": "No tickets found",
+    "searchPlaceholder": "Search tickets…",
+    "filterByStatus": "Filter by status",
+    "allStatuses": "All statuses",
+    "uploadFile": "Upload file",
+    "noAttachments": "No attachments",
+    "updateStatus": "Update status",
+    "writeComment": "Write a comment…",
+    "sendComment": "Send",
     "status": {
       "open": "Open",
       "in_progress": "In Progress",
@@ -75,6 +100,16 @@
     "it_employee": "IT Employee",
     "employee": "Employee"
   },
+  "admin": {
+    "usersTitle": "Users",
+    "departmentsTitle": "Departments",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "active": "Active",
+    "inactive": "Inactive",
+    "comingSoon": "Administration interface — coming soon"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -90,7 +125,9 @@
     "previous": "Previous",
     "noData": "No data available",
     "confirm": "Confirm",
-    "close": "Close"
+    "close": "Close",
+    "submit": "Submit",
+    "create": "Create"
   },
   "error": {
     "TICKET_NOT_FOUND": "Ticket not found",

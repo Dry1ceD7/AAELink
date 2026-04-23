@@ -15,11 +15,32 @@ volumes:
   prometheus-data:
 
 services:
+  # ─── Docker Socket Proxy (secure access for Traefik) ────────
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: aaelink-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      TASKS: 1
+      NETWORKS: 1
+      POST: 0
+      INFO: 1
+      VERSION: 1
+      EVENTS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - aaelink-net
+
   # ─── Reverse Proxy ──────────────────────────────────────────
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.5
     container_name: aaelink-traefik
     restart: unless-stopped
+    environment:
+      DOCKER_API_VERSION: "1.44"
     command:
       - "--configFile=/etc/traefik/traefik.yml"
     ports:
@@ -328,6 +349,8 @@ services:
     container_name: aaelink-frontend
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "${PORT_FRONTEND:-13001}:3000"
     networks:
       - aaelink-net
     depends_on:
