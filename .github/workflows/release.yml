@@ -46,14 +46,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx --no electron-builder --mac --publish never
+          run: npx --no electron-builder --mac --publish=never
 
       - name: Build (windows)
         if: runner.os == 'Windows'
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx --no electron-builder --win --publish never
+          run: npx --no electron-builder --win --publish=never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
