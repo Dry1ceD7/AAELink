@@ -1,33 +1,62 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/Dry1ceD7/AAELink/services/notify/internal/config"
+	"github.com/Dry1ceD7/AAELink/services/notify/internal/consumer"
+	"github.com/Dry1ceD7/AAELink/services/notify/internal/mailer"
 )
 
 func main() {
-	// Configure structured JSON logging
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	if os.Getenv("APP_ENV") == "development" {
+	cfg := config.Load()
+	if cfg.Env == "development" {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	}
 
-	port := os.Getenv("HTTP_PORT")
-	if port == "" {
-		port = "8003"
-	}
+	m := mailer.New(mailer.Config{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUser,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		StartTLS: cfg.SMTPStartTLS,
+	})
+
+	worker := consumer.New(consumer.Options{
+		URL:          cfg.NATSUrl,
+		Stream:       cfg.NATSStream,
+		Subject:      cfg.NATSSubject,
+		Consumer:     cfg.NATSConsumer,
+		Inbox:        cfg.NotifyInbox,
+		ConnectRetry: 2 * time.Second,
+	}, m)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		if err := worker.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatal().Err(err).Msg("notify worker exited")
+		}
+	}()
 
 	app := fiber.New(fiber.Config{
-		AppName:      "AAELink Auth Service v0.1.0",
+		AppName:      "AAELink Notify Service v0.1.0",
 		ErrorHandler: errorHandler,
 	})
 
-	// Health check — required by Docker and Traefik
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -35,28 +64,23 @@ func main() {
 			"version": "0.1.0",
 		})
 	})
-
-	// Metrics endpoint placeholder (Prometheus)
 	app.Get("/metrics", func(c fiber.Ctx) error {
 		return c.SendString("# AAELink notify metrics\n")
 	})
 
-	// TODO: Register routes (Layer 4)
-	// notify.RegisterRoutes(app, deps)
-
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Info().Str("port", port).Msg("notify service starting")
-		if err := app.Listen(":" + port); err != nil {
+		log.Info().Str("port", cfg.HTTPPort).Msg("notify service starting")
+		if err := app.Listen(":" + cfg.HTTPPort); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal().Err(err).Msg("server error")
 		}
 	}()
 
 	<-quit
 	log.Info().Msg("shutting down notify service")
+	cancel()
 	if err := app.Shutdown(); err != nil {
 		log.Error().Err(err).Msg("shutdown error")
 	}

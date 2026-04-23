@@ -261,8 +261,19 @@ services:
     env_file: .env
     environment:
       SERVICE_NAME: notify
+      APP_ENV: ${APP_ENV:-development}
       HTTP_PORT: ${NOTIFY_SERVICE_PORT:-8003}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NATS_STREAM: ${NATS_STREAM:-TICKETS}
+      NATS_SUBJECT: ${NATS_SUBJECT:-tickets.>}
+      NATS_CONSUMER: ${NATS_CONSUMER:-notify-worker}
+      SMTP_HOST: ${NOTIFY_SMTP_HOST:-mailhog}
+      SMTP_PORT: ${NOTIFY_SMTP_PORT:-1025}
+      SMTP_USER: ${NOTIFY_SMTP_USER:-}
+      SMTP_PASSWORD: ${NOTIFY_SMTP_PASSWORD:-}
+      SMTP_FROM: ${NOTIFY_SMTP_FROM:-AAELink <noreply@aae.local>}
+      SMTP_STARTTLS: ${NOTIFY_SMTP_STARTTLS:-false}
+      NOTIFY_INBOX: ${NOTIFY_INBOX:-it@aae.local}
     networks:
       - aaelink-net
     depends_on:
