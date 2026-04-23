@@ -33,10 +33,9 @@ scrape_configs:
       - targets: ['media:8004']
     metrics_path: /metrics
 
-  - job_name: 'nats'
-    static_configs:
-      - targets: ['nats:8222']
-    metrics_path: /metrics
+  # NOTE: NATS Prometheus metrics require the prometheus-nats-exporter
+  # sidecar; the embedded :8222 endpoint exposes /varz JSON only.
+  # Skip until exporter is added.
 
   - job_name: 'minio'
     metrics_path: /minio/v2/metrics/cluster

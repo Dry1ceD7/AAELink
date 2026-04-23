@@ -11,15 +11,24 @@ api:
   dashboard: true
   insecure: true
 
+metrics:
+  prometheus:
+    entryPoint: traefik
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addRoutersLabels: true
+
 entryPoints:
   web:
     address: ":80"
   websecure:
     address: ":443"
+  traefik:
+    address: ":8080"
 
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    endpoint: "tcp://socket-proxy:2375"
     exposedByDefault: false
     network: aaelink-net
   file:
