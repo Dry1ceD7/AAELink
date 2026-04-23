@@ -14,6 +14,7 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/media/internal/config"
 	"github.com/Dry1ceD7/AAELink/services/media/internal/db"
 	mediahttp "github.com/Dry1ceD7/AAELink/services/media/internal/http"
+	"github.com/Dry1ceD7/AAELink/services/media/internal/metrics"
 	"github.com/Dry1ceD7/AAELink/services/media/internal/repository"
 	"github.com/Dry1ceD7/AAELink/services/media/internal/security"
 	"github.com/Dry1ceD7/AAELink/services/media/internal/storage"
@@ -61,6 +62,8 @@ func main() {
 		BodyLimit:    int(cfg.MaxUploadBytes) + 10*1024*1024,
 	})
 
+	app.Use(metrics.Middleware("media"))
+
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -68,9 +71,7 @@ func main() {
 			"version": "0.1.0",
 		})
 	})
-	app.Get("/metrics", func(c fiber.Ctx) error {
-		return c.SendString("# AAELink media metrics\n")
-	})
+	app.Get("/metrics", metrics.Handler())
 
 	mediahttp.RegisterRoutes(app, handlers, verifier)
 

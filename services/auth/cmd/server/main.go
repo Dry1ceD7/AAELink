@@ -14,6 +14,7 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/auth/internal/config"
 	"github.com/Dry1ceD7/AAELink/services/auth/internal/db"
 	authhttp "github.com/Dry1ceD7/AAELink/services/auth/internal/http"
+	"github.com/Dry1ceD7/AAELink/services/auth/internal/metrics"
 	"github.com/Dry1ceD7/AAELink/services/auth/internal/repository"
 	"github.com/Dry1ceD7/AAELink/services/auth/internal/security"
 	"github.com/Dry1ceD7/AAELink/services/auth/internal/service"
@@ -48,6 +49,8 @@ func main() {
 		ErrorHandler: errorHandler,
 	})
 
+	app.Use(metrics.Middleware("auth"))
+
 	app.Get("/health", func(c fiber.Ctx) error {
 		if err := pool.Ping(c.Context()); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -63,9 +66,7 @@ func main() {
 		})
 	})
 
-	app.Get("/metrics", func(c fiber.Ctx) error {
-		return c.SendString("# AAELink auth metrics\n")
-	})
+	app.Get("/metrics", metrics.Handler())
 
 	handlers.Register(app)
 

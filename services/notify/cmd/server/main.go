@@ -16,6 +16,7 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/config"
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/consumer"
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/mailer"
+	"github.com/Dry1ceD7/AAELink/services/notify/internal/metrics"
 )
 
 func main() {
@@ -57,6 +58,8 @@ func main() {
 		ErrorHandler: errorHandler,
 	})
 
+	app.Use(metrics.Middleware("notify"))
+
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -64,9 +67,7 @@ func main() {
 			"version": "0.1.0",
 		})
 	})
-	app.Get("/metrics", func(c fiber.Ctx) error {
-		return c.SendString("# AAELink notify metrics\n")
-	})
+	app.Get("/metrics", metrics.Handler())
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

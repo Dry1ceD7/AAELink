@@ -15,6 +15,7 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/db"
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/events"
 	tickethttp "github.com/Dry1ceD7/AAELink/services/ticket/internal/http"
+	"github.com/Dry1ceD7/AAELink/services/ticket/internal/metrics"
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/repository"
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/security"
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/service"
@@ -59,6 +60,8 @@ func main() {
 		ErrorHandler: errorHandler,
 	})
 
+	app.Use(metrics.Middleware("ticket"))
+
 	app.Get("/health", func(c fiber.Ctx) error {
 		if err := pool.Ping(c.Context()); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -74,9 +77,7 @@ func main() {
 		})
 	})
 
-	app.Get("/metrics", func(c fiber.Ctx) error {
-		return c.SendString("# AAELink ticket metrics\n")
-	})
+	app.Get("/metrics", metrics.Handler())
 
 	handlers.Register(app)
 
