@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'aaelink'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8080']
+
+  - job_name: 'aaelink-auth'
+    static_configs:
+      - targets: ['auth:8001']
+    metrics_path: /metrics
+
+  - job_name: 'aaelink-ticket'
+    static_configs:
+      - targets: ['ticket:8002']
+    metrics_path: /metrics
+
+  - job_name: 'aaelink-notify'
+    static_configs:
+      - targets: ['notify:8003']
+    metrics_path: /metrics
+
+  - job_name: 'aaelink-media'
+    static_configs:
+      - targets: ['media:8004']
+    metrics_path: /metrics
+
+  - job_name: 'nats'
+    static_configs:
+      - targets: ['nats:8222']
+    metrics_path: /metrics
+
+  - job_name: 'minio'
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ['minio:9000']

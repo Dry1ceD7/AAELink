@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "AAELink",
+    "tagline": "Advanced ID Asia Engineering — IT Support Portal"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "tickets": "Tickets",
+    "newTicket": "New Ticket",
+    "admin": "Admin",
+    "users": "Users",
+    "departments": "Departments",
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+  "auth": {
+    "login": "Log In",
+    "logout": "Log Out",
+    "email": "Email",
+    "password": "Password",
+    "loginTitle": "Welcome to AAELink",
+    "loginSubtitle": "IT Support Portal",
+    "noAccount": "Don't have an account?",
+    "contactIT": "Contact your IT administrator",
+    "invalidCredentials": "Invalid email or password",
+    "sessionExpired": "Your session has expired. Please log in again."
+  },
+  "ticket": {
+    "title": "Ticket",
+    "tickets": "Tickets",
+    "newTicket": "New Ticket",
+    "ticketNumber": "Ticket #{number}",
+    "subject": "Subject",
+    "description": "Description",
+    "category": "Category",
+    "priority": "Priority",
+    "status": "Status",
+    "assignedTo": "Assigned To",
+    "submittedBy": "Submitted By",
+    "department": "Department",
+    "createdAt": "Created",
+    "updatedAt": "Updated",
+    "resolvedAt": "Resolved",
+    "attachments": "Attachments",
+    "addComment": "Add Comment",
+    "internalNote": "Internal Note (IT staff only)",
+    "submit": "Submit Ticket",
+    "noTickets": "No tickets found",
+    "status": {
+      "open": "Open",
+      "in_progress": "In Progress",
+      "pending_employee": "Waiting for Employee",
+      "resolved": "Resolved",
+      "closed": "Closed",
+      "cancelled": "Cancelled"
+    },
+    "priority": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "urgent": "Urgent"
+    }
+  },
+  "category": {
+    "hardware": "Hardware",
+    "software": "Software",
+    "network": "Network",
+    "access": "Access & Permissions",
+    "telephone": "Telephone",
+    "printer": "Printer / Scanner",
+    "other": "Other"
+  },
+  "role": {
+    "it_admin": "IT Admin",
+    "it_employee": "IT Employee",
+    "employee": "Employee"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search",
+    "filter": "Filter",
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "notFound": "Not found",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "noData": "No data available",
+    "confirm": "Confirm",
+    "close": "Close"
+  },
+  "error": {
+    "TICKET_NOT_FOUND": "Ticket not found",
+    "INSUFFICIENT_PERMISSIONS": "You don't have permission to do this",
+    "INVALID_CREDENTIALS": "Invalid email or password",
+    "USER_NOT_FOUND": "User not found",
+    "EMAIL_ALREADY_EXISTS": "An account with this email already exists",
+    "SESSION_EXPIRED": "Session expired — please log in again",
+    "INTERNAL_ERROR": "An unexpected error occurred. Please try again."
+  }
+}

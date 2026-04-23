@@ -1,0 +1,23 @@
+# AAELink CODEOWNERS
+# Format: pattern  owner(s)
+# All changes require review from the project owners
+
+# Global ownership
+*                   @Dry1ceD7
+
+# Core infrastructure
+/docker-compose*.yml  @Dry1ceD7
+/infra/             @Dry1ceD7
+/.github/           @Dry1ceD7
+
+# Services
+/services/          @Dry1ceD7
+
+# Frontend
+/frontend/          @Dry1ceD7
+
+# Migrations (require extra care)
+/migrations/        @Dry1ceD7
+
+# Documentation
+/docs/              @Dry1ceD7

@@ -1,0 +1,59 @@
+# === OS ===
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# === Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Env files ===
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# === Go ===
+services/**/bin/
+services/**/tmp/
+services/**/server
+services/**/*.test
+services/**/coverage.out
+services/**/coverage.html
+
+# === Node / Next.js ===
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo
+
+# === Docker ===
+docker-compose.override.yml
+
+# === MinIO data (local dev) ===
+.minio-data/
+
+# === Logs ===
+*.log
+logs/
+
+# === Cursor / AI workspace tooling (not part of the project) ===
+.claude/
+.cursor/
+_bmad/
+_bmad-output/
+AGENTS.md
+
+# === Secrets (never commit these) ===
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/

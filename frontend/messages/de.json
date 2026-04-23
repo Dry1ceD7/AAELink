@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "AAELink",
+    "tagline": "Advanced ID Asia Engineering — IT-Support-Portal"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "tickets": "Tickets",
+    "newTicket": "Neues Ticket",
+    "admin": "Admin",
+    "users": "Benutzer",
+    "departments": "Abteilungen",
+    "settings": "Einstellungen",
+    "logout": "Abmelden"
+  },
+  "auth": {
+    "login": "Anmelden",
+    "logout": "Abmelden",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "loginTitle": "Willkommen bei AAELink",
+    "loginSubtitle": "IT-Support-Portal",
+    "noAccount": "Kein Konto?",
+    "contactIT": "Wenden Sie sich an Ihren IT-Administrator",
+    "invalidCredentials": "Ungültige E-Mail-Adresse oder Passwort",
+    "sessionExpired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
+  },
+  "ticket": {
+    "title": "Ticket",
+    "tickets": "Tickets",
+    "newTicket": "Neues Ticket",
+    "ticketNumber": "Ticket #{number}",
+    "subject": "Betreff",
+    "description": "Beschreibung",
+    "category": "Kategorie",
+    "priority": "Priorität",
+    "status": "Status",
+    "assignedTo": "Zugewiesen an",
+    "submittedBy": "Eingereicht von",
+    "department": "Abteilung",
+    "createdAt": "Erstellt",
+    "updatedAt": "Aktualisiert",
+    "resolvedAt": "Gelöst",
+    "attachments": "Anhänge",
+    "addComment": "Kommentar hinzufügen",
+    "internalNote": "Interne Notiz (nur IT-Mitarbeiter)",
+    "submit": "Ticket einreichen",
+    "noTickets": "Keine Tickets gefunden",
+    "status": {
+      "open": "Offen",
+      "in_progress": "In Bearbeitung",
+      "pending_employee": "Wartet auf Mitarbeiter",
+      "resolved": "Gelöst",
+      "closed": "Geschlossen",
+      "cancelled": "Storniert"
+    },
+    "priority": {
+      "low": "Niedrig",
+      "medium": "Mittel",
+      "high": "Hoch",
+      "urgent": "Dringend"
+    }
+  },
+  "category": {
+    "hardware": "Hardware",
+    "software": "Software",
+    "network": "Netzwerk",
+    "access": "Zugriff & Berechtigungen",
+    "telephone": "Telefon",
+    "printer": "Drucker / Scanner",
+    "other": "Sonstiges"
+  },
+  "role": {
+    "it_admin": "IT-Administrator",
+    "it_employee": "IT-Mitarbeiter",
+    "employee": "Mitarbeiter"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "search": "Suchen",
+    "filter": "Filtern",
+    "loading": "Wird geladen...",
+    "error": "Etwas ist schiefgelaufen",
+    "notFound": "Nicht gefunden",
+    "back": "Zurück",
+    "next": "Weiter",
+    "previous": "Zurück",
+    "noData": "Keine Daten verfügbar",
+    "confirm": "Bestätigen",
+    "close": "Schließen"
+  },
+  "error": {
+    "TICKET_NOT_FOUND": "Ticket nicht gefunden",
+    "INSUFFICIENT_PERMISSIONS": "Sie haben keine Berechtigung für diese Aktion",
+    "INVALID_CREDENTIALS": "Ungültige E-Mail-Adresse oder Passwort",
+    "USER_NOT_FOUND": "Benutzer nicht gefunden",
+    "EMAIL_ALREADY_EXISTS": "Ein Konto mit dieser E-Mail-Adresse existiert bereits",
+    "SESSION_EXPIRED": "Sitzung abgelaufen — bitte erneut anmelden",
+    "INTERNAL_ERROR": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+  }
+}

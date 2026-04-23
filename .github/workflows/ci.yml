@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  GO_VERSION: '1.22'
+  NODE_VERSION: '22'
+
+jobs:
+  go-check:
+    name: Go — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth, ticket, notify, media]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: services/${{ matrix.service }}/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+  frontend-check:
+    name: Frontend — lint & type-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+  migrations-check:
+    name: SQL migrations check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aaelink_test
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: aaelink_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check auth migrations
+        run: |
+          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
+            -f migrations/auth/001_init.up.sql
+
+      - name: Check ticket migrations
+        run: |
+          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
+            -f migrations/ticket/001_init.up.sql

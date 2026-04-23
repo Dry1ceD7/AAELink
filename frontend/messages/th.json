@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "AAELink",
+    "tagline": "Advanced ID Asia Engineering — พอร์ทัลสนับสนุนด้านไอที"
+  },
+  "nav": {
+    "dashboard": "แดชบอร์ด",
+    "tickets": "ตั๋วสนับสนุน",
+    "newTicket": "สร้างตั๋วใหม่",
+    "admin": "ผู้ดูแล",
+    "users": "ผู้ใช้งาน",
+    "departments": "แผนก",
+    "settings": "การตั้งค่า",
+    "logout": "ออกจากระบบ"
+  },
+  "auth": {
+    "login": "เข้าสู่ระบบ",
+    "logout": "ออกจากระบบ",
+    "email": "อีเมล",
+    "password": "รหัสผ่าน",
+    "loginTitle": "ยินดีต้อนรับสู่ AAELink",
+    "loginSubtitle": "พอร์ทัลสนับสนุนด้านไอที",
+    "noAccount": "ยังไม่มีบัญชี?",
+    "contactIT": "ติดต่อผู้ดูแลระบบไอที",
+    "invalidCredentials": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+    "sessionExpired": "เซสชันของคุณหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง"
+  },
+  "ticket": {
+    "title": "ตั๋ว",
+    "tickets": "ตั๋วสนับสนุน",
+    "newTicket": "สร้างตั๋วใหม่",
+    "ticketNumber": "ตั๋ว #{number}",
+    "subject": "หัวข้อ",
+    "description": "รายละเอียด",
+    "category": "หมวดหมู่",
+    "priority": "ความสำคัญ",
+    "status": "สถานะ",
+    "assignedTo": "มอบหมายให้",
+    "submittedBy": "ส่งโดย",
+    "department": "แผนก",
+    "createdAt": "สร้างเมื่อ",
+    "updatedAt": "อัปเดตเมื่อ",
+    "resolvedAt": "แก้ไขแล้วเมื่อ",
+    "attachments": "ไฟล์แนบ",
+    "addComment": "เพิ่มความคิดเห็น",
+    "internalNote": "บันทึกภายใน (เฉพาะพนักงานไอทีเท่านั้น)",
+    "submit": "ส่งตั๋ว",
+    "noTickets": "ไม่พบตั๋ว",
+    "status": {
+      "open": "เปิด",
+      "in_progress": "กำลังดำเนินการ",
+      "pending_employee": "รอพนักงาน",
+      "resolved": "แก้ไขแล้ว",
+      "closed": "ปิดแล้ว",
+      "cancelled": "ยกเลิกแล้ว"
+    },
+    "priority": {
+      "low": "ต่ำ",
+      "medium": "ปานกลาง",
+      "high": "สูง",
+      "urgent": "เร่งด่วน"
+    }
+  },
+  "category": {
+    "hardware": "ฮาร์ดแวร์",
+    "software": "ซอฟต์แวร์",
+    "network": "เครือข่าย",
+    "access": "การเข้าถึงและสิทธิ์",
+    "telephone": "โทรศัพท์",
+    "printer": "เครื่องพิมพ์ / สแกนเนอร์",
+    "other": "อื่นๆ"
+  },
+  "role": {
+    "it_admin": "ผู้ดูแลระบบไอที",
+    "it_employee": "พนักงานไอที",
+    "employee": "พนักงาน"
+  },
+  "common": {
+    "save": "บันทึก",
+    "cancel": "ยกเลิก",
+    "delete": "ลบ",
+    "edit": "แก้ไข",
+    "search": "ค้นหา",
+    "filter": "กรอง",
+    "loading": "กำลังโหลด...",
+    "error": "เกิดข้อผิดพลาด",
+    "notFound": "ไม่พบข้อมูล",
+    "back": "กลับ",
+    "next": "ถัดไป",
+    "previous": "ก่อนหน้า",
+    "noData": "ไม่มีข้อมูล",
+    "confirm": "ยืนยัน",
+    "close": "ปิด"
+  },
+  "error": {
+    "TICKET_NOT_FOUND": "ไม่พบตั๋ว",
+    "INSUFFICIENT_PERMISSIONS": "คุณไม่มีสิทธิ์ทำสิ่งนี้",
+    "INVALID_CREDENTIALS": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+    "USER_NOT_FOUND": "ไม่พบผู้ใช้",
+    "EMAIL_ALREADY_EXISTS": "มีบัญชีที่ใช้อีเมลนี้อยู่แล้ว",
+    "SESSION_EXPIRED": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
+    "INTERNAL_ERROR": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง"
+  }
+}

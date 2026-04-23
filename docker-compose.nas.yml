@@ -1,0 +1,99 @@
+# docker-compose.nas.yml — QNAP NAS2New deployment (8GB RAM limit)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d
+#
+# Overrides memory limits and removes heavy services not needed on NAS:
+#   - No Grafana stack (monitoring available via NAS built-in tools)
+#   - Reduced PostgreSQL memory
+#   - Single NATS node (no JetStream replication)
+
+name: aaelink
+
+services:
+  postgres:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  nats:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  auth:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  ticket:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  notify:
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  media:
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Override Grafana/Prometheus to use less RAM on NAS
+  prometheus:
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=1GB"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  loki:
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  promtail:
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
+  # Email: Use M365 on NAS (no Mailhog in shared alpha)
+  mailhog:
+    profiles:
+      - dev-only  # Won't start unless --profile dev-only is passed

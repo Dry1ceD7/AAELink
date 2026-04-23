@@ -1,0 +1,320 @@
+name: aaelink
+
+networks:
+  aaelink-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  nats-data:
+  loki-data:
+  grafana-data:
+  prometheus-data:
+
+services:
+  # ─── Reverse Proxy ──────────────────────────────────────────
+  traefik:
+    image: traefik:v3.0
+    container_name: aaelink-traefik
+    restart: unless-stopped
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${PORT_TRAEFIK_DASHBOARD:-8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - aaelink-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+
+  # ─── Database ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: aaelink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aaelink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_dev_only}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - aaelink-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aaelink}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  # ─── Cache ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aaelink-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - aaelink-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  # ─── Event Bus ──────────────────────────────────────────────
+  nats:
+    image: nats:2.10-alpine
+    container_name: aaelink-nats
+    restart: unless-stopped
+    command: ["--jetstream", "--store_dir=/data", "--http_port=8222"]
+    volumes:
+      - nats-data:/data
+    networks:
+      - aaelink-net
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  # ─── Object Storage ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: aaelink-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-change_me_dev_only}
+    volumes:
+      - minio-data:/data
+    networks:
+      - aaelink-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "9000:9000"
+      - "${PORT_MINIO_CONSOLE:-9001}:9001"
+
+  # ─── Dev Email ──────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: aaelink-mailhog
+    restart: unless-stopped
+    networks:
+      - aaelink-net
+    ports:
+      - "${PORT_MAILHOG:-8025}:8025"
+      - "1025:1025"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailhog.rule=Host(`mail.localhost`)"
+      - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
+
+  # ─── Observability ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aaelink-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - aaelink-net
+    ports:
+      - "${PORT_PROMETHEUS:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aaelink-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - aaelink-net
+    ports:
+      - "${PORT_GRAFANA:-3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    container_name: aaelink-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - aaelink-net
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: aaelink-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - aaelink-net
+    depends_on:
+      - loki
+
+  # ─── Application Services ───────────────────────────────────
+  auth:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: aaelink-auth
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: auth
+      HTTP_PORT: ${AUTH_SERVICE_PORT:-8001}
+      DATABASE_URL: "postgres://${POSTGRES_USER:-aaelink}:${POSTGRES_PASSWORD:-change_me_dev_only}@postgres:5432/${POSTGRES_DB_AUTH:-aaelink_auth}?sslmode=disable"
+      REDIS_URL: "redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}"
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+    networks:
+      - aaelink-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=Host(`localhost`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=${AUTH_SERVICE_PORT:-8001}"
+    logging:
+      driver: "json-file"
+      options:
+        labels: "service"
+
+  ticket:
+    build:
+      context: ./services/ticket
+      dockerfile: Dockerfile
+    container_name: aaelink-ticket
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: ticket
+      HTTP_PORT: ${TICKET_SERVICE_PORT:-8002}
+      DATABASE_URL: "postgres://${POSTGRES_USER:-aaelink}:${POSTGRES_PASSWORD:-change_me_dev_only}@postgres:5432/${POSTGRES_DB_TICKET:-aaelink_tickets}?sslmode=disable"
+      REDIS_URL: "redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}"
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+    networks:
+      - aaelink-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ticket.rule=Host(`localhost`) && PathPrefix(`/api/tickets`)"
+      - "traefik.http.services.ticket.loadbalancer.server.port=${TICKET_SERVICE_PORT:-8002}"
+    logging:
+      driver: "json-file"
+      options:
+        labels: "service"
+
+  notify:
+    build:
+      context: ./services/notify
+      dockerfile: Dockerfile
+    container_name: aaelink-notify
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: notify
+      HTTP_PORT: ${NOTIFY_SERVICE_PORT:-8003}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+    networks:
+      - aaelink-net
+    depends_on:
+      - nats
+      - mailhog
+    logging:
+      driver: "json-file"
+      options:
+        labels: "service"
+
+  media:
+    build:
+      context: ./services/media
+      dockerfile: Dockerfile
+    container_name: aaelink-media
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: media
+      HTTP_PORT: ${MEDIA_SERVICE_PORT:-8004}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+    networks:
+      - aaelink-net
+    depends_on:
+      - minio
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.media.rule=Host(`localhost`) && PathPrefix(`/api/media`)"
+      - "traefik.http.services.media.loadbalancer.server.port=${MEDIA_SERVICE_PORT:-8004}"
+    logging:
+      driver: "json-file"
+      options:
+        labels: "service"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aaelink-frontend
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - aaelink-net
+    depends_on:
+      - auth
+      - ticket
+      - media
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`localhost`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.frontend.priority=1"
+    logging:
+      driver: "json-file"
+      options:
+        labels: "service"

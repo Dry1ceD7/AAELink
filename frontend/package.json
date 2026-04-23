@@ -1,0 +1,39 @@
+{
+  "name": "aaelink-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "echo 'No tests configured yet'"
+  },
+  "dependencies": {
+    "next": "^16.2.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next-intl": "^4.9.1",
+    "@tanstack/react-query": "^5.56.2",
+    "zustand": "^5.0.0",
+    "react-hook-form": "^7.53.0",
+    "zod": "^3.23.8",
+    "lucide-react": "^0.453.0",
+    "date-fns": "^4.1.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.2",
+    "class-variance-authority": "^0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "eslint": "^9",
+    "typescript-eslint": "^8",
+    "@eslint/js": "^9"
+  }
+}
