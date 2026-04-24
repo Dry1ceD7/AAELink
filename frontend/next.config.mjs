@@ -1,4 +1,3 @@
-import type { NextConfig } from 'next'
 import createNextIntlPlugin from 'next-intl/plugin'
 
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts')
@@ -7,7 +6,8 @@ const AUTH_URL = process.env.AUTH_SERVICE_URL || 'http://auth:8001'
 const TICKET_URL = process.env.TICKET_SERVICE_URL || 'http://ticket:8002'
 const MEDIA_URL = process.env.MEDIA_SERVICE_URL || 'http://media:8004'
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   output: 'standalone',
   images: {
     remotePatterns: [
