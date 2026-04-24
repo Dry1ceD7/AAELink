@@ -57,7 +57,7 @@ func main() {
 	handlers := mediahttp.NewHandlers(repo, store, cfg.MaxUploadBytes)
 
 	app := fiber.New(fiber.Config{
-		AppName:      "AAELink Media Service v0.1.0",
+		AppName:      "AAELink Media Service v0.0.1-alpha",
 		ErrorHandler: errorHandler,
 		BodyLimit:    int(cfg.MaxUploadBytes) + 10*1024*1024,
 	})
@@ -68,7 +68,7 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "media",
-			"version": "0.1.0",
+			"version": "0.0.1-alpha",
 		})
 	})
 	app.Get("/metrics", metrics.Handler())

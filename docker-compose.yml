@@ -350,6 +350,8 @@ services:
     container_name: aaelink-frontend
     restart: unless-stopped
     env_file: .env
+    environment:
+      - HOSTNAME=0.0.0.0
     ports:
       - "${PORT_FRONTEND:-13001}:3000"
     networks:

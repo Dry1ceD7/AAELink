@@ -7,6 +7,8 @@ export interface User {
   preferred_locale: string
   is_active: boolean
   roles?: Role[]
+  avatar_url?: string | null
+  department_id?: string | null
 }
 
 export interface TokenPair {
@@ -66,6 +68,7 @@ export interface AdminUser {
   is_active: boolean
   roles: Role[]
   department_id?: string | null
+  avatar_url?: string | null
   created_at: string
   updated_at: string
 }

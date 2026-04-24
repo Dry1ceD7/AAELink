@@ -29,6 +29,20 @@ type userResponse struct {
 	PreferredLocale string   `json:"preferred_locale"`
 	IsActive        bool     `json:"is_active"`
 	Roles           []string `json:"roles,omitempty"`
+	AvatarURL       *string  `json:"avatar_url,omitempty"`
+	DepartmentID    *string  `json:"department_id,omitempty"`
+}
+
+type updateMeRequest struct {
+	DisplayName     *string `json:"display_name"     validate:"omitempty,min=1,max=255"`
+	PreferredLocale *string `json:"preferred_locale" validate:"omitempty,oneof=en th de"`
+	AvatarURL       *string `json:"avatar_url"       validate:"omitempty,max=500"`
+	ClearAvatar     bool    `json:"clear_avatar"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required,min=8,max=128"`
+	NewPassword     string `json:"new_password"     validate:"required,min=8,max=128"`
 }
 
 type tokenResponse struct {
@@ -52,12 +66,13 @@ type errorResponse struct {
 // ── Admin DTOs ───────────────────────────────────────────────────────────────
 
 type adminCreateUserRequest struct {
-	Email       string   `json:"email"        validate:"required,email,max=255"`
-	Password    string   `json:"password"     validate:"required,min=8,max=128"`
-	DisplayName string   `json:"display_name" validate:"required,min=1,max=255"`
-	Locale      string   `json:"locale"       validate:"omitempty,oneof=en th de"`
-	Roles       []string `json:"roles"        validate:"omitempty,dive,oneof=it_admin it_employee employee"`
-	IsActive    *bool    `json:"is_active"`
+	Email        string   `json:"email"         validate:"required,email,max=255"`
+	Password     string   `json:"password"      validate:"required,min=8,max=128"`
+	DisplayName  string   `json:"display_name"  validate:"required,min=1,max=255"`
+	Locale       string   `json:"locale"        validate:"omitempty,oneof=en th de"`
+	Roles        []string `json:"roles"         validate:"omitempty,dive,oneof=it_admin it_employee employee"`
+	IsActive     *bool    `json:"is_active"`
+	DepartmentID *string  `json:"department_id" validate:"omitempty,uuid"`
 }
 
 type adminUpdateRolesRequest struct {
@@ -76,6 +91,7 @@ type adminUserResponse struct {
 	IsActive        bool      `json:"is_active"`
 	Roles           []string  `json:"roles"`
 	DepartmentID    *string   `json:"department_id,omitempty"`
+	AvatarURL       *string   `json:"avatar_url,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }

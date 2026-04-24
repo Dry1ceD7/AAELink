@@ -202,5 +202,41 @@
     "EMAIL_ALREADY_EXISTS": "An account with this email already exists",
     "SESSION_EXPIRED": "Session expired — please log in again",
     "INTERNAL_ERROR": "An unexpected error occurred. Please try again."
+  },
+  "settings": {
+    "subtitle": "Personalize how AAELink looks, sounds, and behaves for you.",
+    "preferencesTitle": "Preferences",
+    "languageTitle": "Language",
+    "languageDesc": "Pick the interface language used for menus, labels, and emails.",
+    "themeTitle": "Appearance",
+    "themeDesc": "Switch between light and dark mode.",
+    "profileTitle": "Profile & account",
+    "profileDesc": "Update your name, picture, and password.",
+    "notificationsTitle": "Notifications",
+    "notificationsDesc": "Manage what AAELink sends to your inbox (coming soon).",
+    "adminTitle": "Administration",
+    "adminDesc": "Manage users, departments, and system services.",
+    "comingSoon": "More settings will appear here as new features ship."
+  },
+  "profile": {
+    "title": "Your profile",
+    "subtitle": "Update your personal information, picture, and password.",
+    "pictureTitle": "Profile picture",
+    "pictureHint": "Upload a square PNG, JPEG, WebP, or GIF up to 2 MB.",
+    "uploadPicture": "Upload picture",
+    "removePicture": "Remove picture",
+    "avatarUpdated": "Profile picture updated",
+    "avatarRemoved": "Profile picture removed",
+    "detailsTitle": "Account details",
+    "emailReadOnly": "Contact your IT administrator to change your email.",
+    "updated": "Profile updated",
+    "passwordTitle": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "changePassword": "Update password",
+    "passwordUpdated": "Password updated",
+    "passwordMismatch": "New passwords do not match.",
+    "currentPasswordWrong": "Current password is incorrect."
   }
 }

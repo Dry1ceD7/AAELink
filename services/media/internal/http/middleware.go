@@ -14,6 +14,11 @@ const ctxUserKey = "user_id"
 
 func AuthRequired(v *security.Verifier) fiber.Handler {
 	return func(c fiber.Ctx) error {
+		// Anything served from /api/media/public/* is intentionally anonymous
+		// (e.g. profile avatars consumed directly by <img> tags).
+		if strings.HasPrefix(c.Path(), "/api/media/public/") {
+			return c.Next()
+		}
 		header := c.Get("Authorization")
 		if header == "" {
 			return fiber.NewError(fiber.StatusUnauthorized, "missing authorization header")

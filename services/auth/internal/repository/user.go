@@ -18,6 +18,7 @@ type User struct {
 	PasswordHash    string
 	DisplayName     string
 	DepartmentID    *uuid.UUID
+	AvatarURL       *string
 	PreferredLocale string
 	IsActive        bool
 	CreatedAt       time.Time
@@ -36,11 +37,11 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash, displa
 	const q = `
 INSERT INTO users (email, password_hash, display_name, preferred_locale, department_id)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, password_hash, display_name, department_id, preferred_locale, is_active, created_at, updated_at`
+RETURNING id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, email, passwordHash, displayName, locale, departmentID).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -51,13 +52,13 @@ RETURNING id, email, password_hash, display_name, department_id, preferred_local
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
 	const q = `
-SELECT id, email, password_hash, display_name, department_id, preferred_locale, is_active, created_at, updated_at
+SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at
 FROM users
 WHERE email = $1 AND deleted_at IS NULL`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, email).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -71,13 +72,13 @@ WHERE email = $1 AND deleted_at IS NULL`
 
 func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	const q = `
-SELECT id, email, password_hash, display_name, department_id, preferred_locale, is_active, created_at, updated_at
+SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at
 FROM users
 WHERE id = $1 AND deleted_at IS NULL`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -138,7 +139,7 @@ func (r *UserRepository) ListAll(ctx context.Context, limit, offset int) ([]User
 		offset = 0
 	}
 	const q = `
-SELECT u.id, u.email, u.password_hash, u.display_name, u.department_id,
+SELECT u.id, u.email, u.password_hash, u.display_name, u.department_id, u.avatar_url,
        u.preferred_locale, u.is_active, u.created_at, u.updated_at,
        COALESCE(ARRAY_AGG(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
 FROM users u
@@ -159,7 +160,7 @@ LIMIT $1 OFFSET $2`
 		var u UserWithRoles
 		if err := rows.Scan(
 			&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-			&u.DepartmentID, &u.PreferredLocale, &u.IsActive,
+			&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
 			&u.CreatedAt, &u.UpdatedAt, &u.Roles,
 		); err != nil {
 			return nil, err
@@ -224,6 +225,8 @@ type UpdateProfileParams struct {
 	PreferredLocale *string
 	DepartmentID    *uuid.UUID
 	ClearDepartment bool
+	AvatarURL       *string
+	ClearAvatar     bool
 }
 
 // UpdateProfile patches mutable user attributes. Nil pointers are ignored.
@@ -234,10 +237,13 @@ UPDATE users SET
   display_name     = COALESCE($3, display_name),
   preferred_locale = COALESCE($4, preferred_locale),
   department_id    = CASE WHEN $6::boolean THEN NULL ELSE COALESCE($5, department_id) END,
+  avatar_url       = CASE WHEN $8::boolean THEN NULL ELSE COALESCE($7, avatar_url) END,
   updated_at       = NOW()
 WHERE id = $1 AND deleted_at IS NULL`
 	ct, err := r.pool.Exec(ctx, q,
-		userID, p.Email, p.DisplayName, p.PreferredLocale, p.DepartmentID, p.ClearDepartment,
+		userID, p.Email, p.DisplayName, p.PreferredLocale,
+		p.DepartmentID, p.ClearDepartment,
+		p.AvatarURL, p.ClearAvatar,
 	)
 	if err != nil {
 		return err

@@ -38,7 +38,7 @@ export default function NewTicketPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold text-[color:var(--fg)]">{t('nav.newTicket')}</h1>
 
       <Card>

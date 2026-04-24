@@ -117,6 +117,27 @@ export const authApi = {
       auth: false,
     }),
   me: () => request<User>('/api/v1/auth/me', { method: 'GET' }),
+  updateMe: (data: {
+    display_name?: string
+    preferred_locale?: string
+    avatar_url?: string | null
+  }) => {
+    const body: Record<string, unknown> = {}
+    if (data.display_name !== undefined) body.display_name = data.display_name
+    if (data.preferred_locale !== undefined)
+      body.preferred_locale = data.preferred_locale
+    if (data.avatar_url === null) body.clear_avatar = true
+    else if (data.avatar_url !== undefined) body.avatar_url = data.avatar_url
+    return request<User>('/api/v1/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>('/api/v1/auth/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
   refresh: (refresh_token: string) =>
     request<AuthResponse>('/api/v1/auth/refresh', {
       method: 'POST',
@@ -176,11 +197,17 @@ export const adminApi = {
     locale?: string
     roles?: Role[]
     is_active?: boolean
-  }) =>
-    request<AdminUser>('/api/v1/admin/users', {
+    department_id?: string | null
+  }) => {
+    const body: Record<string, unknown> = { ...data }
+    if (data.department_id == null || data.department_id === '') {
+      delete body.department_id
+    }
+    return request<AdminUser>('/api/v1/admin/users', {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      body: JSON.stringify(body),
+    })
+  },
   updateUser: (
     id: string,
     data: Partial<{
@@ -260,4 +287,16 @@ export const mediaApi = {
     request<{ url: string; expires_in: number; filename: string; mime_type: string }>(
       `/api/media/files/${fileId}/url`
     ),
+  uploadAvatar: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request<{ url: string; content_type: string; size: number }>(
+      '/api/media/profile/avatar',
+      { method: 'POST', body: fd },
+    )
+  },
+  publicAvatarUrl: (userId: string, version?: string | number) => {
+    const v = version == null ? '' : `?v=${encodeURIComponent(String(version))}`
+    return `/api/media/public/avatar/${userId}${v}`
+  },
 }

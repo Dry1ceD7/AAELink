@@ -47,7 +47,7 @@ func main() {
 	adminHandlers := authhttp.NewAdminHandlers(users, depts, authSvc)
 
 	app := fiber.New(fiber.Config{
-		AppName:      "AAELink Auth Service v0.1.0",
+		AppName:      "AAELink Auth Service v0.0.1-alpha",
 		ErrorHandler: errorHandler,
 	})
 
@@ -64,7 +64,7 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "auth",
-			"version": "0.1.0",
+			"version": "0.0.1-alpha",
 		})
 	})
 

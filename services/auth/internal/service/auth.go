@@ -30,10 +30,11 @@ func New(users *repository.UserRepository, sessions *repository.SessionRepositor
 }
 
 type RegisterInput struct {
-	Email       string
-	Password    string
-	DisplayName string
-	Locale      string
+	Email        string
+	Password     string
+	DisplayName  string
+	Locale       string
+	DepartmentID *uuid.UUID
 }
 
 type LoginInput struct {
@@ -78,7 +79,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*reposito
 		locale = "en"
 	}
 
-	user, err := s.users.Create(ctx, email, hash, in.DisplayName, locale, nil)
+	user, err := s.users.Create(ctx, email, hash, in.DisplayName, locale, in.DepartmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +171,38 @@ func (s *AuthService) Me(ctx context.Context, userID uuid.UUID) (*repository.Use
 		return nil, nil, err
 	}
 	return user, roles, nil
+}
+
+// UpdateSelfProfile lets a logged-in user patch their own non-privileged
+// fields. Email and roles are intentionally not exposed here.
+func (s *AuthService) UpdateSelfProfile(
+	ctx context.Context,
+	userID uuid.UUID,
+	displayName, preferredLocale, avatarURL *string,
+	clearAvatar bool,
+) error {
+	return s.users.UpdateProfile(ctx, userID, repository.UpdateProfileParams{
+		DisplayName:     displayName,
+		PreferredLocale: preferredLocale,
+		AvatarURL:       avatarURL,
+		ClearAvatar:     clearAvatar,
+	})
+}
+
+// ChangeOwnPassword verifies the current password before persisting the new one.
+func (s *AuthService) ChangeOwnPassword(ctx context.Context, userID uuid.UUID, current, next string) error {
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := security.VerifyPassword(current, user.PasswordHash); err != nil {
+		return ErrInvalidCredentials
+	}
+	hash, err := security.HashPassword(next)
+	if err != nil {
+		return err
+	}
+	return s.users.UpdatePasswordHash(ctx, userID, hash)
 }
 
 func (s *AuthService) issueTokens(ctx context.Context, user *repository.User, ip, ua string) (*TokenPair, error) {

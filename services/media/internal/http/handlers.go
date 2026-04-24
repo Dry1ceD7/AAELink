@@ -258,6 +258,95 @@ func guessContentType(name string) string {
 	return "application/octet-stream"
 }
 
+// ── Profile avatar ──────────────────────────────────────────────────────────
+
+const (
+	maxAvatarBytes = int64(2 * 1024 * 1024) // 2 MiB hard cap on avatar upload.
+)
+
+var allowedAvatarTypes = map[string]string{
+	"image/png":  ".png",
+	"image/jpeg": ".jpg",
+	"image/webp": ".webp",
+	"image/gif":  ".gif",
+}
+
+func avatarKey(uid uuid.UUID) string {
+	return fmt.Sprintf("avatars/%s/avatar", uid.String())
+}
+
+// UploadAvatar accepts a multipart `file` field and stores it as the caller's
+// profile picture. The storage key is deterministic, so old avatars are
+// overwritten on each upload.
+func (h *Handlers) UploadAvatar(c fiber.Ctx) error {
+	uid, err := userIDFromCtx(c)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "missing file field")
+	}
+	if fh.Size <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "empty file")
+	}
+	if fh.Size > maxAvatarBytes {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
+			fmt.Sprintf("avatar exceeds max size of %d bytes", maxAvatarBytes))
+	}
+
+	contentType := fh.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = guessContentType(fh.Filename)
+	}
+	if _, ok := allowedAvatarTypes[contentType]; !ok {
+		return fiber.NewError(fiber.StatusUnsupportedMediaType,
+			"avatar must be PNG, JPEG, WebP or GIF")
+	}
+
+	f, err := fh.Open()
+	if err != nil {
+		return fmt.Errorf("open upload: %w", err)
+	}
+	defer f.Close()
+
+	key := avatarKey(uid)
+	if err := h.store.PutObject(c.Context(), key, f, fh.Size, contentType); err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+
+	publicURL := fmt.Sprintf("/api/media/public/avatar/%s?v=%d",
+		uid.String(), time.Now().Unix())
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"url":          publicURL,
+		"content_type": contentType,
+		"size":         fh.Size,
+	})
+}
+
+// PublicAvatar streams the current avatar for a user by ID. Returns 404 when
+// the user has not uploaded one yet.
+func (h *Handlers) PublicAvatar(c fiber.Ctx) error {
+	uid, err := uuid.Parse(c.Params("userId"))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid user id")
+	}
+	key := avatarKey(uid)
+	obj, size, ctype, err := h.store.GetObject(c.Context(), key)
+	if err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "avatar not found")
+	}
+	defer obj.Close()
+	if ctype == "" {
+		ctype = "image/png"
+	}
+	c.Set("Content-Type", ctype)
+	c.Set("Content-Length", fmt.Sprintf("%d", size))
+	c.Set("Cache-Control", "private, max-age=60")
+	_, err = io.Copy(c.Response().BodyWriter(), obj)
+	return err
+}
+
 func classifyKind(name, mimeType string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {

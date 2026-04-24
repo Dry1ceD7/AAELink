@@ -54,7 +54,7 @@ func main() {
 	}()
 
 	app := fiber.New(fiber.Config{
-		AppName:      "AAELink Notify Service v0.1.0",
+		AppName:      "AAELink Notify Service v0.0.1-alpha",
 		ErrorHandler: errorHandler,
 	})
 
@@ -64,7 +64,7 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "notify",
-			"version": "0.1.0",
+			"version": "0.0.1-alpha",
 		})
 	})
 	app.Get("/metrics", metrics.Handler())

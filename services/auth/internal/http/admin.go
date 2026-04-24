@@ -71,11 +71,20 @@ func (h *AdminHandlers) createUser(c fiber.Ctx) error {
 		return badRequest(c, "validation_failed", err.Error())
 	}
 
+	var deptID *uuid.UUID
+	if req.DepartmentID != nil && *req.DepartmentID != "" {
+		dID, perr := uuid.Parse(*req.DepartmentID)
+		if perr != nil {
+			return badRequest(c, "invalid_department_id", perr.Error())
+		}
+		deptID = &dID
+	}
 	user, err := h.auth.Register(c.Context(), service.RegisterInput{
-		Email:       req.Email,
-		Password:    req.Password,
-		DisplayName: req.DisplayName,
-		Locale:      req.Locale,
+		Email:        req.Email,
+		Password:     req.Password,
+		DisplayName:  req.DisplayName,
+		Locale:       req.Locale,
+		DepartmentID: deptID,
 	})
 	if errors.Is(err, service.ErrEmailTaken) {
 		return c.Status(fiber.StatusConflict).JSON(errorResponse{Error: "email_taken"})
@@ -165,6 +174,7 @@ func toAdminUser(u repository.UserWithRoles) adminUserResponse {
 		PreferredLocale: u.PreferredLocale,
 		IsActive:        u.IsActive,
 		Roles:           u.Roles,
+		AvatarURL:       u.AvatarURL,
 		CreatedAt:       u.CreatedAt,
 		UpdatedAt:       u.UpdatedAt,
 	}

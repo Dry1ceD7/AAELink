@@ -83,7 +83,7 @@ export default function AdminDepartmentsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <h2 className="text-xl font-semibold text-[color:var(--fg)]">
           {t('admin.departments.title')}

@@ -202,5 +202,41 @@
     "EMAIL_ALREADY_EXISTS": "มีบัญชีที่ใช้อีเมลนี้อยู่แล้ว",
     "SESSION_EXPIRED": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
     "INTERNAL_ERROR": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง"
+  },
+  "settings": {
+    "subtitle": "ปรับแต่งหน้าตา เสียง และพฤติกรรมของ AAELink ให้เหมาะกับคุณ",
+    "preferencesTitle": "การตั้งค่า",
+    "languageTitle": "ภาษา",
+    "languageDesc": "เลือกภาษาสำหรับเมนู ป้ายกำกับ และอีเมล",
+    "themeTitle": "รูปลักษณ์",
+    "themeDesc": "สลับระหว่างโหมดสว่างและโหมดมืด",
+    "profileTitle": "โปรไฟล์และบัญชี",
+    "profileDesc": "อัปเดตชื่อ รูปภาพ และรหัสผ่านของคุณ",
+    "notificationsTitle": "การแจ้งเตือน",
+    "notificationsDesc": "จัดการการแจ้งเตือนที่ AAELink ส่งให้คุณ (เร็วๆ นี้)",
+    "adminTitle": "การจัดการระบบ",
+    "adminDesc": "จัดการผู้ใช้ แผนก และบริการของระบบ",
+    "comingSoon": "การตั้งค่าเพิ่มเติมจะปรากฏที่นี่เมื่อมีฟีเจอร์ใหม่"
+  },
+  "profile": {
+    "title": "โปรไฟล์ของคุณ",
+    "subtitle": "อัปเดตข้อมูลส่วนตัว รูปภาพ และรหัสผ่านของคุณ",
+    "pictureTitle": "รูปโปรไฟล์",
+    "pictureHint": "อัปโหลดรูปสี่เหลี่ยมจัตุรัส PNG, JPEG, WebP หรือ GIF ขนาดไม่เกิน 2 MB",
+    "uploadPicture": "อัปโหลดรูป",
+    "removePicture": "ลบรูป",
+    "avatarUpdated": "อัปเดตรูปโปรไฟล์เรียบร้อย",
+    "avatarRemoved": "ลบรูปโปรไฟล์เรียบร้อย",
+    "detailsTitle": "ข้อมูลบัญชี",
+    "emailReadOnly": "ติดต่อผู้ดูแลระบบไอทีเพื่อเปลี่ยนอีเมล",
+    "updated": "อัปเดตโปรไฟล์เรียบร้อย",
+    "passwordTitle": "เปลี่ยนรหัสผ่าน",
+    "currentPassword": "รหัสผ่านปัจจุบัน",
+    "newPassword": "รหัสผ่านใหม่",
+    "confirmPassword": "ยืนยันรหัสผ่านใหม่",
+    "changePassword": "อัปเดตรหัสผ่าน",
+    "passwordUpdated": "อัปเดตรหัสผ่านเรียบร้อย",
+    "passwordMismatch": "รหัสผ่านใหม่ไม่ตรงกัน",
+    "currentPasswordWrong": "รหัสผ่านปัจจุบันไม่ถูกต้อง"
   }
 }

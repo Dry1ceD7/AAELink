@@ -56,7 +56,7 @@ func main() {
 	handlers := tickethttp.NewHandlers(svc, verifier, hub)
 
 	app := fiber.New(fiber.Config{
-		AppName:      "AAELink Ticket Service v0.1.0",
+		AppName:      "AAELink Ticket Service v0.0.1-alpha",
 		ErrorHandler: errorHandler,
 	})
 
@@ -73,7 +73,7 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "ticket",
-			"version": "0.1.0",
+			"version": "0.0.1-alpha",
 		})
 	})
 

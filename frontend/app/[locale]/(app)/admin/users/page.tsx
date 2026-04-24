@@ -42,6 +42,7 @@ export default function AdminUsersPage() {
     password: '',
     locale: 'en',
     role: 'employee' as Role,
+    department_id: '',
   })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -103,6 +104,7 @@ export default function AdminUsersPage() {
         locale: form.locale,
         roles: [form.role],
         is_active: true,
+        department_id: form.department_id || null,
       })
       setCreateSuccess(t('admin.userCreated'))
       setForm({
@@ -111,6 +113,7 @@ export default function AdminUsersPage() {
         password: '',
         locale: 'en',
         role: 'employee',
+        department_id: '',
       })
       await refresh()
     } catch (err) {
@@ -173,7 +176,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <h2 className="text-xl font-semibold text-[color:var(--fg)]">
           {t('admin.usersTitle')}
@@ -269,6 +272,23 @@ export default function AdminUsersPage() {
                 {LOCALE_OPTIONS.map((l) => (
                   <option key={l} value={l}>
                     {l.toUpperCase()}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="department_id">{t('admin.department')}</Label>
+              <Select
+                id="department_id"
+                value={form.department_id}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, department_id: e.target.value }))
+                }
+              >
+                <option value="">{t('admin.noDepartment')}</option>
+                {depts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name.en || d.name.th || d.name.de || d.slug}
                   </option>
                 ))}
               </Select>

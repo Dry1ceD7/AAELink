@@ -62,7 +62,7 @@ const links: Link[] = [
 export default function AdminSystemPage() {
   const t = useTranslations()
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-[color:var(--fg)]">
           {t('admin.system.title')}

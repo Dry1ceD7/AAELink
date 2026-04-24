@@ -17,6 +17,7 @@ import { Link, usePathname } from '@/i18n/navigation'
 import { cn } from '@/lib/utils'
 import { hasRole, useAuthStore } from '@/lib/store'
 import { useUIStore } from '@/lib/ui-store'
+import { APP_VERSION_LABEL } from '@/lib/version'
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>
 
@@ -32,6 +33,7 @@ const items: NavItem[] = [
   { href: '/dashboard', labelKey: 'nav.dashboard', Icon: Home, group: 'main' },
   { href: '/tickets', labelKey: 'nav.tickets', Icon: Ticket, group: 'main' },
   { href: '/tickets/new', labelKey: 'nav.newTicket', Icon: Plus, group: 'main' },
+  { href: '/settings', labelKey: 'nav.settings', Icon: Settings, group: 'main' },
   {
     href: '/admin',
     labelKey: 'admin.title',
@@ -115,7 +117,7 @@ export function Sidebar() {
         )}
       </nav>
       <div className="px-4 py-3 border-t border-[color:var(--border)] text-xs text-[color:var(--muted)]">
-        AAELink v0.8
+        AAELink {APP_VERSION_LABEL}
       </div>
     </>
   )

@@ -39,6 +39,8 @@ func (h *Handlers) Register(app *fiber.App) {
 	api.Post("/refresh", h.refresh)
 	api.Post("/logout", h.logout)
 	api.Get("/me", h.me, AuthRequired(h.tokens))
+	api.Patch("/me", h.updateMe, AuthRequired(h.tokens))
+	api.Post("/me/password", h.changeMyPassword, AuthRequired(h.tokens))
 }
 
 func (h *Handlers) register(c fiber.Ctx) error {
@@ -151,14 +153,75 @@ func (h *Handlers) me(c fiber.Ctx) error {
 		log.Error().Err(err).Msg("me failed")
 		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{Error: "internal_error"})
 	}
-	return c.JSON(userResponse{
+	return c.JSON(toUserResponse(user, roles))
+}
+
+func (h *Handlers) updateMe(c fiber.Ctx) error {
+	userID, err := userIDFromCtx(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(errorResponse{Error: "unauthorized"})
+	}
+	var req updateMeRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return badRequest(c, "invalid_body", err.Error())
+	}
+	if err := h.validate.Struct(&req); err != nil {
+		return badRequest(c, "validation_failed", err.Error())
+	}
+	if err := h.auth.UpdateSelfProfile(c.Context(), userID, req.DisplayName, req.PreferredLocale, req.AvatarURL, req.ClearAvatar); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(errorResponse{Error: "user_not_found"})
+		}
+		log.Error().Err(err).Msg("update me failed")
+		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{Error: "internal_error"})
+	}
+	user, roles, err := h.auth.Me(c.Context(), userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{Error: "internal_error"})
+	}
+	return c.JSON(toUserResponse(user, roles))
+}
+
+func (h *Handlers) changeMyPassword(c fiber.Ctx) error {
+	userID, err := userIDFromCtx(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(errorResponse{Error: "unauthorized"})
+	}
+	var req changePasswordRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return badRequest(c, "invalid_body", err.Error())
+	}
+	if err := h.validate.Struct(&req); err != nil {
+		return badRequest(c, "validation_failed", err.Error())
+	}
+	if err := h.auth.ChangeOwnPassword(c.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			return c.Status(fiber.StatusUnauthorized).JSON(errorResponse{Error: "invalid_credentials"})
+		}
+		if errors.Is(err, repository.ErrNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(errorResponse{Error: "user_not_found"})
+		}
+		log.Error().Err(err).Msg("change own password failed")
+		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{Error: "internal_error"})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func toUserResponse(user *repository.User, roles []string) userResponse {
+	out := userResponse{
 		ID:              user.ID.String(),
 		Email:           user.Email,
 		DisplayName:     user.DisplayName,
 		PreferredLocale: user.PreferredLocale,
 		IsActive:        user.IsActive,
 		Roles:           roles,
-	})
+		AvatarURL:       user.AvatarURL,
+	}
+	if user.DepartmentID != nil {
+		v := user.DepartmentID.String()
+		out.DepartmentID = &v
+	}
+	return out
 }
 
 func badRequest(c fiber.Ctx, code, msg string) error {
@@ -167,14 +230,7 @@ func badRequest(c fiber.Ctx, code, msg string) error {
 
 func toAuthResponse(r *service.AuthResult) authResponse {
 	return authResponse{
-		User: userResponse{
-			ID:              r.User.ID.String(),
-			Email:           r.User.Email,
-			DisplayName:     r.User.DisplayName,
-			PreferredLocale: r.User.PreferredLocale,
-			IsActive:        r.User.IsActive,
-			Roles:           r.Roles,
-		},
+		User: toUserResponse(r.User, r.Roles),
 		Tokens: tokenResponse{
 			AccessToken:      r.Tokens.AccessToken,
 			RefreshToken:     r.Tokens.RefreshToken,

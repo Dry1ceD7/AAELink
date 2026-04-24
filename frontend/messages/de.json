@@ -202,5 +202,41 @@
     "EMAIL_ALREADY_EXISTS": "Ein Konto mit dieser E-Mail existiert bereits",
     "SESSION_EXPIRED": "Sitzung abgelaufen — bitte melden Sie sich erneut an",
     "INTERNAL_ERROR": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut."
+  },
+  "settings": {
+    "subtitle": "Passen Sie Aussehen, Klang und Verhalten von AAELink an.",
+    "preferencesTitle": "Einstellungen",
+    "languageTitle": "Sprache",
+    "languageDesc": "Wählen Sie die Oberflächensprache für Menüs, Labels und E-Mails.",
+    "themeTitle": "Erscheinungsbild",
+    "themeDesc": "Zwischen hellem und dunklem Modus wechseln.",
+    "profileTitle": "Profil & Konto",
+    "profileDesc": "Aktualisieren Sie Name, Bild und Passwort.",
+    "notificationsTitle": "Benachrichtigungen",
+    "notificationsDesc": "Steuern, was AAELink an Sie sendet (demnächst verfügbar).",
+    "adminTitle": "Administration",
+    "adminDesc": "Benutzer, Abteilungen und Systemdienste verwalten.",
+    "comingSoon": "Weitere Einstellungen erscheinen hier mit neuen Funktionen."
+  },
+  "profile": {
+    "title": "Ihr Profil",
+    "subtitle": "Aktualisieren Sie Ihre persönlichen Daten, Ihr Bild und Ihr Passwort.",
+    "pictureTitle": "Profilbild",
+    "pictureHint": "Quadratisches PNG, JPEG, WebP oder GIF bis 2 MB hochladen.",
+    "uploadPicture": "Bild hochladen",
+    "removePicture": "Bild entfernen",
+    "avatarUpdated": "Profilbild aktualisiert",
+    "avatarRemoved": "Profilbild entfernt",
+    "detailsTitle": "Kontodetails",
+    "emailReadOnly": "Wenden Sie sich an Ihren IT-Administrator, um die E-Mail-Adresse zu ändern.",
+    "updated": "Profil aktualisiert",
+    "passwordTitle": "Passwort ändern",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort",
+    "confirmPassword": "Neues Passwort bestätigen",
+    "changePassword": "Passwort aktualisieren",
+    "passwordUpdated": "Passwort aktualisiert",
+    "passwordMismatch": "Neue Passwörter stimmen nicht überein.",
+    "currentPasswordWrong": "Aktuelles Passwort ist falsch."
   }
 }
