@@ -53,25 +53,20 @@
       "target": [
         { "target": "nsis", "arch": ["x64"] }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "AAELink-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "AAELink-Setup-${version}.${ext}"
     },
     "linux": {
       "target": ["AppImage"],
       "category": "Office",
       "icon": "build/icon.png"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Dry1ceD7",
-        "repo": "AAELink",
-        "releaseType": "release"
-      }
-    ]
+    "publish": null
   }
 }

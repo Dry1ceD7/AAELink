@@ -43,23 +43,19 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx --no electron-builder --mac --publish=never
 
       - name: Build (windows)
         if: runner.os == 'Windows'
         working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx --no electron-builder --win --publish=never
 
       - name: Prune unwanted artifacts
         shell: bash
         working-directory: desktop/dist
         run: |
-          # Keep only .dmg (mac) and Setup *.exe (windows). Drop zip / blockmap / portable / yml.
-          rm -f *.zip *.blockmap latest*.yml
+          rm -f *.zip *.blockmap latest*.yml builder-debug.yml builder-effective-config.yaml
           ls -lah || true
 
       - name: Upload artifacts
