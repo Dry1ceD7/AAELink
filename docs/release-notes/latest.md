@@ -20,7 +20,7 @@ macOS.
 
 ### Desktop deliverables
 - Windows installer: `AAELink-Setup-0.0.1-alpha.exe`.
-- macOS installers: `AAELink-0.0.1-alpha-arm64.dmg` and `AAELink-0.0.1-alpha.dmg`.
+- macOS installers: `AAELink-0.0.1-alpha-arm64.dmg` and `AAELink-0.0.1-alpha-x64.dmg`.
 - Persistent sign-in with secure token storage and release-based in-app update checks.
 
 ## Changed
@@ -48,6 +48,6 @@ macOS.
 |---|---|
 | `AAELink-Setup-0.0.1-alpha.exe` | Windows 10 / 11 (x64) |
 | `AAELink-0.0.1-alpha-arm64.dmg` | macOS, Apple Silicon |
-| `AAELink-0.0.1-alpha.dmg` | macOS, Intel |
+| `AAELink-0.0.1-alpha-x64.dmg` | macOS, Intel |
 | `Source code (zip)` | Source archive |
 | `Source code (tar.gz)` | Source archive |

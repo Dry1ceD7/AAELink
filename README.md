@@ -106,7 +106,7 @@ page.
 |---|---|
 | Windows 10 / 11 | `AAELink-Setup-<version>.exe` |
 | macOS (Apple Silicon) | `AAELink-<version>-arm64.dmg` |
-| macOS (Intel) | `AAELink-<version>.dmg` |
+| macOS (Intel) | `AAELink-<version>-x64.dmg` |
 
 After installing, open the **Help → Configure Server URL…** menu and point the
 client at your AAELink server (for example `http://192.168.1.42:18080`).
