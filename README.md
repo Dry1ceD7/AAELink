@@ -10,11 +10,13 @@
 [![Build & Push](https://github.com/Dry1ceD7/AAELink/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Dry1ceD7/AAELink/actions/workflows/build.yml)
 [![Security](https://github.com/Dry1ceD7/AAELink/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Dry1ceD7/AAELink/actions/workflows/security.yml)
 [![Release](https://github.com/Dry1ceD7/AAELink/actions/workflows/release.yml/badge.svg)](https://github.com/Dry1ceD7/AAELink/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/Dry1ceD7/AAELink?include_prereleases&label=release&color=1e63b3)](https://github.com/Dry1ceD7/AAELink/releases)
+[![Latest release](https://img.shields.io/github/v/release/Dry1ceD7/AAELink?display_name=release&label=latest%20release&color=1e63b3)](https://github.com/Dry1ceD7/AAELink/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-0a2342)](#license)
 [![Backend](https://img.shields.io/badge/backend-Go%201.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016-000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Runtime](https://img.shields.io/badge/runs%20on-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
+### Current version: **`v0.0.1-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.1-alpha)
 
 </div>
 
