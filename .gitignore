@@ -44,12 +44,17 @@ docker-compose.override.yml
 *.log
 logs/
 
-# === Cursor / AI workspace tooling (not part of the project) ===
+# === Local-only tooling and internal docs ===
 .claude/
 .cursor/
 _bmad/
 _bmad-output/
 AGENTS.md
+docs/bmad/
+docs/stories/
+docs/architecture/
+docs/runbooks/
+docs/ROADMAP.md
 
 # === Secrets (never commit these) ===
 *.pem

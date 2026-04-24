@@ -33,8 +33,8 @@ AAELINK_SERVER_URL=http://localhost:18080 npm start
 ## Build
 
 ```bash
-npm run dist:mac    # macOS .dmg + .zip (x64 + arm64)
-npm run dist:win    # Windows installer + portable
+npm run dist:mac    # macOS .dmg (x64 + arm64)
+npm run dist:win    # Windows NSIS installer (x64)
 ```
 
 Releases are built and published automatically by `.github/workflows/release.yml`
