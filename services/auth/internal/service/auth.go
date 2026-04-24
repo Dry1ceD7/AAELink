@@ -246,6 +246,7 @@ func (s *AuthService) issueTokens(ctx context.Context, user *repository.User, ip
 		Roles:        roles,
 		DepartmentID: user.DepartmentID,
 		IsITDept:     s.isITDepartment(ctx, user.DepartmentID),
+		IsSuper:      isSuper(user, roles),
 	})
 	if err != nil {
 		return nil, err
@@ -280,4 +281,25 @@ func (s *AuthService) isITDepartment(ctx context.Context, deptID *uuid.UUID) boo
 		return false
 	}
 	return d.IsITDept
+}
+
+// SuperAdminRoleName is the canonical role granting absolute, cross
+// departmental oversight. The bootstrap always assigns this role to the
+// configured super admin and the data-isolation layer treats it as an
+// unconditional bypass.
+const SuperAdminRoleName = "super_admin"
+
+// isSuper returns true when the user must be treated as the platform
+// super-admin: either the identity-level flag is set OR the canonical
+// `super_admin` role is present.
+func isSuper(user *repository.User, roles []string) bool {
+	if user != nil && user.IsSuperAdmin {
+		return true
+	}
+	for _, r := range roles {
+		if r == SuperAdminRoleName {
+			return true
+		}
+	}
+	return false
 }

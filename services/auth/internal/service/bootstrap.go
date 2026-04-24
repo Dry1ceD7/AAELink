@@ -77,22 +77,38 @@ func (s *AuthService) EnsureSuperAdmin(ctx context.Context, opts BootstrapOption
 		if err != nil {
 			return err
 		}
-		// Replace the auto-assigned 'employee' role with the it_admin role
-		// so the bootstrap account always has full administrative access.
-		if err := s.users.ReplaceRoles(ctx, user.ID, []string{"it_admin"}); err != nil {
+		// Replace the auto-assigned 'employee' role with both the
+		// canonical super-admin role (absolute, cross-departmental
+		// oversight) and the it_admin role (so existing IT-only
+		// guards keep working). Then set the identity-level
+		// is_super_admin flag as a belt-and-braces guarantee.
+		if err := s.users.ReplaceRoles(ctx, user.ID, []string{SuperAdminRoleName, "it_admin"}); err != nil {
+			return err
+		}
+		if err := s.users.SetSuperAdmin(ctx, user.ID, true); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	// Account exists — make sure it is active and has the it_admin role.
+	// Account exists — make sure it is active and carries both the
+	// super_admin and it_admin roles plus the identity-level flag so
+	// nothing in the admin UI can accidentally lock it out.
 	if !existing.IsActive {
 		if err := s.users.SetActive(ctx, existing.ID, true); err != nil {
 			return err
 		}
 	}
+	if err := s.users.AssignRoleByName(ctx, existing.ID, SuperAdminRoleName); err != nil {
+		return err
+	}
 	if err := s.users.AssignRoleByName(ctx, existing.ID, "it_admin"); err != nil {
 		return err
+	}
+	if !existing.IsSuperAdmin {
+		if err := s.users.SetSuperAdmin(ctx, existing.ID, true); err != nil {
+			return err
+		}
 	}
 
 	if opts.ResetPassword {

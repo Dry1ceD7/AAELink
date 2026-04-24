@@ -214,6 +214,7 @@ func toUserResponse(user *repository.User, roles []string) userResponse {
 		DisplayName:     user.DisplayName,
 		PreferredLocale: user.PreferredLocale,
 		IsActive:        user.IsActive,
+		IsSuperAdmin:    user.IsSuperAdmin,
 		Roles:           roles,
 		AvatarURL:       user.AvatarURL,
 	}

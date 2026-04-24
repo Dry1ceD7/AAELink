@@ -51,9 +51,10 @@ The project ships as:
 ## Current features (alpha 0.0.1)
 
 - **IT Help Desk** — submit, comment, triage and resolve tickets with realtime updates.
-- **Identity & access** — sign-in, sessions, three roles: `it_admin`, `it_employee`, `employee`.
+- **Identity & access** — sign-in, sessions, four built-in roles: `super_admin`, `it_admin`, `it_employee`, `employee`.
+- **Super-admin oversight** — the platform super-admin has identity-level, cross-departmental visibility over every ticket, user, and module; protected against accidental lockout (cannot be deactivated, demoted, or deleted).
 - **Admin panel** — user CRUD, department CRUD, custom role CRUD, permission assignment, system config (admin only).
-- **Ticket data isolation** — non-IT users only see own/department tickets; global queue stays IT-only.
+- **Ticket data isolation** — non-IT users only see own/department tickets; global queue stays restricted to IT staff and the super-admin.
 - **Notifications** — realtime in-app alerts via SSE plus email delivery (Mailhog in dev, Microsoft 365 SMTP in prod).
 - **Security workflows** — two-step password confirmation for user creation and password reset actions.
 - **File storage** — uploads and downloads via MinIO with presigned URLs.

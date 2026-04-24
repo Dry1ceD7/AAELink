@@ -21,6 +21,7 @@ type User struct {
 	AvatarURL       *string
 	PreferredLocale string
 	IsActive        bool
+	IsSuperAdmin    bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -37,11 +38,11 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash, displa
 	const q = `
 INSERT INTO users (email, password_hash, display_name, preferred_locale, department_id)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at`
+RETURNING id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, is_super_admin, created_at, updated_at`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, email, passwordHash, displayName, locale, departmentID).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive, &u.IsSuperAdmin,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -52,13 +53,13 @@ RETURNING id, email, password_hash, display_name, department_id, avatar_url, pre
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
 	const q = `
-SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at
+SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, is_super_admin, created_at, updated_at
 FROM users
 WHERE email = $1 AND deleted_at IS NULL`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, email).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive, &u.IsSuperAdmin,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -72,13 +73,13 @@ WHERE email = $1 AND deleted_at IS NULL`
 
 func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	const q = `
-SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, created_at, updated_at
+SELECT id, email, password_hash, display_name, department_id, avatar_url, preferred_locale, is_active, is_super_admin, created_at, updated_at
 FROM users
 WHERE id = $1 AND deleted_at IS NULL`
 	u := &User{}
 	err := r.pool.QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
+		&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive, &u.IsSuperAdmin,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -88,6 +89,23 @@ WHERE id = $1 AND deleted_at IS NULL`
 		return nil, err
 	}
 	return u, nil
+}
+
+// SetSuperAdmin marks the user as the holder of the super-admin identity.
+// This flag is independent from role assignments and gives downstream
+// services an absolute, identity-level guarantee of cross-departmental
+// oversight.
+func (r *UserRepository) SetSuperAdmin(ctx context.Context, userID uuid.UUID, value bool) error {
+	const q = `UPDATE users SET is_super_admin = $2, updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL`
+	ct, err := r.pool.Exec(ctx, q, userID, value)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // AssignDefaultRole assigns the 'employee' role to the user.
@@ -140,7 +158,7 @@ func (r *UserRepository) ListAll(ctx context.Context, limit, offset int) ([]User
 	}
 	const q = `
 SELECT u.id, u.email, u.password_hash, u.display_name, u.department_id, u.avatar_url,
-       u.preferred_locale, u.is_active, u.created_at, u.updated_at,
+       u.preferred_locale, u.is_active, u.is_super_admin, u.created_at, u.updated_at,
        COALESCE(ARRAY_AGG(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
 FROM users u
 LEFT JOIN user_roles ur ON ur.user_id = u.id
@@ -160,7 +178,7 @@ LIMIT $1 OFFSET $2`
 		var u UserWithRoles
 		if err := rows.Scan(
 			&u.ID, &u.Email, &u.PasswordHash, &u.DisplayName,
-			&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive,
+			&u.DepartmentID, &u.AvatarURL, &u.PreferredLocale, &u.IsActive, &u.IsSuperAdmin,
 			&u.CreatedAt, &u.UpdatedAt, &u.Roles,
 		); err != nil {
 			return nil, err

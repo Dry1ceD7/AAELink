@@ -139,6 +139,12 @@ func (h *AdminHandlers) updateRoles(c fiber.Ctx) error {
 	if err := getValidator().Struct(&req); err != nil {
 		return badRequest(c, "validation_failed", err.Error())
 	}
+	// Force the canonical super_admin role to remain on the platform
+	// super-admin identity. The is_super_admin flag is the source of
+	// truth; we just keep the role list aligned for consistency.
+	if target, err := h.users.FindByID(c.Context(), id); err == nil && target != nil && target.IsSuperAdmin {
+		req.Roles = ensureRole(req.Roles, service.SuperAdminRoleName)
+	}
 	if err := h.users.ReplaceRoles(c.Context(), id, req.Roles); err != nil {
 		log.Error().Err(err).Msg("admin update roles failed")
 		return c.Status(fiber.StatusInternalServerError).JSON(errorResponse{Error: "internal_error"})
@@ -151,6 +157,15 @@ func (h *AdminHandlers) updateRoles(c fiber.Ctx) error {
 	return c.JSON(toAdminUser(repository.UserWithRoles{User: *user, Roles: roles}))
 }
 
+func ensureRole(roles []string, want string) []string {
+	for _, r := range roles {
+		if r == want {
+			return roles
+		}
+	}
+	return append(roles, want)
+}
+
 func (h *AdminHandlers) setActive(c fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
@@ -159,6 +174,11 @@ func (h *AdminHandlers) setActive(c fiber.Ctx) error {
 	var req adminSetActiveRequest
 	if err := c.Bind().JSON(&req); err != nil {
 		return badRequest(c, "invalid_body", err.Error())
+	}
+	if !req.IsActive {
+		if target, err := h.users.FindByID(c.Context(), id); err == nil && target != nil && target.IsSuperAdmin {
+			return c.Status(fiber.StatusBadRequest).JSON(errorResponse{Error: "cannot_deactivate_super_admin"})
+		}
 	}
 	if err := h.users.SetActive(c.Context(), id, req.IsActive); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -182,6 +202,7 @@ func toAdminUser(u repository.UserWithRoles) adminUserResponse {
 		DisplayName:     u.DisplayName,
 		PreferredLocale: u.PreferredLocale,
 		IsActive:        u.IsActive,
+		IsSuperAdmin:    u.IsSuperAdmin,
 		Roles:           u.Roles,
 		AvatarURL:       u.AvatarURL,
 		CreatedAt:       u.CreatedAt,
@@ -268,6 +289,12 @@ func (h *AdminHandlers) deleteUser(c fiber.Ctx) error {
 	// Prevent self-deletion lockout.
 	if uid, err := userIDFromCtx(c); err == nil && uid == id {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{Error: "cannot_delete_self"})
+	}
+	// Refuse to soft-delete the platform super-admin: doing so would
+	// remove the only account guaranteed to retain cross-departmental
+	// oversight.
+	if target, err := h.users.FindByID(c.Context(), id); err == nil && target != nil && target.IsSuperAdmin {
+		return c.Status(fiber.StatusBadRequest).JSON(errorResponse{Error: "cannot_delete_super_admin"})
 	}
 	if err := h.users.SoftDelete(c.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {

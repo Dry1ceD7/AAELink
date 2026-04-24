@@ -17,6 +17,7 @@ macOS.
 - Admin role management with custom role creation and granular permission assignment.
 - Security workflow updates including two-step password confirmation in create/reset paths.
 - Department-aware ticket visibility for strict data isolation between non-IT teams.
+- Dedicated super-admin identity with absolute, cross-departmental oversight that cannot be locked out (super-admin role + identity-level flag + protections against demotion, deactivation, and deletion).
 
 ### Desktop deliverables
 - Windows installer: `AAELink-Setup-0.0.1-alpha.exe`.
@@ -30,6 +31,7 @@ macOS.
 - Release workflow enforces explicit artifact allowlist and release-notes body publishing.
 
 ## Fixed
+- Super-admin RBAC: the documented platform super-admin (`adminaaelink@aae.co.th`) now has unrestricted, identity-level, cross-departmental visibility over every ticket, user, and admin module. The account cannot be deactivated, demoted, or deleted from the admin UI or API.
 - UI overlap and drag-region layering issues affecting titlebar interaction.
 - Notification delivery gaps where assignees or creators missed ticket updates.
 - API authorization behavior for ticket list/detail visibility by role and department.

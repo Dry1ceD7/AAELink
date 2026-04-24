@@ -18,6 +18,9 @@ type Claims struct {
 	Roles        []string   `json:"roles,omitempty"`
 	DepartmentID *uuid.UUID `json:"dept,omitempty"`
 	IsITDept     bool       `json:"it_dept,omitempty"`
+	// IsSuper marks the platform super-admin identity. When true the
+	// caller bypasses every data isolation rule.
+	IsSuper bool `json:"is_super,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -38,11 +41,28 @@ func (c *Claims) HasRole(names ...string) bool {
 	return false
 }
 
+// IsSuperAdmin returns true when the claim subject is the platform
+// super-admin (identity-level flag OR canonical `super_admin` role).
+// Super-admins always bypass every data isolation rule.
+func (c *Claims) IsSuperAdmin() bool {
+	if c == nil {
+		return false
+	}
+	if c.IsSuper {
+		return true
+	}
+	return c.HasRole("super_admin")
+}
+
 // IsITStaff covers everyone allowed to view the global ticket queue:
-// dedicated IT roles or members of an IT-flagged department.
+// the platform super-admin, dedicated IT roles, or members of an
+// IT-flagged department.
 func (c *Claims) IsITStaff() bool {
 	if c == nil {
 		return false
+	}
+	if c.IsSuperAdmin() {
+		return true
 	}
 	if c.IsITDept {
 		return true

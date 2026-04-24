@@ -82,7 +82,7 @@ func main() {
 
 	adminGroup := app.Group("/api/v1/admin",
 		authhttp.AuthRequired(tokens),
-		authhttp.RequireRole(users, "it_admin"),
+		authhttp.RequireRole(users, service.SuperAdminRoleName, "it_admin"),
 	)
 	adminHandlers.Register(adminGroup)
 

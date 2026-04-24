@@ -20,6 +20,7 @@ type User struct {
 	DisplayName  string
 	IsActive     bool
 	IsITDept     bool
+	IsSuperAdmin bool
 	DepartmentID *uuid.UUID
 }
 
@@ -59,13 +60,13 @@ func (r *Resolver) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	}
 	const q = `
 SELECT u.id, u.email, u.display_name, u.is_active, u.department_id,
-       COALESCE(d.is_it_dept, false)
+       COALESCE(d.is_it_dept, false), COALESCE(u.is_super_admin, false)
 FROM users u
 LEFT JOIN departments d ON d.id = u.department_id
 WHERE u.id = $1 AND u.deleted_at IS NULL`
 	var out User
 	err := r.pool.QueryRow(ctx, q, id).Scan(
-		&out.ID, &out.Email, &out.DisplayName, &out.IsActive, &out.DepartmentID, &out.IsITDept,
+		&out.ID, &out.Email, &out.DisplayName, &out.IsActive, &out.DepartmentID, &out.IsITDept, &out.IsSuperAdmin,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -86,7 +87,7 @@ func (r *Resolver) ITStaff(ctx context.Context) ([]User, error) {
 	}
 	const q = `
 SELECT DISTINCT u.id, u.email, u.display_name, u.is_active, u.department_id,
-       COALESCE(d.is_it_dept, false)
+       COALESCE(d.is_it_dept, false), COALESCE(u.is_super_admin, false)
 FROM users u
 LEFT JOIN departments d ON d.id = u.department_id
 LEFT JOIN user_roles ur ON ur.user_id = u.id
@@ -95,7 +96,8 @@ WHERE u.deleted_at IS NULL
   AND u.is_active = true
   AND (
     COALESCE(d.is_it_dept, false) = true
-    OR r.name IN ('it_admin', 'it_employee')
+    OR COALESCE(u.is_super_admin, false) = true
+    OR r.name IN ('super_admin', 'it_admin', 'it_employee')
   )
 ORDER BY u.display_name`
 	rows, err := r.pool.Query(ctx, q)
@@ -107,7 +109,7 @@ ORDER BY u.display_name`
 	for rows.Next() {
 		var u User
 		if err := rows.Scan(
-			&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.DepartmentID, &u.IsITDept,
+			&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.DepartmentID, &u.IsITDept, &u.IsSuperAdmin,
 		); err != nil {
 			return nil, err
 		}

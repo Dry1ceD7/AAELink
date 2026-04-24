@@ -31,6 +31,7 @@ type userResponse struct {
 	DisplayName     string   `json:"display_name"`
 	PreferredLocale string   `json:"preferred_locale"`
 	IsActive        bool     `json:"is_active"`
+	IsSuperAdmin    bool     `json:"is_super_admin,omitempty"`
 	Roles           []string `json:"roles,omitempty"`
 	AvatarURL       *string  `json:"avatar_url,omitempty"`
 	DepartmentID    *string  `json:"department_id,omitempty"`
@@ -95,6 +96,7 @@ type adminUserResponse struct {
 	DisplayName     string    `json:"display_name"`
 	PreferredLocale string    `json:"preferred_locale"`
 	IsActive        bool      `json:"is_active"`
+	IsSuperAdmin    bool      `json:"is_super_admin"`
 	Roles           []string  `json:"roles"`
 	DepartmentID    *string   `json:"department_id,omitempty"`
 	AvatarURL       *string   `json:"avatar_url,omitempty"`

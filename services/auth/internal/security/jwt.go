@@ -17,6 +17,9 @@ type Claims struct {
 	Roles        []string   `json:"roles,omitempty"`
 	DepartmentID *uuid.UUID `json:"dept,omitempty"`
 	IsITDept     bool       `json:"it_dept,omitempty"`
+	// IsSuper is the identity-level super-admin flag. When true the
+	// caller bypasses every data isolation rule across the platform.
+	IsSuper bool `json:"is_super,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -28,6 +31,7 @@ type AccessClaims struct {
 	Roles        []string
 	DepartmentID *uuid.UUID
 	IsITDept     bool
+	IsSuper      bool
 }
 
 type TokenIssuer struct {
@@ -55,6 +59,7 @@ func (t *TokenIssuer) IssueAccess(userID uuid.UUID, email string, ctx AccessClai
 		Roles:        ctx.Roles,
 		DepartmentID: ctx.DepartmentID,
 		IsITDept:     ctx.IsITDept,
+		IsSuper:      ctx.IsSuper,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "aaelink-auth",
 			Subject:   userID.String(),
