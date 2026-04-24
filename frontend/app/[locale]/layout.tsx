@@ -9,7 +9,7 @@ import '../globals.css'
 
 export const metadata: Metadata = {
   title: 'AAELink',
-  description: 'Enterprise IT Support Portal — Advanced ID Asia Engineering',
+  description: 'Enterprise IT Support Portal — Advanced ID Asia Engineering Co.,Ltd',
 }
 
 type Props = {

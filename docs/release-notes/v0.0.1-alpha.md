@@ -3,9 +3,10 @@
 > **Version:** `v0.0.1-alpha` &middot; **Channel:** Alpha &middot; **Status:** First public alpha
 
 First public alpha of **AAELink**, the internal enterprise SuperApp for
-Advanced ID Asia Engineering. Ships an IT Help Desk and the foundation of
-the company-wide collaboration platform, deployable on a single Mac, Windows
-PC, or LAN host via Docker, with native desktop clients for macOS and Windows.
+**Advanced ID Asia Engineering Co.,Ltd**. Ships an IT Help Desk and the
+foundation of the company-wide collaboration platform, deployable on a single
+Mac, Windows PC, or LAN host via Docker, with native desktop clients for macOS
+and Windows.
 
 ---
 
