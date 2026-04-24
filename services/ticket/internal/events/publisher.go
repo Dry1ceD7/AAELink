@@ -48,6 +48,10 @@ func NewPublisher(url string) (*Publisher, func(), error) {
 type Event struct {
 	Type      string    `json:"type"`
 	TicketID  string    `json:"ticket_id"`
+	// Actor is the user ID of whoever triggered the event (creator,
+	// commenter, or admin who changed status / assignment). Lets the
+	// notify worker exclude self-actions from outbound mail.
+	Actor     string    `json:"actor,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 	Payload   any       `json:"payload,omitempty"`
 }

@@ -2,7 +2,7 @@
 
 import type { ComponentType, SVGProps } from 'react'
 import { useTranslations } from 'next-intl'
-import { Building2, Settings, Users } from 'lucide-react'
+import { Building2, Settings, ShieldCheck, Users } from 'lucide-react'
 
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
 import { Link } from '@/i18n/navigation'
@@ -22,6 +22,12 @@ const sections: Section[] = [
     titleKey: 'admin.usersTitle',
     Icon: Users,
     descKey: 'admin.createUserHint',
+  },
+  {
+    href: '/admin/roles',
+    titleKey: 'admin.rolesTitle',
+    Icon: ShieldCheck,
+    descKey: 'admin.rolesSubtitle',
   },
   {
     href: '/admin/departments',

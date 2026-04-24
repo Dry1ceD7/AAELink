@@ -1,21 +1,11 @@
 'use client'
 
 import type { ComponentType, SVGProps } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import {
-  Building2,
-  Home,
-  Plus,
-  Settings,
-  ShieldCheck,
-  Ticket,
-  Users,
-  X,
-} from 'lucide-react'
+import { ChevronDown, Home, Ticket, X } from 'lucide-react'
 import { Link, usePathname } from '@/i18n/navigation'
 import { cn } from '@/lib/utils'
-import { hasRole, useAuthStore } from '@/lib/store'
 import { useUIStore } from '@/lib/ui-store'
 import { APP_VERSION_LABEL } from '@/lib/version'
 
@@ -25,98 +15,105 @@ interface NavItem {
   href: string
   labelKey: string
   Icon: IconType
-  roles?: string[]
-  group?: 'main' | 'admin'
 }
 
-const items: NavItem[] = [
-  { href: '/dashboard', labelKey: 'nav.dashboard', Icon: Home, group: 'main' },
-  { href: '/tickets', labelKey: 'nav.tickets', Icon: Ticket, group: 'main' },
-  { href: '/tickets/new', labelKey: 'nav.newTicket', Icon: Plus, group: 'main' },
-  { href: '/settings', labelKey: 'nav.settings', Icon: Settings, group: 'main' },
+interface NavSection {
+  id: string
+  labelKey: string
+  items: NavItem[]
+}
+
+// AAELink ships as a multi-module super app. The sidebar now only carries
+// global modules. Module-specific entry points (e.g. "+ New Ticket") live
+// inside their owning module — never in this global navigation rail —
+// so the chrome stays clean as new modules ship.
+const sections: NavSection[] = [
   {
-    href: '/admin',
-    labelKey: 'admin.title',
-    Icon: ShieldCheck,
-    roles: ['it_admin'],
-    group: 'admin',
-  },
-  {
-    href: '/admin/users',
-    labelKey: 'nav.users',
-    Icon: Users,
-    roles: ['it_admin'],
-    group: 'admin',
-  },
-  {
-    href: '/admin/departments',
-    labelKey: 'nav.departments',
-    Icon: Building2,
-    roles: ['it_admin'],
-    group: 'admin',
-  },
-  {
-    href: '/admin/system',
-    labelKey: 'nav.system',
-    Icon: Settings,
-    roles: ['it_admin'],
-    group: 'admin',
+    id: 'workspace',
+    labelKey: 'sidebar.workspace',
+    items: [
+      { href: '/dashboard', labelKey: 'nav.dashboard', Icon: Home },
+      { href: '/tickets', labelKey: 'nav.tickets', Icon: Ticket },
+    ],
   },
 ]
 
 export function Sidebar() {
   const t = useTranslations()
   const pathname = usePathname() ?? ''
-  const user = useAuthStore((s) => s.user)
   const { sidebarOpen, closeSidebar } = useUIStore()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     closeSidebar()
   }, [pathname, closeSidebar])
 
-  const visible = items.filter(
-    (it) => !it.roles || hasRole(user, ...it.roles),
-  )
-  const main = visible.filter((it) => (it.group ?? 'main') === 'main')
-  const admin = visible.filter((it) => it.group === 'admin')
+  const toggle = (id: string) =>
+    setCollapsed((s) => ({ ...s, [id]: !s[id] }))
 
   const renderLink = (it: NavItem) => {
     const active =
       pathname === it.href ||
-      (it.href !== '/dashboard' && pathname.startsWith(it.href + '/')) ||
-      (it.href !== '/dashboard' && pathname === it.href)
+      (it.href !== '/dashboard' && pathname.startsWith(it.href + '/'))
     return (
       <Link
         key={it.href}
         href={it.href}
         onClick={closeSidebar}
         className={cn(
-          'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+          'group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors',
           active
-            ? 'bg-[color:var(--accent)]/10 text-[color:var(--accent)] font-medium'
+            ? 'bg-[color:var(--accent)]/12 text-[color:var(--accent)] font-medium'
             : 'text-[color:var(--fg)] hover:bg-[color:var(--border)]/40',
         )}
       >
-        <it.Icon className="h-4 w-4 shrink-0" aria-hidden />
-        <span>{t(it.labelKey)}</span>
+        <it.Icon
+          className={cn(
+            'h-4 w-4 shrink-0',
+            active
+              ? 'text-[color:var(--accent)]'
+              : 'text-[color:var(--muted)] group-hover:text-[color:var(--fg)]',
+          )}
+          aria-hidden
+        />
+        <span className="truncate">{t(it.labelKey)}</span>
       </Link>
     )
   }
 
   const Inner = (
     <>
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <div className="space-y-1">{main.map(renderLink)}</div>
-        {admin.length > 0 && (
-          <div className="pt-4">
-            <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted)]">
-              {t('admin.title')}
-            </p>
-            <div className="space-y-1">{admin.map(renderLink)}</div>
-          </div>
-        )}
+      <nav className="flex-1 px-2 pt-3 pb-3 space-y-3 overflow-y-auto">
+        {sections.map((section) => {
+          const isClosed = collapsed[section.id]
+          return (
+            <div key={section.id}>
+              <button
+                type="button"
+                onClick={() => toggle(section.id)}
+                aria-expanded={!isClosed}
+                className="group flex w-full items-center justify-between px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted)] hover:text-[color:var(--fg)]"
+              >
+                <span>{t(section.labelKey)}</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3 w-3 transition-transform',
+                    isClosed && '-rotate-90',
+                  )}
+                  aria-hidden
+                />
+              </button>
+              {!isClosed && (
+                <div className="mt-0.5 space-y-0.5">
+                  {section.items.map(renderLink)}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </nav>
-      <div className="px-4 py-3 border-t border-[color:var(--border)] text-xs text-[color:var(--muted)]">
+
+      <div className="px-4 py-2.5 border-t border-[color:var(--border)] text-[11px] text-[color:var(--muted)]">
         AAELink {APP_VERSION_LABEL}
       </div>
     </>
@@ -124,7 +121,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="hidden md:flex w-60 flex-col border-r border-[color:var(--border)] bg-[color:var(--surface)]">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-[color:var(--border)] bg-[color:var(--surface)]">
         {Inner}
       </aside>
 

@@ -12,6 +12,22 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/ticket/internal/sse"
 )
 
+// routing carries the per-event metadata the SSE hub uses to scope
+// delivery (creator, assignee, department).
+type routing struct {
+	CreatedBy    uuid.UUID
+	AssignedTo   *uuid.UUID
+	DepartmentID *uuid.UUID
+}
+
+func ticketRouting(t *repository.Ticket) routing {
+	return routing{
+		CreatedBy:    t.CreatedBy,
+		AssignedTo:   t.AssignedTo,
+		DepartmentID: t.DepartmentID,
+	}
+}
+
 type TicketService struct {
 	tickets  *repository.TicketRepository
 	comments *repository.CommentRepository
@@ -28,7 +44,12 @@ func (s *TicketService) Create(ctx context.Context, p repository.CreateTicketPar
 	if err != nil {
 		return nil, err
 	}
-	s.broadcast("tickets.created", events.Event{Type: "ticket.created", TicketID: t.ID.String(), Payload: t})
+	s.broadcast("tickets.created", events.Event{
+		Type:     "ticket.created",
+		TicketID: t.ID.String(),
+		Actor:    t.CreatedBy.String(),
+		Payload:  t,
+	}, ticketRouting(t))
 	return t, nil
 }
 
@@ -45,7 +66,12 @@ func (s *TicketService) UpdateStatus(ctx context.Context, id uuid.UUID, status s
 	if err != nil {
 		return nil, err
 	}
-	s.broadcast("tickets.status", events.Event{Type: "ticket.status_changed", TicketID: t.ID.String(), Payload: t})
+	s.broadcast("tickets.status", events.Event{
+		Type:     "ticket.status_changed",
+		TicketID: t.ID.String(),
+		Actor:    actor.String(),
+		Payload:  t,
+	}, ticketRouting(t))
 	return t, nil
 }
 
@@ -54,7 +80,12 @@ func (s *TicketService) Assign(ctx context.Context, id, assignee, actor uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	s.broadcast("tickets.assigned", events.Event{Type: "ticket.assigned", TicketID: t.ID.String(), Payload: t})
+	s.broadcast("tickets.assigned", events.Event{
+		Type:     "ticket.assigned",
+		TicketID: t.ID.String(),
+		Actor:    actor.String(),
+		Payload:  t,
+	}, ticketRouting(t))
 	return t, nil
 }
 
@@ -63,7 +94,20 @@ func (s *TicketService) AddComment(ctx context.Context, ticketID, userID uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	s.broadcast("tickets.comments", events.Event{Type: "ticket.comment_added", TicketID: ticketID.String(), Payload: c})
+	// The hub needs the parent ticket's routing metadata, not the
+	// comment's. Tolerate a missing parent (orphan comment) by skipping
+	// the broadcast — the persistence already succeeded.
+	t, _ := s.tickets.Get(ctx, ticketID)
+	r := routing{}
+	if t != nil {
+		r = ticketRouting(t)
+	}
+	s.broadcast("tickets.comments", events.Event{
+		Type:     "ticket.comment_added",
+		TicketID: ticketID.String(),
+		Actor:    userID.String(),
+		Payload:  c,
+	}, r)
 	return c, nil
 }
 
@@ -71,7 +115,7 @@ func (s *TicketService) ListComments(ctx context.Context, ticketID uuid.UUID) ([
 	return s.comments.ListByTicket(ctx, ticketID)
 }
 
-func (s *TicketService) broadcast(subject string, e events.Event) {
+func (s *TicketService) broadcast(subject string, e events.Event, r routing) {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
@@ -80,7 +124,12 @@ func (s *TicketService) broadcast(subject string, e events.Event) {
 	}
 	if s.hub != nil {
 		if b, err := json.Marshal(e); err == nil {
-			s.hub.Broadcast(b)
+			s.hub.Broadcast(sse.Frame{
+				Payload:      b,
+				CreatedBy:    r.CreatedBy,
+				AssignedTo:   r.AssignedTo,
+				DepartmentID: r.DepartmentID,
+			})
 		}
 	}
 }

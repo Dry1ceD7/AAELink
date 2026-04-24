@@ -6,12 +6,16 @@ import type {
   Department,
   DepartmentsList,
   MediaFile,
+  PermissionsList,
   Role,
+  RoleDefinition,
+  RolesList,
   Ticket,
   TicketPriority,
   TicketStatus,
   User,
 } from './types'
+import { executeWithRlm } from './rlm'
 
 const ACCESS_KEY = 'aae_access_token'
 const REFRESH_KEY = 'aae_refresh_token'
@@ -80,7 +84,10 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     if (token) headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(path, { ...opts, headers })
+  const res = await executeWithRlm(
+    () => fetch(path, { ...opts, headers }),
+    { operation: path },
+  )
 
   if (!res.ok) {
     let code: string | undefined
@@ -268,6 +275,33 @@ export const adminApi = {
     }),
   deleteDepartment: (id: string) =>
     request<void>(`/api/v1/admin/departments/${id}`, { method: 'DELETE' }),
+
+  listRoles: () => request<RolesList>('/api/v1/admin/roles'),
+  listPermissions: () => request<PermissionsList>('/api/v1/admin/permissions'),
+  createRole: (data: {
+    name: string
+    display_name: Record<string, string>
+    description?: string
+    permission_ids?: string[]
+  }) =>
+    request<RoleDefinition>('/api/v1/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateRole: (
+    id: string,
+    data: Partial<{
+      display_name: Record<string, string>
+      description: string
+      permission_ids: string[]
+    }>,
+  ) =>
+    request<RoleDefinition>(`/api/v1/admin/roles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteRole: (id: string) =>
+    request<void>(`/api/v1/admin/roles/${id}`, { method: 'DELETE' }),
 }
 
 export const mediaApi = {

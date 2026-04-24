@@ -32,6 +32,9 @@ func Decode(b []byte) (*Event, error) {
 	e.Type, _ = raw["type"].(string)
 	e.TicketID, _ = raw["ticket_id"].(string)
 	e.Timestamp, _ = raw["timestamp"].(string)
+	// Prefer the explicit top-level actor (newer events). Falls back to
+	// the payload-derived guess for older events still in the queue.
+	e.Actor, _ = raw["actor"].(string)
 
 	// Ticket service publishes payload under "payload" (Ticket or Comment struct).
 	payload, _ := raw["payload"].(map[string]any)
@@ -47,16 +50,19 @@ func Decode(b []byte) (*Event, error) {
 	e.Title, _ = payload["title"].(string)
 	e.Status, _ = payload["status"].(string)
 	e.Priority, _ = payload["priority"].(string)
-	if actor, ok := payload["created_by"].(string); ok {
-		e.Actor = actor
-	}
 	if a, ok := payload["assigned_to"].(string); ok {
 		e.AssignedTo = a
 	}
 	// For comment events, payload is a Comment with Content + UserID
 	e.Content, _ = payload["content"].(string)
-	if uid, ok := payload["user_id"].(string); ok && e.Actor == "" {
-		e.Actor = uid
+	if e.Actor == "" {
+		// Backwards-compat fallback for events that pre-date the
+		// explicit `actor` field.
+		if uid, ok := payload["user_id"].(string); ok {
+			e.Actor = uid
+		} else if cb, ok := payload["created_by"].(string); ok {
+			e.Actor = cb
+		}
 	}
 	return e, nil
 }

@@ -88,7 +88,22 @@ type ListFilter struct {
 	CreatedBy  *uuid.UUID
 	Limit      int
 	Offset     int
+
+	// Scope is applied AFTER the explicit filters to enforce hard
+	// authorization boundaries. Use ScopeAll to disable isolation
+	// (IT staff). Use ScopeDepartment to limit results to tickets the
+	// caller created OR tickets that belong to the caller's department.
+	Scope        ListScope
+	ScopeUserID  uuid.UUID
+	ScopeDeptID  *uuid.UUID
 }
+
+type ListScope int
+
+const (
+	ScopeAll        ListScope = iota
+	ScopeDepartment           // own + caller's department
+)
 
 func (r *TicketRepository) List(ctx context.Context, f ListFilter) ([]Ticket, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
@@ -110,6 +125,17 @@ WHERE deleted_at IS NULL`
 	if f.CreatedBy != nil {
 		args = append(args, *f.CreatedBy)
 		q += " AND created_by = $" + itoa(len(args))
+	}
+	if f.Scope == ScopeDepartment {
+		args = append(args, f.ScopeUserID)
+		userClause := "created_by = $" + itoa(len(args))
+		if f.ScopeDeptID != nil {
+			args = append(args, *f.ScopeDeptID)
+			deptClause := "department_id = $" + itoa(len(args))
+			q += " AND (" + userClause + " OR " + deptClause + ")"
+		} else {
+			q += " AND " + userClause
+		}
 	}
 	args = append(args, f.Limit)
 	q += " ORDER BY created_at DESC LIMIT $" + itoa(len(args))

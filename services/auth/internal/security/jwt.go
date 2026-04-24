@@ -12,9 +12,22 @@ import (
 )
 
 type Claims struct {
-	UserID uuid.UUID `json:"sub"`
-	Email  string    `json:"email"`
+	UserID       uuid.UUID  `json:"sub"`
+	Email        string     `json:"email"`
+	Roles        []string   `json:"roles,omitempty"`
+	DepartmentID *uuid.UUID `json:"dept,omitempty"`
+	IsITDept     bool       `json:"it_dept,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// AccessClaims captures the optional context the auth service can embed
+// into a freshly issued access token. Downstream services (ticket, media,
+// notify) read these to enforce department-scoped isolation without
+// having to call back into auth on every request.
+type AccessClaims struct {
+	Roles        []string
+	DepartmentID *uuid.UUID
+	IsITDept     bool
 }
 
 type TokenIssuer struct {
@@ -30,13 +43,18 @@ func NewTokenIssuer(secret []byte, accessTTL, refreshTTL time.Duration) *TokenIs
 func (t *TokenIssuer) AccessTTL() time.Duration  { return t.accessTTL }
 func (t *TokenIssuer) RefreshTTL() time.Duration { return t.refreshTTL }
 
-// IssueAccess returns a signed JWT access token.
-func (t *TokenIssuer) IssueAccess(userID uuid.UUID, email string) (string, time.Time, error) {
+// IssueAccess returns a signed JWT access token enriched with the caller's
+// roles and department so downstream services can enforce isolation
+// without re-querying auth on every request.
+func (t *TokenIssuer) IssueAccess(userID uuid.UUID, email string, ctx AccessClaims) (string, time.Time, error) {
 	now := time.Now().UTC()
 	exp := now.Add(t.accessTTL)
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:       userID,
+		Email:        email,
+		Roles:        ctx.Roles,
+		DepartmentID: ctx.DepartmentID,
+		IsITDept:     ctx.IsITDept,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "aaelink-auth",
 			Subject:   userID.String(),

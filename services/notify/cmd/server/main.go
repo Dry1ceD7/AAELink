@@ -17,6 +17,7 @@ import (
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/consumer"
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/mailer"
 	"github.com/Dry1ceD7/AAELink/services/notify/internal/metrics"
+	"github.com/Dry1ceD7/AAELink/services/notify/internal/users"
 )
 
 func main() {
@@ -35,6 +36,21 @@ func main() {
 		StartTLS: cfg.SMTPStartTLS,
 	})
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Best-effort connection to the auth database for verified-email
+	// routing. If the DSN is missing or the DB is unreachable we still
+	// boot the worker — events will fall back to the legacy inbox so the
+	// pipeline never silently drops messages.
+	resolver, closeResolver, err := users.New(ctx, cfg.AuthDatabaseURL)
+	if err != nil {
+		log.Warn().Err(err).Msg("auth database unavailable; falling back to NOTIFY_INBOX only")
+		resolver = nil
+		closeResolver = func() {}
+	}
+	defer closeResolver()
+
 	worker := consumer.New(consumer.Options{
 		URL:          cfg.NATSUrl,
 		Stream:       cfg.NATSStream,
@@ -42,10 +58,7 @@ func main() {
 		Consumer:     cfg.NATSConsumer,
 		Inbox:        cfg.NotifyInbox,
 		ConnectRetry: 2 * time.Second,
-	}, m)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	}, m, resolver)
 
 	go func() {
 		if err := worker.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {

@@ -296,11 +296,19 @@ services:
       SMTP_FROM: ${NOTIFY_SMTP_FROM:-AAELink <noreply@aae.local>}
       SMTP_STARTTLS: ${NOTIFY_SMTP_STARTTLS:-false}
       NOTIFY_INBOX: ${NOTIFY_INBOX:-it@aae.local}
+      # Read-only access to the auth database lets the worker resolve the
+      # verified email address of every recipient (creator, assignee,
+      # IT staff). Falls back to NOTIFY_INBOX if unset / unreachable.
+      AUTH_DATABASE_URL: "postgres://${POSTGRES_USER:-aaelink}:${POSTGRES_PASSWORD:-change_me_dev_only}@postgres:5432/${POSTGRES_DB_AUTH:-aaelink_auth}?sslmode=disable"
     networks:
       - aaelink-net
     depends_on:
-      - nats
-      - mailhog
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      mailhog:
+        condition: service_started
     logging:
       driver: "json-file"
       options:

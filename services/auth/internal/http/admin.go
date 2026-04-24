@@ -17,15 +17,17 @@ import (
 type AdminHandlers struct {
 	users *repository.UserRepository
 	depts *repository.DepartmentRepository
+	roles *repository.RoleRepository
 	auth  *service.AuthService
 }
 
 func NewAdminHandlers(
 	users *repository.UserRepository,
 	depts *repository.DepartmentRepository,
+	roles *repository.RoleRepository,
 	auth *service.AuthService,
 ) *AdminHandlers {
-	return &AdminHandlers{users: users, depts: depts, auth: auth}
+	return &AdminHandlers{users: users, depts: depts, roles: roles, auth: auth}
 }
 
 // Register mounts the admin routes onto the given parent group.
@@ -43,6 +45,13 @@ func (h *AdminHandlers) Register(g fiber.Router) {
 	g.Post("/departments", h.createDepartment)
 	g.Patch("/departments/:id", h.updateDepartment)
 	g.Delete("/departments/:id", h.deleteDepartment)
+
+	g.Get("/roles", h.listRoles)
+	g.Post("/roles", h.createRole)
+	g.Patch("/roles/:id", h.updateRole)
+	g.Delete("/roles/:id", h.deleteRole)
+
+	g.Get("/permissions", h.listPermissions)
 }
 
 func (h *AdminHandlers) listUsers(c fiber.Ctx) error {

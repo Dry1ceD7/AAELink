@@ -6,7 +6,6 @@ import { useEffect, useState } from 'react'
 import { Building2, Settings, ShieldCheck, Users } from 'lucide-react'
 import { Link } from '@/i18n/navigation'
 import { Badge, Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { ticketsApi } from '@/lib/api'
 import { hasRole, useAuthStore } from '@/lib/store'
 import type { Ticket } from '@/lib/types'
@@ -51,9 +50,6 @@ export default function DashboardPage() {
             {t('dashboard.welcome', { name: user?.display_name ?? '' })}
           </p>
         </div>
-        <Link href="/tickets/new">
-          <Button>{t('nav.newTicket')}</Button>
-        </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -3,11 +3,13 @@
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Badge, Card, CardBody } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { ticketsApi } from '@/lib/api'
 import type { Ticket, TicketStatus } from '@/lib/types'
+import { useUIStore } from '@/lib/ui-store'
 import { priorityColor, statusColor } from '@/lib/utils'
 
 const statuses: TicketStatus[] = [
@@ -21,6 +23,7 @@ const statuses: TicketStatus[] = [
 
 export default function TicketsListPage() {
   const t = useTranslations()
+  const openNewTicket = useUIStore((s) => s.openNewTicket)
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<string>('')
@@ -62,9 +65,12 @@ export default function TicketsListPage() {
         <h1 className="text-2xl font-bold text-[color:var(--fg)]">
           {t('ticket.tickets')}
         </h1>
-        <Link href="/tickets/new">
-          <Button>{t('nav.newTicket')}</Button>
-        </Link>
+        {/* Module-local entry point — replaces the global "+ New Ticket"
+            sidebar shortcut so AAELink stays modular as new modules ship. */}
+        <Button onClick={openNewTicket}>
+          <Plus className="h-4 w-4" />
+          {t('nav.newTicket')}
+        </Button>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">

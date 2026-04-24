@@ -15,9 +15,9 @@ import { Input, Label, Select } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { adminApi, ApiError } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import type { AdminUser, Department, Role } from '@/lib/types'
+import type { AdminUser, Department, Role, RoleDefinition } from '@/lib/types'
 
-const ROLE_OPTIONS: Role[] = ['it_admin', 'it_employee', 'employee']
+const FALLBACK_ROLES: Role[] = ['it_admin', 'it_employee', 'employee']
 const LOCALE_OPTIONS = ['en', 'th', 'de'] as const
 
 export default function AdminUsersPage() {
@@ -26,6 +26,7 @@ export default function AdminUsersPage() {
 
   const [users, setUsers] = useState<AdminUser[]>([])
   const [depts, setDepts] = useState<Department[]>([])
+  const [roleDefs, setRoleDefs] = useState<RoleDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -40,6 +41,7 @@ export default function AdminUsersPage() {
     email: '',
     display_name: '',
     password: '',
+    password_confirm: '',
     locale: 'en',
     role: 'employee' as Role,
     department_id: '',
@@ -47,6 +49,7 @@ export default function AdminUsersPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createSuccess, setCreateSuccess] = useState<string | null>(null)
+  const [pendingCreate, setPendingCreate] = useState(false)
   const [topMsg, setTopMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(
     null,
   )
@@ -55,12 +58,14 @@ export default function AdminUsersPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const [u, d] = await Promise.all([
+      const [u, d, r] = await Promise.all([
         adminApi.listUsers(),
         adminApi.listDepartments().catch(() => ({ departments: [], count: 0 })),
+        adminApi.listRoles().catch(() => ({ roles: [], count: 0 })),
       ])
       setUsers(u.users)
       setDepts(d.departments)
+      setRoleDefs(r.roles)
     } catch (err) {
       setLoadError(
         err instanceof ApiError ? err.message : t('admin.loadFailed'),
@@ -69,6 +74,19 @@ export default function AdminUsersPage() {
       setLoading(false)
     }
   }
+
+  // Roles dropdown is sourced from the live registry so newly created
+  // custom roles show up immediately. Fallback covers fresh installs
+  // before /admin/roles is reachable.
+  const availableRoles: { name: string; label: string }[] = useMemo(() => {
+    if (roleDefs.length === 0) {
+      return FALLBACK_ROLES.map((r) => ({ name: r, label: t(`role.${r}`) }))
+    }
+    return roleDefs.map((r) => ({
+      name: r.name,
+      label: r.display_name?.en || r.name,
+    }))
+  }, [roleDefs, t])
 
   useEffect(() => {
     refresh()
@@ -91,17 +109,34 @@ export default function AdminUsersPage() {
     setTimeout(() => setTopMsg(null), 3000)
   }
 
-  async function onCreate(e: React.FormEvent) {
+  function onCreate(e: React.FormEvent) {
     e.preventDefault()
-    setCreating(true)
     setCreateError(null)
     setCreateSuccess(null)
+    if (form.password.length < 8) {
+      setCreateError(t('admin.passwordTooShort'))
+      return
+    }
+    if (form.password !== form.password_confirm) {
+      setCreateError(t('admin.passwordMismatch'))
+      return
+    }
+    // Two-step confirmation: open the explicit confirm modal so the
+    // operator must explicitly approve account creation. Prevents typo-
+    // induced lockouts where a freshly-created user can't log in
+    // because the only password copy was wrong.
+    setPendingCreate(true)
+  }
+
+  async function commitCreate() {
+    setCreating(true)
+    setCreateError(null)
     try {
       await adminApi.createUser({
         email: form.email.trim(),
         password: form.password,
         display_name: form.display_name.trim(),
-        locale: form.locale,
+        locale: 'en',
         roles: [form.role],
         is_active: true,
         department_id: form.department_id || null,
@@ -111,10 +146,12 @@ export default function AdminUsersPage() {
         email: '',
         display_name: '',
         password: '',
+        password_confirm: '',
         locale: 'en',
         role: 'employee',
         department_id: '',
       })
+      setPendingCreate(false)
       await refresh()
     } catch (err) {
       setCreateError(
@@ -245,6 +282,32 @@ export default function AdminUsersPage() {
               />
             </div>
             <div className="space-y-1">
+              <Label htmlFor="password_confirm">
+                {t('admin.passwordConfirm')}
+              </Label>
+              <Input
+                id="password_confirm"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={form.password_confirm}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, password_confirm: e.target.value }))
+                }
+                aria-invalid={
+                  form.password_confirm.length > 0 &&
+                  form.password_confirm !== form.password
+                }
+              />
+              {form.password_confirm.length > 0 &&
+                form.password_confirm !== form.password && (
+                  <p className="text-xs text-red-600">
+                    {t('admin.passwordMismatch')}
+                  </p>
+                )}
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="role">{t('admin.role')}</Label>
               <Select
                 id="role"
@@ -253,25 +316,9 @@ export default function AdminUsersPage() {
                   setForm((f) => ({ ...f, role: e.target.value as Role }))
                 }
               >
-                {ROLE_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {t(`role.${r}`)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="locale">{t('admin.locale')}</Label>
-              <Select
-                id="locale"
-                value={form.locale}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, locale: e.target.value }))
-                }
-              >
-                {LOCALE_OPTIONS.map((l) => (
-                  <option key={l} value={l}>
-                    {l.toUpperCase()}
+                {availableRoles.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.label}
                   </option>
                 ))}
               </Select>
@@ -370,9 +417,9 @@ export default function AdminUsersPage() {
                             }
                             className="h-9 max-w-[180px]"
                           >
-                            {ROLE_OPTIONS.map((r) => (
-                              <option key={r} value={r}>
-                                {t(`role.${r}`)}
+                            {availableRoles.map((r) => (
+                              <option key={r.name} value={r.name}>
+                                {r.label}
                               </option>
                             ))}
                           </Select>
@@ -489,6 +536,33 @@ export default function AdminUsersPage() {
           {deleteTarget &&
             t('admin.confirmDeleteUser', { email: deleteTarget.email })}
         </p>
+      </Modal>
+
+      <Modal
+        open={pendingCreate}
+        onClose={() => !creating && setPendingCreate(false)}
+        title={t('admin.confirmCreateTitle')}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setPendingCreate(false)}
+              disabled={creating}
+            >
+              {t('admin.cancel')}
+            </Button>
+            <Button onClick={commitCreate} loading={creating}>
+              {t('admin.confirmCreate')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm text-[color:var(--fg)]">
+          <p>{t('admin.confirmCreateBody', { email: form.email })}</p>
+          <p className="text-xs text-[color:var(--muted)]">
+            {t('admin.confirmCreateHint')}
+          </p>
+        </div>
       </Modal>
     </div>
   )
@@ -618,15 +692,30 @@ function PasswordModal({
 }) {
   const t = useTranslations()
   const [pw, setPw] = useState('')
+  const [pwConfirm, setPwConfirm] = useState('')
   const [busy, setBusy] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (target) setPw('')
+    if (target) {
+      setPw('')
+      setPwConfirm('')
+      setLocalError(null)
+    }
   }, [target])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!target) return
+    setLocalError(null)
+    if (pw.length < 8) {
+      setLocalError(t('admin.passwordTooShort'))
+      return
+    }
+    if (pw !== pwConfirm) {
+      setLocalError(t('admin.passwordMismatch'))
+      return
+    }
     setBusy(true)
     try {
       await adminApi.updatePassword(target.id, pw)
@@ -654,18 +743,41 @@ function PasswordModal({
         </>
       }
     >
-      <form className="space-y-2" onSubmit={onSubmit}>
+      <form className="space-y-3" onSubmit={onSubmit}>
         <p className="text-sm text-[color:var(--muted)]">{target?.email}</p>
         <div className="space-y-1">
-          <Label>{t('admin.newPassword')}</Label>
+          <Label htmlFor="resetPw">{t('admin.newPassword')}</Label>
           <Input
+            id="resetPw"
             type="password"
             value={pw}
             minLength={8}
             onChange={(e) => setPw(e.target.value)}
+            autoComplete="new-password"
             required
           />
         </div>
+        <div className="space-y-1">
+          <Label htmlFor="resetPwConfirm">
+            {t('admin.passwordConfirm')}
+          </Label>
+          <Input
+            id="resetPwConfirm"
+            type="password"
+            value={pwConfirm}
+            minLength={8}
+            onChange={(e) => setPwConfirm(e.target.value)}
+            autoComplete="new-password"
+            aria-invalid={pwConfirm.length > 0 && pwConfirm !== pw}
+            required
+          />
+        </div>
+        {localError && (
+          <p className="text-xs text-red-600">{localError}</p>
+        )}
+        <p className="text-xs text-[color:var(--muted)]">
+          {t('admin.confirmCreateHint')}
+        </p>
       </form>
     </Modal>
   )

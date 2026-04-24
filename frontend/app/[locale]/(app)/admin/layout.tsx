@@ -14,6 +14,7 @@ interface Tab {
 const tabs: Tab[] = [
   { href: '/admin', labelKey: 'admin.title' },
   { href: '/admin/users', labelKey: 'admin.usersTitle' },
+  { href: '/admin/roles', labelKey: 'admin.rolesTitle' },
   { href: '/admin/departments', labelKey: 'admin.departmentsTitle' },
   { href: '/admin/system', labelKey: 'admin.systemTitle' },
 ]

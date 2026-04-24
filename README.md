@@ -32,10 +32,11 @@ It starts as an **IT Help Desk** and grows into a single place for the whole
 company to work — tickets, files, notifications, identity, and (soon) chat,
 approvals, knowledge base and more.
 
-> **Latest update — v0.0.1-alpha (first public alpha)**
+> **Latest update — v0.0.1-alpha (resubmitted alpha baseline)**
 > Native installers for Windows and macOS, IT Help Desk, identity & RBAC,
-> admin panel, internationalization (EN / TH / DE), persistent sign-in, and
-> in-app auto-update from GitHub releases. See the
+> admin portal with custom role management, departmental ticket isolation,
+> realtime in-app notifications, internationalization (EN / TH / DE),
+> persistent sign-in, and in-app auto-update from GitHub releases. See the
 > [release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.1-alpha)
 > for the full changelog.
 
@@ -51,8 +52,10 @@ The project ships as:
 
 - **IT Help Desk** — submit, comment, triage and resolve tickets with realtime updates.
 - **Identity & access** — sign-in, sessions, three roles: `it_admin`, `it_employee`, `employee`.
-- **Admin panel** — user CRUD, department CRUD, role assignment, system config (admin only).
-- **Notifications** — email delivery (Mailhog in dev, Microsoft 365 SMTP in prod).
+- **Admin panel** — user CRUD, department CRUD, custom role CRUD, permission assignment, system config (admin only).
+- **Ticket data isolation** — non-IT users only see own/department tickets; global queue stays IT-only.
+- **Notifications** — realtime in-app alerts via SSE plus email delivery (Mailhog in dev, Microsoft 365 SMTP in prod).
+- **Security workflows** — two-step password confirmation for user creation and password reset actions.
 - **File storage** — uploads and downloads via MinIO with presigned URLs.
 - **Internationalization** — English (default) · ภาษาไทย · Deutsch, URL-based locale switcher.
 - **Native desktop clients** — Windows installer (`Setup .exe`) and macOS `.dmg`.

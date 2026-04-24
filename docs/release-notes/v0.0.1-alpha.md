@@ -1,104 +1,48 @@
-# AAELink v0.0.1-alpha
+# AAELink v0.0.1-Alpha
 
-> **Version:** `v0.0.1-alpha` &middot; **Channel:** Alpha &middot; **Status:** First public alpha
+> **Tag:** `v0.0.1-alpha` &middot; **Channel:** Alpha &middot; **Status:** Resubmitted alpha baseline
 
-First public alpha of **AAELink**, the internal enterprise SuperApp for
-**Advanced ID Asia Engineering Co.,Ltd**. Ships an IT Help Desk and the
-foundation of the company-wide collaboration platform, deployable on a single
-Mac, Windows PC, or LAN host via Docker, with native desktop clients for macOS
-and Windows.
+This release resubmits the current AAELink baseline with deployment fixes,
+updated documentation, and a complete installer asset set for Windows and
+macOS.
 
 ---
 
-## Highlights
+## What's New
 
-- IT Help Desk end-to-end (submit, triage, comment, resolve) with realtime updates.
-- Identity & RBAC with three roles: `it_admin`, `it_employee`, `employee`.
-- Admin panel for users, departments, roles and system config.
-- Native desktop clients for **Windows (.exe)** and **macOS (.dmg, Apple Silicon + Intel)**.
-- LAN-deployable Docker stack so one host can serve the whole office.
+### Product capabilities
+- IT Help Desk workflow with ticket creation, assignment, comments, and status transitions.
+- Realtime notification stream in the app using SSE, with unread badge and in-app panel.
+- Email notifications routed to verified account addresses for creators, assignees, and IT staff.
+- Admin role management with custom role creation and granular permission assignment.
+- Security workflow updates including two-step password confirmation in create/reset paths.
+- Department-aware ticket visibility for strict data isolation between non-IT teams.
 
----
-
-## What's new
-
-### Application
-- **IT Help Desk** — submit, triage, comment and resolve tickets with realtime updates over Server-Sent Events.
-- **Identity & access** — sign-in, JWT access + refresh tokens, three roles: `it_admin`, `it_employee`, `employee`.
-- **Admin panel** — user CRUD, department CRUD, role assignment, system config; restricted to `it_admin`.
-- **Notifications** — email delivery via Mailhog (dev) or Microsoft 365 SMTP (production).
-- **File storage** — uploads / downloads through MinIO with presigned URLs.
-- **Internationalization** — English (default), Thai (ภาษาไทย), German (Deutsch); URL-based locale switcher.
-- **Operations dashboards** — Grafana, Prometheus, Loki and Promtail wired in for ops visibility.
-
-### Desktop clients
-- **Windows installer** — `AAELink-Setup-0.0.1-alpha.exe` (NSIS, x64).
-- **macOS disk images** — `AAELink-0.0.1-alpha-arm64.dmg` (Apple Silicon) and `AAELink-0.0.1-alpha.dmg` (Intel).
-- **Server URL switcher** — point any client at `http://<HOST>:18080` from the Help menu.
-- **Persistent sign-in** — opt-in "Keep me signed in" backed by OS-protected secure storage.
-- **Auto-update on launch** — clients check this repository for newer releases and offer a one-click update.
-
-### Server / runtime
-- Single-command Docker Compose stack: Traefik &middot; PostgreSQL &middot; Redis &middot; NATS &middot; MinIO.
-- LAN-friendly defaults so one Mac/PC can host the team for alpha testing.
+### Desktop deliverables
+- Windows installer: `AAELink-Setup-0.0.1-alpha.exe`.
+- macOS installers: `AAELink-0.0.1-alpha-arm64.dmg` and `AAELink-0.0.1-alpha.dmg`.
+- Persistent sign-in with secure token storage and release-based in-app update checks.
 
 ## Changed
-- Locale switcher is now URL-based and shareable (`/en`, `/th`, `/de`).
-- Sidebar, header and admin shortcuts now use a single, professional vector icon set across the whole UI.
+- Navigation and layout polish: global back navigation, cleaner module entry points, and refined admin flows.
+- Administration portal structure now centralizes user, department, and role operations.
+- Settings and notification surfaces updated for denser enterprise workflows.
+- Release workflow enforces explicit artifact allowlist and release-notes body publishing.
 
 ## Fixed
-- Locale switching: the English locale is reachable from any page.
-- Admin API routing: `/api/v1/admin/*` resolves through Traefik to the auth service.
-- Release pipeline: only `.dmg`, `AAELink-Setup-<version>.exe` and source archives are published; intermediate build files (`*.zip`, `*.blockmap`, `latest*.yml`, `builder-*.yml`) are pruned.
+- UI overlap and drag-region layering issues affecting titlebar interaction.
+- Notification delivery gaps where assignees or creators missed ticket updates.
+- API authorization behavior for ticket list/detail visibility by role and department.
+- Release artifact hygiene: blocked files (`*.zip`, `*.blockmap`, `latest*.yml`, `builder-*.yml`) are pruned before publish.
+
+## Known Issues
+- Alpha builds are not code-signed yet; some OS security prompts may appear during installation.
+- Breaking changes may still occur between alpha updates for selected admin and notification endpoints.
+- Production SMTP configuration remains environment-dependent and must be validated per deployment.
 
 ---
 
-## Default credentials
-
-- **Admin** — `admin@aaelink.local` / `AdminAaeLink#2026` _(please change after first login)_.
-
-## Install
-
-### Windows 10 / 11
-1. Download `AAELink-Setup-0.0.1-alpha.exe`.
-2. Run the installer; choose install location.
-3. Launch AAELink, set the server URL from the Help menu.
-
-### macOS
-1. Download the matching `.dmg` (`arm64` for Apple Silicon, the other for Intel).
-2. Open it and drag **AAELink** into `Applications`.
-3. Launch AAELink, set the server URL from the Help menu.
-
-### Server (any Docker host)
-```bash
-git clone https://github.com/Dry1ceD7/AAELink.git
-cd AAELink
-cp .env.example .env
-# edit .env, then:
-task up
-task migrate:up
-```
-Then open `http://<HOST>:18080`.
-
----
-
-## Roadmap (next releases)
-
-- Group chat, direct messages, channels.
-- Approvals & workflows.
-- Knowledge base / wiki.
-- Calendar, leave requests, attendance.
-- HR, finance and procurement integrations.
-- Mobile clients (iOS, Android).
-- Single sign-on with Microsoft Entra ID.
-
-## Notes
-
-- This is an **alpha**: data model, APIs and storage layout may change between releases.
-- Do not use this build for production data yet.
-- Issues and feedback: please open a GitHub issue.
-
-## Release assets
+## Release Assets
 
 | Asset | Platform |
 |---|---|

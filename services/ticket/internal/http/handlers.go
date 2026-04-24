@@ -78,6 +78,12 @@ func (h *Handlers) create(c fiber.Ctx) error {
 }
 
 func (h *Handlers) list(c fiber.Ctx) error {
+	uid, err := userIDFromCtx(c)
+	if err != nil {
+		return unauthorized(c)
+	}
+	claims := claimsFromCtx(c)
+
 	f := repository.ListFilter{
 		Status: c.Query("status"),
 	}
@@ -101,6 +107,18 @@ func (h *Handlers) list(c fiber.Ctx) error {
 			f.Offset = n
 		}
 	}
+
+	// Hard isolation: non-IT callers may only ever list tickets they
+	// created OR tickets that belong to their own department. The global
+	// queue stays restricted to IT staff.
+	if claims == nil || !claims.IsITStaff() {
+		f.Scope = repository.ScopeDepartment
+		f.ScopeUserID = uid
+		if claims != nil {
+			f.ScopeDeptID = claims.DepartmentID
+		}
+	}
+
 	out, err := h.tickets.List(c.Context(), f)
 	if err != nil {
 		log.Error().Err(err).Msg("list tickets failed")
@@ -110,6 +128,10 @@ func (h *Handlers) list(c fiber.Ctx) error {
 }
 
 func (h *Handlers) get(c fiber.Ctx) error {
+	uid, err := userIDFromCtx(c)
+	if err != nil {
+		return unauthorized(c)
+	}
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return badRequest(c, "invalid_id", "id must be uuid")
@@ -120,6 +142,19 @@ func (h *Handlers) get(c fiber.Ctx) error {
 	}
 	if err != nil {
 		return internalError(c)
+	}
+
+	// Authorisation: a non-IT caller may view a ticket only if they
+	// created it OR it belongs to their department. We return 404 (not
+	// 403) on denial to avoid leaking ticket existence across tenants.
+	claims := claimsFromCtx(c)
+	if claims == nil || !claims.IsITStaff() {
+		ownsTicket := t.CreatedBy == uid
+		sameDept := claims != nil && claims.DepartmentID != nil &&
+			t.DepartmentID != nil && *t.DepartmentID == *claims.DepartmentID
+		if !ownsTicket && !sameDept {
+			return c.Status(fiber.StatusNotFound).JSON(errorResponse{Error: "not_found"})
+		}
 	}
 	return c.JSON(t)
 }
@@ -212,16 +247,29 @@ func (h *Handlers) addComment(c fiber.Ctx) error {
 }
 
 // stream pushes ticket events to the client over Server-Sent Events.
+// Each subscriber's view is scoped through the same isolation rules as
+// the REST list endpoint — non-IT users only receive events for tickets
+// they own or that belong to their department.
 func (h *Handlers) stream(c fiber.Ctx) error {
+	uid, err := userIDFromCtx(c)
+	if err != nil {
+		return unauthorized(c)
+	}
+	claims := claimsFromCtx(c)
+
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	ch := h.hub.Subscribe()
+	sub := h.hub.Subscribe(sse.Subscriber{
+		UserID:       uid,
+		IsITStaff:    claims != nil && claims.IsITStaff(),
+		DepartmentID: deptIDFromClaims(claims),
+	})
 
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
-		defer h.hub.Unsubscribe(ch)
+		defer h.hub.Unsubscribe(sub)
 		ping := time.NewTicker(15 * time.Second)
 		defer ping.Stop()
 		// initial comment to open the stream
@@ -231,13 +279,14 @@ func (h *Handlers) stream(c fiber.Ctx) error {
 		if err := w.Flush(); err != nil {
 			return
 		}
+		ch := sub.Channel()
 		for {
 			select {
-			case msg, ok := <-ch:
+			case frame, ok := <-ch:
 				if !ok {
 					return
 				}
-				if _, err := fmt.Fprintf(w, "event: ticket\ndata: %s\n\n", msg); err != nil {
+				if _, err := fmt.Fprintf(w, "event: ticket\ndata: %s\n\n", frame.Payload); err != nil {
 					return
 				}
 				if err := w.Flush(); err != nil {
@@ -254,6 +303,14 @@ func (h *Handlers) stream(c fiber.Ctx) error {
 		}
 	})
 	return nil
+}
+
+func deptIDFromClaims(c *security.Claims) *uuid.UUID {
+	if c == nil || c.DepartmentID == nil {
+		return nil
+	}
+	id := *c.DepartmentID
+	return &id
 }
 
 func badRequest(c fiber.Ctx, code, msg string) error {

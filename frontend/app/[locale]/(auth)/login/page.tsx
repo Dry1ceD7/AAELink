@@ -34,7 +34,7 @@ export default function LoginPage() {
       router.replace('/dashboard')
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setError(t('auth.invalidCredentials'))
+        setError(t('auth.invalidIdentifier'))
       } else {
         setError(t('common.error'))
       }
@@ -44,8 +44,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col">
-      <header className="flex items-center justify-between px-6 py-4">
+    <main
+      data-aae-shell="true"
+      className="fixed inset-0 flex flex-col overflow-hidden bg-[color:var(--bg)]"
+    >
+      <header className="flex items-center justify-between px-6 py-4 shrink-0">
         <Logo size={32} withWordmark />
         <div className="flex items-center gap-2">
           <LocaleSwitcher />
@@ -53,7 +56,7 @@ export default function LoginPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
+      <div className="flex-1 min-h-0 flex items-center justify-center px-6 py-6 overflow-hidden">
         <div className="w-full max-w-md rounded-[--radius-card] border border-[color:var(--border)] bg-[color:var(--surface)] p-8 shadow-sm">
           <div className="mb-6 flex flex-col items-center text-center">
             <Logo size={56} />
@@ -67,13 +70,15 @@ export default function LoginPage() {
 
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-1.5">
-              <Label htmlFor="email">{t('auth.email')}</Label>
+              <Label htmlFor="email">{t('auth.identifier')}</Label>
               <Input
                 id="email"
-                type="email"
-                autoComplete="email"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 required
-                placeholder={t('auth.emailPlaceholder')}
+                placeholder={t('auth.identifierPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}

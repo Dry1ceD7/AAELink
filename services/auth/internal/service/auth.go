@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -22,11 +23,17 @@ var (
 type AuthService struct {
 	users    *repository.UserRepository
 	sessions *repository.SessionRepository
+	depts    *repository.DepartmentRepository
 	tokens   *security.TokenIssuer
 }
 
-func New(users *repository.UserRepository, sessions *repository.SessionRepository, tokens *security.TokenIssuer) *AuthService {
-	return &AuthService{users: users, sessions: sessions, tokens: tokens}
+func New(
+	users *repository.UserRepository,
+	sessions *repository.SessionRepository,
+	depts *repository.DepartmentRepository,
+	tokens *security.TokenIssuer,
+) *AuthService {
+	return &AuthService{users: users, sessions: sessions, depts: depts, tokens: tokens}
 }
 
 type RegisterInput struct {
@@ -57,8 +64,33 @@ type AuthResult struct {
 	Tokens TokenPair
 }
 
+// defaultLoginDomain is appended to bare usernames so admins can log in with
+// just "Adminaaelink" / "Adminaaelink2026" instead of typing the full email
+// address. Set the SUPER_ADMIN_DOMAIN env var to override per deployment.
+func defaultLoginDomain() string {
+	if v := strings.TrimSpace(os.Getenv("SUPER_ADMIN_DOMAIN")); v != "" {
+		return strings.ToLower(v)
+	}
+	return "aae.co.th"
+}
+
 func normalizeEmail(e string) string {
 	return strings.ToLower(strings.TrimSpace(e))
+}
+
+// normalizeLogin lets users sign in with either a username
+// ("adminaaelink") or a full email ("Adminaaelink@aae.co.th"). Bare
+// usernames are mapped onto the configured tenant domain so the rest of
+// the auth pipeline (which is email-keyed) does not need to change.
+func normalizeLogin(input string) string {
+	v := strings.ToLower(strings.TrimSpace(input))
+	if v == "" {
+		return v
+	}
+	if !strings.Contains(v, "@") {
+		v = v + "@" + defaultLoginDomain()
+	}
+	return v
 }
 
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*repository.User, error) {
@@ -90,7 +122,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*reposito
 }
 
 func (s *AuthService) Login(ctx context.Context, in LoginInput) (*AuthResult, error) {
-	email := normalizeEmail(in.Email)
+	email := normalizeLogin(in.Email)
 	user, err := s.users.FindByEmail(ctx, email)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrInvalidCredentials
@@ -206,7 +238,15 @@ func (s *AuthService) ChangeOwnPassword(ctx context.Context, userID uuid.UUID, c
 }
 
 func (s *AuthService) issueTokens(ctx context.Context, user *repository.User, ip, ua string) (*TokenPair, error) {
-	access, accessExp, err := s.tokens.IssueAccess(user.ID, user.Email)
+	roles, err := s.users.FindRoles(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	access, accessExp, err := s.tokens.IssueAccess(user.ID, user.Email, security.AccessClaims{
+		Roles:        roles,
+		DepartmentID: user.DepartmentID,
+		IsITDept:     s.isITDepartment(ctx, user.DepartmentID),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -226,4 +266,18 @@ func (s *AuthService) issueTokens(ctx context.Context, user *repository.User, ip
 		AccessExp:    accessExp,
 		RefreshExp:   refreshExp,
 	}, nil
+}
+
+// isITDepartment returns true if the supplied department is flagged as the
+// IT department. Failures are treated as non-IT — the safer default for
+// downstream isolation checks.
+func (s *AuthService) isITDepartment(ctx context.Context, deptID *uuid.UUID) bool {
+	if deptID == nil || s.depts == nil {
+		return false
+	}
+	d, err := s.depts.FindByID(ctx, *deptID)
+	if err != nil || d == nil {
+		return false
+	}
+	return d.IsITDept
 }

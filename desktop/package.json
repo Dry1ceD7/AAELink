@@ -19,12 +19,13 @@
     "dist:win": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^41.0.0",
+    "electron": "^41.3.0",
     "electron-builder": "^26.0.12"
   },
   "build": {
     "appId": "com.aae.aaelink",
     "productName": "AAELink",
+    "executableName": "AAELink",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -34,26 +35,54 @@
       "package.json"
     ],
     "extraMetadata": {
+      "name": "AAELink",
+      "productName": "AAELink",
       "main": "src/main.js"
     },
+    "protocols": [
+      {
+        "name": "AAELink",
+        "schemes": [
+          "aaelink"
+        ]
+      }
+    ],
     "mac": {
       "category": "public.app-category.business",
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icon.icns",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "identity": null
+      "identity": null,
+      "extendInfo": {
+        "CFBundleName": "AAELink",
+        "CFBundleDisplayName": "AAELink",
+        "CFBundleExecutable": "AAELink"
+      },
+      "artifactName": "AAELink-${version}-${arch}.${ext}"
     },
     "dmg": {
+      "title": "AAELink ${version}",
       "writeUpdateInfo": false
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "AAELink-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -63,7 +92,9 @@
       "artifactName": "AAELink-Setup-${version}.${ext}"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Office",
       "icon": "build/icon.png"
     },

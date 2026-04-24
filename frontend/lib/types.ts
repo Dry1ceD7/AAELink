@@ -92,6 +92,33 @@ export interface DepartmentsList {
   count: number
 }
 
+export interface Permission {
+  id: string
+  resource: string
+  action: string
+  description?: string
+}
+
+export interface PermissionsList {
+  permissions: Permission[]
+  count: number
+}
+
+export interface RoleDefinition {
+  id: string
+  name: string
+  display_name: Record<string, string>
+  description?: string
+  is_system: boolean
+  created_at: string
+  permissions: Permission[]
+}
+
+export interface RolesList {
+  roles: RoleDefinition[]
+  count: number
+}
+
 export interface MediaFile {
   id: string
   ticket_id: string

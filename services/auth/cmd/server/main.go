@@ -42,9 +42,17 @@ func main() {
 	users := repository.NewUserRepository(pool)
 	sessions := repository.NewSessionRepository(pool)
 	depts := repository.NewDepartmentRepository(pool)
-	authSvc := service.New(users, sessions, tokens)
+	roles := repository.NewRoleRepository(pool)
+	authSvc := service.New(users, sessions, depts, tokens)
 	handlers := authhttp.NewHandlers(authSvc, tokens)
-	adminHandlers := authhttp.NewAdminHandlers(users, depts, authSvc)
+	adminHandlers := authhttp.NewAdminHandlers(users, depts, roles, authSvc)
+
+	// Idempotently provision the documented super-admin
+	// (Admin / Admin2026 by default) so QA, ops, and customer trials can
+	// always sign in straight after a fresh database reset.
+	if err := authSvc.EnsureSuperAdmin(ctx, service.SuperAdminFromEnv()); err != nil {
+		log.Warn().Err(err).Msg("super-admin bootstrap skipped")
+	}
 
 	app := fiber.New(fiber.Config{
 		AppName:      "AAELink Auth Service v0.0.1-alpha",

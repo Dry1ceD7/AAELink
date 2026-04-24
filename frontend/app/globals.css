@@ -41,6 +41,25 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Compact density: tighter padding/font on lists, tables, and cards. */
+  html[data-density="compact"] {
+    font-size: 13.5px;
+  }
+
+  html[data-density="compact"] table th,
+  html[data-density="compact"] table td {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+
+  /* Honour the explicit user preference and the OS hint. */
+  html[data-reduce-motion="true"] *,
+  html[data-reduce-motion="true"] *::before,
+  html[data-reduce-motion="true"] *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+
   a {
     color: var(--accent);
   }

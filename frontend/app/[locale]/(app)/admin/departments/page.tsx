@@ -134,7 +134,7 @@ export default function AdminDepartmentsPage() {
                 <thead className="bg-[color:var(--bg)] text-left text-xs uppercase tracking-wide text-[color:var(--muted)]">
                   <tr>
                     <th className="px-4 py-2">
-                      {t('admin.departments.slug')}
+                      {t('admin.departments.code')}
                     </th>
                     <th className="px-4 py-2">
                       {t('admin.departments.nameEn')}
@@ -363,7 +363,7 @@ function DepartmentFormModal({
     >
       <form className="grid gap-3" onSubmit={submit}>
         <div className="space-y-1">
-          <Label>{t('admin.departments.slug')}</Label>
+          <Label>{t('admin.departments.code')}</Label>
           <Input
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
@@ -372,7 +372,7 @@ function DepartmentFormModal({
             placeholder="it-support"
           />
           <p className="text-xs text-[color:var(--muted)]">
-            {t('admin.departments.slugHint')}
+            {t('admin.departments.codeHint')}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
