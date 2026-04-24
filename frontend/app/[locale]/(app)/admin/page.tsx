@@ -1,27 +1,38 @@
 'use client'
 
+import type { ComponentType, SVGProps } from 'react'
 import { useTranslations } from 'next-intl'
+import { Building2, Settings, Users } from 'lucide-react'
 
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
 import { Link } from '@/i18n/navigation'
 
-const sections = [
+type IconType = ComponentType<SVGProps<SVGSVGElement>>
+
+interface Section {
+  href: string
+  titleKey: string
+  Icon: IconType
+  descKey: string
+}
+
+const sections: Section[] = [
   {
     href: '/admin/users',
     titleKey: 'admin.usersTitle',
-    icon: '👥',
+    Icon: Users,
     descKey: 'admin.createUserHint',
   },
   {
     href: '/admin/departments',
     titleKey: 'admin.departments.title',
-    icon: '🏢',
+    Icon: Building2,
     descKey: 'admin.departments.subtitle',
   },
   {
     href: '/admin/system',
     titleKey: 'admin.system.title',
-    icon: '⚙️',
+    Icon: Settings,
     descKey: 'admin.system.subtitle',
   },
 ]
@@ -34,7 +45,9 @@ export default function AdminLanding() {
         <Link key={s.href} href={s.href} className="group block">
           <Card className="h-full transition-colors group-hover:border-[color:var(--accent)]">
             <CardHeader className="flex flex-row items-center gap-3 border-b-0 pb-2">
-              <span className="text-2xl leading-none">{s.icon}</span>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-[color:var(--accent)]/10 text-[color:var(--accent)]">
+                <s.Icon className="h-5 w-5" />
+              </span>
               <CardTitle>{t(s.titleKey)}</CardTitle>
             </CardHeader>
             <CardBody className="pt-1">

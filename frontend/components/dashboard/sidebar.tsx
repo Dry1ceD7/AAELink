@@ -1,49 +1,62 @@
 'use client'
 
+import type { ComponentType, SVGProps } from 'react'
 import { useEffect } from 'react'
 import { useTranslations } from 'next-intl'
+import {
+  Building2,
+  Home,
+  Plus,
+  Settings,
+  ShieldCheck,
+  Ticket,
+  Users,
+  X,
+} from 'lucide-react'
 import { Link, usePathname } from '@/i18n/navigation'
 import { cn } from '@/lib/utils'
 import { hasRole, useAuthStore } from '@/lib/store'
 import { useUIStore } from '@/lib/ui-store'
 
+type IconType = ComponentType<SVGProps<SVGSVGElement>>
+
 interface NavItem {
   href: string
   labelKey: string
-  icon: string
+  Icon: IconType
   roles?: string[]
   group?: 'main' | 'admin'
 }
 
 const items: NavItem[] = [
-  { href: '/dashboard', labelKey: 'nav.dashboard', icon: '🏠', group: 'main' },
-  { href: '/tickets', labelKey: 'nav.tickets', icon: '🎫', group: 'main' },
-  { href: '/tickets/new', labelKey: 'nav.newTicket', icon: '➕', group: 'main' },
+  { href: '/dashboard', labelKey: 'nav.dashboard', Icon: Home, group: 'main' },
+  { href: '/tickets', labelKey: 'nav.tickets', Icon: Ticket, group: 'main' },
+  { href: '/tickets/new', labelKey: 'nav.newTicket', Icon: Plus, group: 'main' },
   {
     href: '/admin',
     labelKey: 'admin.title',
-    icon: '🛡️',
+    Icon: ShieldCheck,
     roles: ['it_admin'],
     group: 'admin',
   },
   {
     href: '/admin/users',
     labelKey: 'nav.users',
-    icon: '👥',
+    Icon: Users,
     roles: ['it_admin'],
     group: 'admin',
   },
   {
     href: '/admin/departments',
     labelKey: 'nav.departments',
-    icon: '🏢',
+    Icon: Building2,
     roles: ['it_admin'],
     group: 'admin',
   },
   {
     href: '/admin/system',
     labelKey: 'nav.system',
-    icon: '⚙️',
+    Icon: Settings,
     roles: ['it_admin'],
     group: 'admin',
   },
@@ -82,7 +95,7 @@ export function Sidebar() {
             : 'text-[color:var(--fg)] hover:bg-[color:var(--border)]/40',
         )}
       >
-        <span className="text-base leading-none">{it.icon}</span>
+        <it.Icon className="h-4 w-4 shrink-0" aria-hidden />
         <span>{t(it.labelKey)}</span>
       </Link>
     )
@@ -134,10 +147,10 @@ export function Sidebar() {
           <button
             type="button"
             onClick={closeSidebar}
-            className="text-sm text-[color:var(--muted)] hover:text-[color:var(--fg)]"
+            className="text-[color:var(--muted)] hover:text-[color:var(--fg)] inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-[color:var(--border)]/40"
             aria-label={t('common.close')}
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
         </div>
         {Inner}

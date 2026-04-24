@@ -17,6 +17,7 @@ export default function LoginPage() {
   const { user, isHydrated, login } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -29,7 +30,7 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
     try {
-      await login(email.trim(), password)
+      await login(email.trim(), password, remember)
       router.replace('/dashboard')
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -91,6 +92,17 @@ export default function LoginPage() {
                 disabled={loading}
               />
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-[color:var(--fg)] select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[color:var(--border)] accent-[color:var(--brand)]"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                disabled={loading}
+              />
+              {t('auth.rememberMe')}
+            </label>
 
             {error && (
               <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">

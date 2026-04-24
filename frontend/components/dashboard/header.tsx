@@ -1,6 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
+import { Menu, ShieldCheck } from 'lucide-react'
 import { Link, useRouter } from '@/i18n/navigation'
 import { Logo } from '@/components/brand/logo'
 import { LocaleSwitcher } from '@/components/locale-switcher'
@@ -36,18 +37,19 @@ export function DashboardHeader() {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--fg)]"
+          className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--border)] text-[color:var(--fg)] hover:bg-[color:var(--border)]/40"
           aria-label="Menu"
         >
-          ☰
+          <Menu className="h-4 w-4" />
         </button>
         <Logo size={28} withWordmark />
       </div>
       <div className="flex items-center gap-2">
         {isAdmin && (
           <Link href="/admin" className="hidden sm:inline-flex">
-            <Button variant="outline" size="sm">
-              🛡️ {t('admin.title')}
+            <Button variant="outline" size="sm" className="gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              {t('admin.title')}
             </Button>
           </Link>
         )}

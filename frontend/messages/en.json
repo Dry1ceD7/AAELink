@@ -27,7 +27,8 @@
     "sessionExpired": "Your session has expired. Please log in again.",
     "signingIn": "Signing in…",
     "emailPlaceholder": "name@aae.co.th",
-    "passwordPlaceholder": "Your password"
+    "passwordPlaceholder": "Your password",
+    "rememberMe": "Keep me signed in"
   },
   "dashboard": {
     "title": "Dashboard",

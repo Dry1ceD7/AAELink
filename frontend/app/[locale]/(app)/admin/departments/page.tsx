@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
@@ -171,7 +172,12 @@ export default function AdminDepartmentsPage() {
                         {d.name.de || '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {d.is_it_dept ? '✓' : ''}
+                        {d.is_it_dept ? (
+                          <Check
+                            className="h-4 w-4 text-[color:var(--accent)]"
+                            aria-label="Yes"
+                          />
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-2">

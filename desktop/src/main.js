@@ -6,6 +6,8 @@
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const updater = require('./updater')
+const secureStore = require('./secure-store')
 
 const isMac = process.platform === 'darwin'
 const userDataDir = app.getPath('userData')
@@ -48,7 +50,8 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
   })
 
@@ -134,6 +137,7 @@ app.whenReady().then(() => {
   if (!fs.existsSync(configPath)) saveConfig({ serverUrl: DEFAULT_SERVER_URL })
   buildMenu()
   createWindow()
+  try { updater.start() } catch (err) { console.error('updater start failed:', err) }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -147,4 +151,15 @@ ipcMain.handle('aaelink:get-config', () => loadConfig())
 ipcMain.handle('aaelink:set-config', (_evt, cfg) => {
   saveConfig({ ...loadConfig(), ...cfg })
   return loadConfig()
+})
+
+ipcMain.handle('aaelink:secure-available', () => secureStore.isAvailable())
+ipcMain.handle('aaelink:secure-get', (_evt, key) => secureStore.get(key))
+ipcMain.handle('aaelink:secure-set', (_evt, key, value) => secureStore.set(key, value))
+ipcMain.handle('aaelink:secure-del', (_evt, key) => secureStore.del(key))
+ipcMain.handle('aaelink:secure-clear', () => secureStore.clear())
+ipcMain.handle('aaelink:updater-check', async () => {
+  try { await updater.checkOnce(); return { ok: true } } catch (err) {
+    return { ok: false, error: String(err && err.message || err) }
+  }
 })

@@ -117,6 +117,12 @@ export const authApi = {
       auth: false,
     }),
   me: () => request<User>('/api/v1/auth/me', { method: 'GET' }),
+  refresh: (refresh_token: string) =>
+    request<AuthResponse>('/api/v1/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token }),
+      auth: false,
+    }),
   logout: (refresh_token: string) =>
     request<void>('/api/v1/auth/logout', {
       method: 'POST',

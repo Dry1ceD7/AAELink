@@ -27,7 +27,8 @@
     "sessionExpired": "เซสชันของคุณหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
     "signingIn": "กำลังเข้าสู่ระบบ…",
     "emailPlaceholder": "name@aae.co.th",
-    "passwordPlaceholder": "รหัสผ่านของคุณ"
+    "passwordPlaceholder": "รหัสผ่านของคุณ",
+    "rememberMe": "จดจำการเข้าสู่ระบบ"
   },
   "dashboard": {
     "title": "แดชบอร์ด",

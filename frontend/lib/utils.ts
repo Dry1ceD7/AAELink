@@ -1,5 +1,18 @@
+import type { ComponentType, SVGProps } from 'react'
 import clsx, { type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import {
+  File,
+  FileArchive,
+  FileAudio,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  FileVideo,
+  Paperclip,
+  Presentation,
+} from 'lucide-react'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,20 +26,34 @@ export function formatBytes(n: number): string {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-export function fileIcon(kind: string): string {
+export type FileIconComponent = ComponentType<SVGProps<SVGSVGElement>>
+
+export function fileIcon(kind: string): FileIconComponent {
   switch (kind) {
-    case 'cad': return '📐'
-    case 'image': return '🖼️'
-    case 'pdf': return '📕'
-    case 'doc': return '📄'
-    case 'sheet': return '📊'
-    case 'slides': return '📽️'
-    case 'archive': return '🗜️'
-    case 'video': return '🎞️'
-    case 'audio': return '🎵'
-    default: return '📎'
+    case 'cad':
+      return FileType
+    case 'image':
+      return FileImage
+    case 'pdf':
+      return FileText
+    case 'doc':
+      return FileText
+    case 'sheet':
+      return FileSpreadsheet
+    case 'slides':
+      return Presentation
+    case 'archive':
+      return FileArchive
+    case 'video':
+      return FileVideo
+    case 'audio':
+      return FileAudio
+    default:
+      return Paperclip
   }
 }
+
+export const GenericFileIcon = File
 
 export function statusColor(status: string): string {
   switch (status) {

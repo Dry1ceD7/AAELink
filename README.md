@@ -53,14 +53,14 @@ The project ships as:
 
 | Status | Item |
 |---|---|
-| ✅ Alpha 0.0.1 | IT Help Desk, identity, admin panel, file uploads, email, desktop clients |
-| 🔜 Next | Group chat, direct messages, channels |
-| 🔜 Next | Approvals and workflows |
-| 🔜 Later | Knowledge base / wiki |
-| 🔜 Later | Calendar, leave requests, attendance |
-| 🔜 Later | HR, finance and procurement integrations |
-| 🔜 Later | Mobile clients (iOS, Android) |
-| 🔜 Later | Single sign-on with Microsoft Entra ID |
+| Shipped (Alpha 0.0.1) | IT Help Desk, identity, admin panel, file uploads, email, desktop clients |
+| Next | Group chat, direct messages, channels |
+| Next | Approvals and workflows |
+| Later | Knowledge base / wiki |
+| Later | Calendar, leave requests, attendance |
+| Later | HR, finance and procurement integrations |
+| Later | Mobile clients (iOS, Android) |
+| Later | Single sign-on with Microsoft Entra ID |
 
 ---
 

@@ -1,7 +1,9 @@
 'use client'
 
+import type { ComponentType, SVGProps } from 'react'
 import { useTranslations } from 'next-intl'
 import { useEffect, useState } from 'react'
+import { Building2, Settings, ShieldCheck, Users } from 'lucide-react'
 import { Link } from '@/i18n/navigation'
 import { Badge, Card, CardBody, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -68,25 +70,25 @@ export default function DashboardPage() {
           <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <AdminShortcut
               href="/admin"
-              icon="🛡️"
+              Icon={ShieldCheck}
               label={t('admin.title')}
               hint={t('admin.subtitle')}
             />
             <AdminShortcut
               href="/admin/users"
-              icon="👥"
+              Icon={Users}
               label={t('admin.usersTitle')}
               hint={t('admin.createUserHint')}
             />
             <AdminShortcut
               href="/admin/departments"
-              icon="🏢"
+              Icon={Building2}
               label={t('admin.departmentsTitle')}
               hint={t('admin.departments.subtitle')}
             />
             <AdminShortcut
               href="/admin/system"
-              icon="⚙️"
+              Icon={Settings}
               label={t('admin.systemTitle')}
               hint={t('admin.system.subtitle')}
             />
@@ -144,12 +146,12 @@ export default function DashboardPage() {
 
 function AdminShortcut({
   href,
-  icon,
+  Icon,
   label,
   hint,
 }: {
   href: string
-  icon: string
+  Icon: ComponentType<SVGProps<SVGSVGElement>>
   label: string
   hint: string
 }) {
@@ -158,7 +160,9 @@ function AdminShortcut({
       href={href}
       className="group flex items-start gap-3 rounded-md border border-[color:var(--border)] p-3 transition-colors hover:border-[color:var(--accent)] hover:bg-[color:var(--accent)]/5"
     >
-      <span className="text-xl leading-none">{icon}</span>
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-[color:var(--accent)]/10 text-[color:var(--accent)]">
+        <Icon className="h-5 w-5" />
+      </span>
       <div className="min-w-0">
         <p className="text-sm font-medium text-[color:var(--fg)] group-hover:text-[color:var(--accent)]">
           {label}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Moon, Sun } from 'lucide-react'
 import { Button } from './ui/button'
 
 const THEME_KEY = 'aae_theme'
@@ -40,7 +41,11 @@ export function ThemeToggle() {
       onClick={toggle}
       title={theme === 'light' ? 'Dark mode' : 'Light mode'}
     >
-      {theme === 'light' ? '🌙' : '☀️'}
+      {theme === 'light' ? (
+        <Moon className="h-4 w-4" />
+      ) : (
+        <Sun className="h-4 w-4" />
+      )}
     </Button>
   )
 }

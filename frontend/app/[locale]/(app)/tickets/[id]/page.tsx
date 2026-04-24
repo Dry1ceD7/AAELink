@@ -195,10 +195,15 @@ export default function TicketDetailPage() {
             </p>
           ) : (
             <ul className="divide-y divide-[color:var(--border)]">
-              {files.map((f) => (
+              {files.map((f) => {
+                const FileGlyph = fileIcon(f.kind)
+                return (
                 <li key={f.id} className="py-2 flex items-center gap-3">
-                  <span className="text-xl" aria-hidden>
-                    {fileIcon(f.kind)}
+                  <span
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[color:var(--surface-2)] text-[color:var(--muted)] shrink-0"
+                    aria-hidden
+                  >
+                    <FileGlyph className="h-4 w-4" />
                   </span>
                   <button
                     type="button"
@@ -211,7 +216,8 @@ export default function TicketDetailPage() {
                     {formatBytes(f.file_size)}
                   </span>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </CardBody>

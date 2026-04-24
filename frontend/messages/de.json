@@ -27,7 +27,8 @@
     "sessionExpired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
     "signingIn": "Anmelden…",
     "emailPlaceholder": "name@aae.co.th",
-    "passwordPlaceholder": "Ihr Passwort"
+    "passwordPlaceholder": "Ihr Passwort",
+    "rememberMe": "Angemeldet bleiben"
   },
   "dashboard": {
     "title": "Dashboard",
