@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [auth, ticket, notify, media]
+        service: [auth, ticket, notify, media, support, documents]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -92,3 +92,13 @@ jobs:
         run: |
           PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
             -f migrations/ticket/001_init.up.sql
+
+      - name: Check support migrations
+        run: |
+          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
+            -f migrations/support/001_init.up.sql
+
+      - name: Check documents migrations
+        run: |
+          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
+            -f migrations/documents/001_init.up.sql

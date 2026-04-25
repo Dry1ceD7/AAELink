@@ -3,7 +3,7 @@
 import type { ComponentType, SVGProps } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { ChevronDown, Home, Ticket, X } from 'lucide-react'
+import { ChevronDown, FileText, Home, Ticket, X } from 'lucide-react'
 import { Link, usePathname } from '@/i18n/navigation'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/lib/ui-store'
@@ -34,6 +34,7 @@ const sections: NavSection[] = [
     items: [
       { href: '/dashboard', labelKey: 'nav.dashboard', Icon: Home },
       { href: '/tickets', labelKey: 'nav.tickets', Icon: Ticket },
+      { href: '/documents', labelKey: 'nav.documents', Icon: FileText },
     ],
   },
 ]

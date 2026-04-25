@@ -19,7 +19,7 @@
 [![Desktop](https://img.shields.io/badge/desktop-Electron%2041-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![Runtime](https://img.shields.io/badge/runs%20on-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
-### Current version: **`v0.0.1-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.1-alpha) &nbsp;·&nbsp; [Changelog](docs/release-notes/)
+### Current version: **`v0.0.2-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.2-alpha) &nbsp;·&nbsp; [Changelog](docs/release-notes/)
 
 </div>
 
@@ -32,12 +32,11 @@ It starts as an **IT Help Desk** and grows into a single place for the whole
 company to work — tickets, files, notifications, identity, and (soon) chat,
 approvals, knowledge base and more.
 
-> **Latest update — v0.0.1-alpha (resubmitted alpha baseline)**
-> Native installers for Windows and macOS, IT Help Desk, identity & RBAC,
-> admin portal with custom role management, departmental ticket isolation,
-> realtime in-app notifications, internationalization (EN / TH / DE),
-> persistent sign-in, and in-app auto-update from GitHub releases. See the
-> [release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.1-alpha)
+> **Latest update — v0.0.2-alpha**
+> Adds service readiness checks, stronger container health routing, emergency
+> IT support queueing from the login screen, a dedicated documents module
+> foundation for PDF workflows, and 20 MB profile avatar uploads. See the
+> [release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.2-alpha)
 > for the full changelog.
 
 The project ships as:
@@ -48,7 +47,7 @@ The project ships as:
 
 ---
 
-## Current features (alpha 0.0.1)
+## Current features (alpha 0.0.2)
 
 - **IT Help Desk** — submit, comment, triage and resolve tickets with realtime updates.
 - **Identity & access** — sign-in, sessions, four built-in roles: `super_admin`, `it_admin`, `it_employee`, `employee`.
@@ -57,6 +56,8 @@ The project ships as:
 - **Ticket data isolation** — non-IT users only see own/department tickets; global queue stays restricted to IT staff and the super-admin.
 - **Notifications** — realtime in-app alerts via SSE plus email delivery (Mailhog in dev, Microsoft 365 SMTP in prod).
 - **Security workflows** — two-step password confirmation for user creation and password reset actions.
+- **Emergency IT support** — login screen request queue for urgent access help when users cannot sign in.
+- **Documents foundation** — isolated document module with PDF operation queues for preview, OCR, redaction, annotations, forms, signing, and export.
 - **File storage** — uploads and downloads via MinIO with presigned URLs.
 - **Internationalization** — English (default) · ภาษาไทย · Deutsch, URL-based locale switcher.
 - **Native desktop clients** — Windows installer (`Setup .exe`) and macOS `.dmg`.
@@ -69,7 +70,7 @@ The project ships as:
 
 | Status | Item |
 |---|---|
-| Shipped (Alpha 0.0.1) | IT Help Desk, identity, admin panel, file uploads, email, desktop clients |
+| Shipped (Alpha 0.0.2) | IT Help Desk, identity, admin panel, file uploads, email, desktop clients, emergency support queue, documents foundation |
 | Next | Group chat, direct messages, channels |
 | Next | Approvals and workflows |
 | Later | Knowledge base / wiki |

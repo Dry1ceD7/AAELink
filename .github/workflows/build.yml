@@ -27,6 +27,10 @@ jobs:
             context: services/notify
           - service: media
             context: services/media
+          - service: support
+            context: services/support
+          - service: documents
+            context: services/documents
     steps:
       - uses: actions/checkout@v4
 

@@ -1,7 +1,7 @@
 {
   "name": "aaelink-desktop",
   "productName": "AAELink",
-  "version": "0.0.1-alpha",
+  "version": "0.0.2-alpha",
   "description": "AAELink Enterprise SuperApp — Desktop client",
   "private": true,
   "main": "src/main.js",

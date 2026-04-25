@@ -54,7 +54,7 @@ func main() {
 
 	repo := repository.NewFileRepo(pool)
 	verifier := security.NewVerifier(cfg.JWTSecret)
-	handlers := mediahttp.NewHandlers(repo, store, cfg.MaxUploadBytes)
+	handlers := mediahttp.NewHandlers(repo, store, cfg.MaxUploadBytes, cfg.MaxAvatarBytes)
 
 	app := fiber.New(fiber.Config{
 		AppName:      "AAELink Media Service v0.0.1-alpha",
@@ -68,7 +68,35 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "media",
-			"version": "0.0.1-alpha",
+			"version": "0.0.2-alpha",
+		})
+	})
+
+	app.Get("/ready", func(c fiber.Ctx) error {
+		checks := fiber.Map{}
+		ready := true
+		if err := pool.Ping(c.Context()); err != nil {
+			ready = false
+			checks["database"] = fiber.Map{"status": "down", "error": err.Error()}
+		} else {
+			checks["database"] = fiber.Map{"status": "ok"}
+		}
+		if err := store.Ready(c.Context()); err != nil {
+			ready = false
+			checks["object_storage"] = fiber.Map{"status": "down", "error": err.Error()}
+		} else {
+			checks["object_storage"] = fiber.Map{"status": "ok"}
+		}
+		status := "ok"
+		code := fiber.StatusOK
+		if !ready {
+			status = "degraded"
+			code = fiber.StatusServiceUnavailable
+		}
+		return c.Status(code).JSON(fiber.Map{
+			"status":  status,
+			"service": "media",
+			"checks":  checks,
 		})
 	})
 	app.Get("/metrics", metrics.Handler())

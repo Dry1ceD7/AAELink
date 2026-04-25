@@ -9,7 +9,10 @@ accessLog: {}
 
 api:
   dashboard: true
-  insecure: true
+  insecure: false
+
+ping:
+  entryPoint: traefik
 
 metrics:
   prometheus:

@@ -5,11 +5,16 @@ import type {
   Comment,
   Department,
   DepartmentsList,
+  DocumentOperation,
+  DocumentRecord,
+  DocumentsList,
   MediaFile,
   PermissionsList,
   Role,
   RoleDefinition,
   RolesList,
+  SupportRequest,
+  SupportRequestsList,
   Ticket,
   TicketPriority,
   TicketStatus,
@@ -333,4 +338,40 @@ export const mediaApi = {
     const v = version == null ? '' : `?v=${encodeURIComponent(String(version))}`
     return `/api/media/public/avatar/${userId}${v}`
   },
+}
+
+export const supportApi = {
+  createEmergency: (data: {
+    requester: string
+    subject: string
+    message: string
+  }) =>
+    request<SupportRequest>('/api/v1/support/emergency', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      auth: false,
+    }),
+  listRequests: () => request<SupportRequestsList>('/api/v1/support/requests'),
+}
+
+export const documentsApi = {
+  list: () => request<DocumentsList>('/api/v1/documents'),
+  register: (data: {
+    filename: string
+    mime_type: 'application/pdf'
+    file_size: number
+    storage_key: string
+  }) =>
+    request<DocumentRecord>('/api/v1/documents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  queueOperation: (
+    id: string,
+    data: { operation: string; parameters?: Record<string, unknown> },
+  ) =>
+    request<DocumentOperation>(`/api/v1/documents/${id}/operations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 }

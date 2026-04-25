@@ -6,6 +6,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "tickets": "Tickets",
+    "documents": "Documents",
     "newTicket": "New Ticket",
     "admin": "Admin",
     "users": "Users",
@@ -32,6 +33,18 @@
     "identifierPlaceholder": "Adminaaelink or name@aae.co.th",
     "passwordPlaceholder": "Your password",
     "rememberMe": "Keep me signed in"
+  },
+  "support": {
+    "emergencyButton": "Emergency IT support",
+    "title": "Emergency IT support",
+    "description": "Send a secure request to IT. If nobody is online, the message stays queued for the team.",
+    "placeholder": "Describe what is blocking you. Include your phone number or desk location if urgent.",
+    "send": "Send emergency request",
+    "sending": "Sending…",
+    "queued": "Your request is queued for IT support.",
+    "failed": "Could not queue the support request. Please call IT directly.",
+    "unknownRequester": "Unknown requester",
+    "defaultSubject": "Login assistance needed"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -326,7 +339,7 @@
     "title": "Your profile",
     "subtitle": "Update your personal information, picture, and password.",
     "pictureTitle": "Profile picture",
-    "pictureHint": "Upload a square PNG, JPEG, WebP, or GIF up to 2 MB.",
+    "pictureHint": "Upload a square PNG, JPEG, WebP, or GIF up to 20 MB.",
     "uploadPicture": "Upload picture",
     "removePicture": "Remove picture",
     "avatarUpdated": "Profile picture updated",

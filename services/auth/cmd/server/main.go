@@ -62,17 +62,29 @@ func main() {
 	app.Use(metrics.Middleware("auth"))
 
 	app.Get("/health", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status":  "ok",
+			"service": "auth",
+			"version": "0.0.2-alpha",
+		})
+	})
+
+	app.Get("/ready", func(c fiber.Ctx) error {
 		if err := pool.Ping(c.Context()); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-				"status":  "unhealthy",
+				"status":  "degraded",
 				"service": "auth",
-				"error":   err.Error(),
+				"checks": fiber.Map{
+					"database": fiber.Map{"status": "down", "error": err.Error()},
+				},
 			})
 		}
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "auth",
-			"version": "0.0.1-alpha",
+			"checks": fiber.Map{
+				"database": fiber.Map{"status": "ok"},
+			},
 		})
 	})
 

@@ -22,6 +22,7 @@ type Config struct {
 	PublicEndpoint string
 
 	MaxUploadBytes int64
+	MaxAvatarBytes int64
 }
 
 func Load() (*Config, error) {
@@ -64,6 +65,13 @@ func Load() (*Config, error) {
 		mb = 200
 	}
 	cfg.MaxUploadBytes = int64(mb) * 1024 * 1024
+
+	avatarMB := getenv("MEDIA_MAX_AVATAR_MB", "20")
+	amb, err := strconv.Atoi(avatarMB)
+	if err != nil || amb <= 0 {
+		amb = 20
+	}
+	cfg.MaxAvatarBytes = int64(amb) * 1024 * 1024
 
 	return cfg, nil
 }

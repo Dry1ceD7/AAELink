@@ -6,6 +6,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "tickets": "Tickets",
+    "documents": "Dokumente",
     "newTicket": "Neues Ticket",
     "admin": "Administration",
     "users": "Benutzer",
@@ -32,6 +33,18 @@
     "identifierPlaceholder": "Adminaaelink oder name@aae.co.th",
     "passwordPlaceholder": "Ihr Passwort",
     "rememberMe": "Angemeldet bleiben"
+  },
+  "support": {
+    "emergencyButton": "Notfall-IT-Support",
+    "title": "Notfall-IT-Support",
+    "description": "Senden Sie eine sichere Anfrage an die IT. Wenn niemand online ist, bleibt die Nachricht für das Team in der Warteschlange.",
+    "placeholder": "Beschreiben Sie, was Sie blockiert. Geben Sie bei Dringlichkeit Telefonnummer oder Arbeitsplatz an.",
+    "send": "Notfallanfrage senden",
+    "sending": "Senden…",
+    "queued": "Ihre Anfrage wurde für den IT-Support in die Warteschlange gestellt.",
+    "failed": "Die Supportanfrage konnte nicht gespeichert werden. Bitte rufen Sie die IT direkt an.",
+    "unknownRequester": "Unbekannter Anfragender",
+    "defaultSubject": "Hilfe bei der Anmeldung erforderlich"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -326,7 +339,7 @@
     "title": "Ihr Profil",
     "subtitle": "Aktualisieren Sie Ihre persönlichen Daten, Ihr Bild und Ihr Passwort.",
     "pictureTitle": "Profilbild",
-    "pictureHint": "Quadratisches PNG, JPEG, WebP oder GIF bis 2 MB hochladen.",
+    "pictureHint": "Quadratisches PNG, JPEG, WebP oder GIF bis 20 MB hochladen.",
     "uploadPicture": "Bild hochladen",
     "removePicture": "Bild entfernen",
     "avatarUpdated": "Profilbild aktualisiert",

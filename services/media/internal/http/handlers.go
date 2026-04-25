@@ -19,10 +19,11 @@ type Handlers struct {
 	repo           *repository.FileRepo
 	store          *storage.Client
 	maxUploadBytes int64
+	maxAvatarBytes int64
 }
 
-func NewHandlers(repo *repository.FileRepo, store *storage.Client, maxUploadBytes int64) *Handlers {
-	return &Handlers{repo: repo, store: store, maxUploadBytes: maxUploadBytes}
+func NewHandlers(repo *repository.FileRepo, store *storage.Client, maxUploadBytes, maxAvatarBytes int64) *Handlers {
+	return &Handlers{repo: repo, store: store, maxUploadBytes: maxUploadBytes, maxAvatarBytes: maxAvatarBytes}
 }
 
 type fileDTO struct {
@@ -260,10 +261,6 @@ func guessContentType(name string) string {
 
 // ── Profile avatar ──────────────────────────────────────────────────────────
 
-const (
-	maxAvatarBytes = int64(2 * 1024 * 1024) // 2 MiB hard cap on avatar upload.
-)
-
 var allowedAvatarTypes = map[string]string{
 	"image/png":  ".png",
 	"image/jpeg": ".jpg",
@@ -290,9 +287,9 @@ func (h *Handlers) UploadAvatar(c fiber.Ctx) error {
 	if fh.Size <= 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "empty file")
 	}
-	if fh.Size > maxAvatarBytes {
+	if h.maxAvatarBytes > 0 && fh.Size > h.maxAvatarBytes {
 		return fiber.NewError(fiber.StatusRequestEntityTooLarge,
-			fmt.Sprintf("avatar exceeds max size of %d bytes", maxAvatarBytes))
+			fmt.Sprintf("avatar exceeds max size of %d bytes", h.maxAvatarBytes))
 	}
 
 	contentType := fh.Header.Get("Content-Type")

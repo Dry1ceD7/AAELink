@@ -130,3 +130,46 @@ export interface MediaFile {
   uploaded_at: string
   url?: string
 }
+
+export interface SupportRequest {
+  id: string
+  requester: string
+  subject: string
+  message?: string
+  status: 'queued' | 'open' | 'closed' | string
+  created_at: string
+  last_message_at?: string | null
+}
+
+export interface SupportRequestsList {
+  requests: SupportRequest[]
+  count: number
+}
+
+export interface DocumentRecord {
+  id: string
+  owner_id: string
+  filename: string
+  mime_type: string
+  file_size: number
+  storage_key: string
+  status: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface DocumentsList {
+  documents: DocumentRecord[]
+  count: number
+}
+
+export interface DocumentOperation {
+  id: string
+  document_id: string
+  operation: string
+  status: string
+  parameters: Record<string, unknown>
+  created_by: string
+  created_at: string
+}

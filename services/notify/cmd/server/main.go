@@ -77,7 +77,24 @@ func main() {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
 			"service": "notify",
-			"version": "0.0.1-alpha",
+			"version": "0.0.2-alpha",
+		})
+	})
+	app.Get("/ready", func(c fiber.Ctx) error {
+		checks := fiber.Map{}
+		status := "ok"
+		code := fiber.StatusOK
+		if resolver == nil {
+			status = "degraded"
+			code = fiber.StatusServiceUnavailable
+			checks["auth_database"] = fiber.Map{"status": "down", "mode": "fallback_inbox"}
+		} else {
+			checks["auth_database"] = fiber.Map{"status": "ok"}
+		}
+		return c.Status(code).JSON(fiber.Map{
+			"status":  status,
+			"service": "notify",
+			"checks":  checks,
 		})
 	})
 	app.Get("/metrics", metrics.Handler())

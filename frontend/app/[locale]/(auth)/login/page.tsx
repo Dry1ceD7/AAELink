@@ -8,7 +8,7 @@ import { LocaleSwitcher } from '@/components/locale-switcher'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
-import { ApiError } from '@/lib/api'
+import { ApiError, supportApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 
 export default function LoginPage() {
@@ -20,6 +20,10 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [supportOpen, setSupportOpen] = useState(false)
+  const [supportMessage, setSupportMessage] = useState('')
+  const [supportSent, setSupportSent] = useState(false)
+  const [supportLoading, setSupportLoading] = useState(false)
 
   useEffect(() => {
     if (isHydrated && user) router.replace('/dashboard')
@@ -40,6 +44,25 @@ export default function LoginPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const onEmergencySupport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSupportLoading(true)
+    setError(null)
+    try {
+      await supportApi.createEmergency({
+        requester: email.trim() || t('support.unknownRequester'),
+        subject: t('support.defaultSubject'),
+        message: supportMessage.trim(),
+      })
+      setSupportSent(true)
+      setSupportMessage('')
+    } catch {
+      setError(t('support.failed'))
+    } finally {
+      setSupportLoading(false)
     }
   }
 
@@ -119,6 +142,56 @@ export default function LoginPage() {
               {loading ? t('auth.signingIn') : t('auth.login')}
             </Button>
           </form>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSupportOpen((v) => !v)
+              setSupportSent(false)
+            }}
+            className="mt-4 w-full rounded-md border border-[color:var(--border)] px-3 py-2 text-sm font-medium text-[color:var(--fg)] transition hover:bg-[color:var(--surface-hover)]"
+          >
+            {t('support.emergencyButton')}
+          </button>
+
+          {supportOpen && (
+            <form
+              onSubmit={onEmergencySupport}
+              className="mt-4 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] p-4"
+            >
+              <h2 className="text-sm font-semibold text-[color:var(--fg)]">
+                {t('support.title')}
+              </h2>
+              <p className="mt-1 text-xs text-[color:var(--muted)]">
+                {t('support.description')}
+              </p>
+              {supportSent ? (
+                <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                  {t('support.queued')}
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    className="mt-3 min-h-24 w-full rounded-md border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-2 text-sm text-[color:var(--fg)] outline-none focus:ring-2 focus:ring-[color:var(--brand)]"
+                    placeholder={t('support.placeholder')}
+                    value={supportMessage}
+                    onChange={(e) => setSupportMessage(e.target.value)}
+                    required
+                    minLength={4}
+                    maxLength={4000}
+                    disabled={supportLoading}
+                  />
+                  <Button
+                    type="submit"
+                    className="mt-3 w-full"
+                    loading={supportLoading}
+                  >
+                    {supportLoading ? t('support.sending') : t('support.send')}
+                  </Button>
+                </>
+              )}
+            </form>
+          )}
 
           <p className="mt-6 text-center text-xs text-[color:var(--muted)]">
             {t('auth.noAccount')} {t('auth.contactIT')}

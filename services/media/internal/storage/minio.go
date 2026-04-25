@@ -58,6 +58,17 @@ func (c *Client) ensureBucket(ctx context.Context) error {
 
 func (c *Client) Bucket() string { return c.bucket }
 
+func (c *Client) Ready(ctx context.Context) error {
+	exists, err := c.mc.BucketExists(ctx, c.bucket)
+	if err != nil {
+		return fmt.Errorf("bucket check: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("bucket %q missing", c.bucket)
+	}
+	return nil
+}
+
 func (c *Client) PutObject(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	_, err := c.mc.PutObject(ctx, c.bucket, key, r, size, minio.PutObjectOptions{
 		ContentType: contentType,
