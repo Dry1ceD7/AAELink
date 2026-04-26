@@ -1,0 +1,29 @@
+{
+  "name": "aaelink-clean",
+  "version": "0.0.0-phase2",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "release:build": "npm run lint && npm run type-check && npm run build"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "next": "^16.2.4",
+    "pg": "^8.14.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.11",
+    "eslint": "^9",
+    "typescript-eslint": "^8"
+  }
+}

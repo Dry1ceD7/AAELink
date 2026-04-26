@@ -1,3 +1,24 @@
+# AAELink
+
+Clean-slate enterprise chat app.
+
+Backend engine: Mattermost.
+
+Current phase: Phase 1.
+
+## Phase 1
+
+- K3s namespaces
+- Mattermost backend
+- PostgreSQL backend
+- Redis cache
+- Traefik ingress
+- API map
+- WebSocket map
+
+## Status
+
+Awaiting Phase 2 approval.
 <div align="center">
 
 <img src="frontend/public/logo.svg" alt="AAELink" height="84"/>
@@ -16,7 +37,7 @@
 [![License](https://img.shields.io/badge/license-Proprietary-0a2342)](#license)
 [![Backend](https://img.shields.io/badge/backend-Go%201.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016.2-000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![Desktop](https://img.shields.io/badge/desktop-Electron%2041-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Desktop](https://img.shields.io/badge/desktop-Tauri%202-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 [![Runtime](https://img.shields.io/badge/runs%20on-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
 ### Current version: **`v0.0.2-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.2-alpha) &nbsp;·&nbsp; [Changelog](docs/release-notes/)
@@ -56,8 +77,8 @@ The project ships as:
 - **Ticket data isolation** — non-IT users only see own/department tickets; global queue stays restricted to IT staff and the super-admin.
 - **Notifications** — realtime in-app alerts via SSE plus email delivery (Mailhog in dev, Microsoft 365 SMTP in prod).
 - **Security workflows** — two-step password confirmation for user creation and password reset actions.
-- **Emergency IT support** — login screen request queue for urgent access help when users cannot sign in.
-- **Documents foundation** — isolated document module with PDF operation queues for preview, OCR, redaction, annotations, forms, signing, and export.
+- **Emergency IT support** — OTP-verified login screen request queue for urgent access help when users cannot sign in.
+- **Documents foundation** — isolated document module with upload/download controls and PDF operation queues for preview, OCR, redaction, annotations, forms, signing, and export.
 - **File storage** — uploads and downloads via MinIO with presigned URLs.
 - **Internationalization** — English (default) · ภาษาไทย · Deutsch, URL-based locale switcher.
 - **Native desktop clients** — Windows installer (`Setup .exe`) and macOS `.dmg`.
@@ -87,7 +108,7 @@ The project ships as:
 |---|---|
 | Backend services | Go 1.25 + Fiber v3 |
 | Frontend | Next.js 16.2 + React 19.2 + TypeScript 5.9 + Tailwind CSS v4 + shadcn/ui |
-| Desktop | Electron 41 + electron-builder 26 |
+| Desktop | Tauri 2 + Rust native shell |
 | Database | PostgreSQL 17 |
 | Cache | Redis 8 |
 | Event bus | NATS 2.x + JetStream |
@@ -106,9 +127,8 @@ page.
 
 | Platform | File |
 |---|---|
-| Windows 10 / 11 | `AAELink-Setup-<version>.exe` |
-| macOS (Apple Silicon) | `AAELink-<version>-arm64.dmg` |
-| macOS (Intel) | `AAELink-<version>-x64.dmg` |
+| Windows 10 / 11 | Signed NSIS `.exe` installer |
+| macOS | Signed `.dmg` installer |
 
 After installing, open the **Help → Configure Server URL…** menu and point the
 client at your AAELink server (for example `http://192.168.1.42:18080`).
@@ -168,7 +188,7 @@ http://<HOST_LAN_IP>:18080
 AAELink/
 ├── services/          # Backend services (auth, ticket, notify, media)
 ├── frontend/          # Web UI (Next.js)
-├── desktop/           # Desktop client (Electron)
+├── desktop-tauri/     # Desktop client (Tauri)
 ├── migrations/        # Database migrations
 ├── infra/             # Traefik, Prometheus, Grafana, Loki, Promtail
 ├── docs/              # Documentation

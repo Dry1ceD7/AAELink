@@ -2,103 +2,35 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master]
   pull_request:
-    branches: [main, develop]
-
-env:
-  GO_VERSION: '1.25'
-  NODE_VERSION: '22'
+    branches: [main, master]
 
 jobs:
-  go-check:
-    name: Go — ${{ matrix.service }}
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [auth, ticket, notify, media, support, documents]
-    defaults:
-      run:
-        working-directory: services/${{ matrix.service }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: services/${{ matrix.service }}/go.sum
-
-      - name: Download modules
-        run: go mod download
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
-
-  frontend-check:
-    name: Frontend — lint & type-check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install
         run: npm ci
-
-      - name: Type check
-        run: npm run type-check
-
       - name: Lint
         run: npm run lint
-
-  migrations-check:
-    name: SQL migrations check
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
+      - name: Typecheck
+        run: npm run type-check
+      - name: Build
+        run: npm run build
         env:
-          POSTGRES_USER: aaelink_test
-          POSTGRES_PASSWORD: test_only
-          POSTGRES_DB: aaelink_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check auth migrations
-        run: |
-          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
-            -f migrations/auth/001_init.up.sql
-
-      - name: Check ticket migrations
-        run: |
-          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
-            -f migrations/ticket/001_init.up.sql
-
-      - name: Check support migrations
-        run: |
-          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
-            -f migrations/support/001_init.up.sql
-
-      - name: Check documents migrations
-        run: |
-          PGPASSWORD=test_only psql -h localhost -U aaelink_test -d aaelink_test \
-            -f migrations/documents/001_init.up.sql
+          MATTERMOST_URL: http://127.0.0.1:8065
+          MATTERMOST_WS_URL: ws://127.0.0.1:8065/api/v4/websocket
+          DATABASE_URL: postgres://mattermost:mattermost@127.0.0.1:5432/mattermost
+          S3_ENDPOINT: http://127.0.0.1:9000
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
+          S3_BUCKET: aaelink-documents
+          S3_REGION: us-east-1
+          STIRLING_URL: http://127.0.0.1:8080

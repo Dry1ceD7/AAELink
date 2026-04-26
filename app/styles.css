@@ -1,0 +1,804 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1d21;
+  --rail: #4a154b;
+  --rail-dark: #350d36;
+  --panel: #222529;
+  --border: #3a3d42;
+  --fg: #f8f8f8;
+  --muted: #b8b8b8;
+  --accent: #1264a3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button,
+input,
+a {
+  font: inherit;
+}
+
+a {
+  text-decoration: none;
+}
+
+.slack-button {
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.slack-input {
+  width: 100%;
+  border: 1px solid #565856;
+  border-radius: 10px;
+  background: #fff;
+  color: #1d1c1d;
+  padding: 12px 14px;
+}
+
+.slack-card {
+  background: #ffffff;
+  color: #1d1c1d;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.app-shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 72px 280px minmax(0, 1fr) 360px;
+  overflow: hidden;
+}
+
+.workspace-rail {
+  background: var(--rail-dark);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.workspace-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: var(--rail-dark);
+  font-weight: 900;
+}
+
+a.workspace-icon {
+  display: grid;
+}
+
+.workspace-icon.small {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
+.workspace-icon.active {
+  box-shadow: inset 4px 0 0 #fff;
+}
+
+.rail-dot {
+  width: 36px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.channel-list {
+  background: var(--rail);
+  color: white;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.team-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.channel-section {
+  padding: 14px 10px 0;
+}
+
+.channel-section p {
+  margin: 0 0 6px;
+  color: #d8bfd8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.channel {
+  width: 100%;
+  border: 0;
+  color: #f4e7f4;
+  background: transparent;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.channel.active {
+  background: #1164a3;
+  color: white;
+}
+
+.presence {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2bac76;
+}
+
+.chat-pane {
+  min-width: 0;
+  background: #ffffff;
+  color: #1d1c1d;
+  display: grid;
+  grid-template-rows: 68px minmax(0, 1fr) auto;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid #ddd;
+}
+
+.chat-header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.chat-header p {
+  margin: 4px 0 0;
+  color: #616061;
+  font-size: 13px;
+}
+
+.ghost-button {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.message-timeline {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.channel-hero {
+  padding: 30px 0 28px;
+}
+
+.channel-hero h2 {
+  font-size: 28px;
+  margin: 0 0 8px;
+}
+
+.channel-hero p {
+  color: #616061;
+  margin: 0;
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #ecb22e;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+}
+
+.message-meta {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.message-meta span {
+  color: #616061;
+  font-size: 12px;
+}
+
+.message p {
+  margin: 4px 0 8px;
+}
+
+.reaction-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.reaction-row button {
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  background: #f8f8f8;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.composer {
+  border-top: 1px solid #ddd;
+  padding: 12px 16px;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 76px;
+  border: 0;
+  resize: none;
+  outline: none;
+  font: inherit;
+}
+
+.toolbar,
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar {
+  border: 1px solid #ddd;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding: 8px;
+}
+
+.toolbar button {
+  border: 0;
+  background: transparent;
+  color: #616061;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composer-actions {
+  justify-content: space-between;
+  color: #616061;
+  font-size: 12px;
+}
+
+.send-button {
+  border: 0;
+  border-radius: 8px;
+  background: #007a5a;
+  color: white;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.thread-pane {
+  background: #ffffff;
+  color: #1d1c1d;
+  border-left: 1px solid #ddd;
+  display: grid;
+  grid-template-rows: 68px 1fr;
+}
+
+.thread-pane header {
+  padding: 16px;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-pane header span {
+  color: #616061;
+  font-size: 12px;
+}
+
+.thread-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.thread-card {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.module-page {
+  min-height: 100dvh;
+  overflow: auto;
+  background: #f8f8f8;
+  color: #1d1c1d;
+  padding: 32px;
+}
+
+.module-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.module-header h1 {
+  margin: 0;
+}
+
+.module-header p {
+  margin: 6px 0 0;
+  color: #616061;
+}
+
+.ticket-compose {
+  margin-bottom: 18px;
+}
+
+.ticket-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ticket-card {
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  background: white;
+  padding: 16px;
+}
+
+.ticket-card span {
+  margin-left: 10px;
+  color: #616061;
+}
+
+.drop-zone {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  border: 2px dashed #bbb;
+  border-radius: 18px;
+  background: white;
+  cursor: pointer;
+  text-align: center;
+  gap: 8px;
+}
+
+.drop-zone input {
+  display: none;
+}
+
+.drop-zone span {
+  color: #616061;
+}
+
+.workspace-rail a.workspace-icon {
+  color: inherit;
+  text-decoration: none;
+}
+
+.team-header-link {
+  color: #f4e7f4;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.team-header-link:hover {
+  text-decoration: underline;
+}
+
+a.channel {
+  display: flex;
+}
+
+.status-pill {
+  border: 1px solid #ddd;
+  background: #f8f8f8;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #616061;
+}
+
+.status-pill.online {
+  border-color: #2bac76;
+  color: #1d6f4b;
+  background: #e8f7f0;
+}
+
+.channel-empty {
+  margin: 0;
+  padding: 6px 10px;
+  color: #d8bfd8;
+  font-size: 13px;
+}
+
+.thread-tease {
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  background: #f8f8f8;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.app-shell-loading {
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.module-chrome {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.module-chrome-left {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.module-back {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #c5c5c5;
+  background: #fff;
+  color: #1d1c1d;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.module-back:hover {
+  border-color: #1264a3;
+  color: #1264a3;
+}
+
+.module-chrome-titles h1 {
+  margin: 0;
+}
+
+.module-chrome-titles p {
+  margin: 6px 0 0;
+  color: #616061;
+}
+
+.module-chrome-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.module-loading {
+  margin: 0;
+  color: #616061;
+}
+
+.field-label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+  color: #1d1c1d;
+}
+
+.slack-textarea {
+  width: 100%;
+  border: 1px solid #565856;
+  border-radius: 10px;
+  background: #fff;
+  color: #1d1c1d;
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 100px;
+  font: inherit;
+}
+
+.ticket-form-grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 28px;
+  max-width: 720px;
+}
+
+.ticket-form-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.ticket-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ticket-date {
+  margin-left: 10px;
+  color: #616061;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ticket-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.ticket-desc {
+  margin: 0 0 12px;
+  color: #454245;
+  line-height: 1.5;
+}
+
+.ticket-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.ticket-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #616061;
+}
+
+.ticket-controls select {
+  min-width: 160px;
+  border-radius: 8px;
+  border: 1px solid #c5c5c5;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.priority-pill {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+  text-transform: capitalize;
+}
+
+.priority-urgent {
+  border-color: #e01e5a;
+  color: #a30a3a;
+  background: #fde7ef;
+}
+
+.priority-medium {
+  border-color: #ecb22e;
+  color: #7a5b00;
+  background: #fff8e1;
+}
+
+.priority-low {
+  border-color: #c5c5c5;
+  color: #616061;
+  background: #f8f8f8;
+}
+
+.slack-button.secondary {
+  background: #fff;
+  color: #1264a3;
+  border: 1px solid #1264a3;
+}
+
+.doc-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ghost-button.light {
+  background: #fff;
+  color: #1d1c1d;
+}
+
+.doc-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.doc-save-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1200px) {
+  .app-shell {
+    grid-template-columns: 72px 260px minmax(0, 1fr);
+  }
+
+  .thread-pane {
+    display: none;
+  }
+}
+
+.channel-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.channel-section-head p {
+  margin: 0;
+}
+
+.channel-add {
+  border: 0;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f4e7f4;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.channel-add:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.modal-panel {
+  width: min(480px, 100%);
+  padding: 24px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.form-error {
+  color: #e01e5a;
+  font-weight: 600;
+  margin: 10px 0 0;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #ddd;
+}
+
+.doc-table th,
+.doc-table td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eee;
+  font-size: 14px;
+}
+
+.doc-table th {
+  background: #f8f8f8;
+  font-weight: 700;
+}
+
+.doc-muted {
+  color: #616061;
+  font-size: 13px;
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #1264a3;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.slack-card .ghost-button {
+  border: 1px solid #c5c5c5;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #1d1c1d;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .channel-list {
+    display: none;
+  }
+
+  .workspace-rail {
+    padding: 8px;
+  }
+
+  .workspace-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+}
