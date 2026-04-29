@@ -66,6 +66,4 @@ The desktop package version in `desktop/package.json` should match the shipping 
 
 ## See also
 
-- [`WHERE-IS-THE-ENGINE.md`](./WHERE-IS-THE-ENGINE.md) — Next.js vs optional Mattermost Docker engine  
-- [`architecture-ecosystem-map.md`](./architecture-ecosystem-map.md) — hub for technical + parity docs  
 - [`desktop/README.md`](../desktop/README.md) — build flags and `--url`

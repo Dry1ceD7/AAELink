@@ -55,7 +55,78 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: aaelink-desktop-windows-setup
-          path: |
-            desktop/dist/AAELink-Setup-*.exe
-            desktop/dist/latest.yml
+          path: desktop/dist/AAELink-Setup-*.exe
           if-no-files-found: error
+
+  release:
+    needs: [macos-dmg, windows-setup]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: aaelink-desktop-macos-dmg
+          path: release-assets/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: aaelink-desktop-windows-setup
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -la release-assets/
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v0.0.2-alpha"
+          TITLE="AAELink v0.0.2-alpha"
+          NOTES="## AAELink v0.0.2-alpha
+
+          Desktop installers for Windows 10/11 and macOS.
+
+          ### Download
+
+          | Platform | File |
+          |---|---|
+          | Windows 10/11 (64-bit) | \`AAELink-Setup-0.0.2-alpha.exe\` |
+          | macOS | \`AAELink-0.0.2-alpha.dmg\` |
+
+          ### First Launch
+
+          1. Install and open AAELink.
+          2. On first launch, you'll see the **Connect to Server** screen.
+          3. Enter the server host's WiFi IP address (e.g. \`192.168.x.x\`).
+          4. Click **Connect** — the app loads and saves the address for next time.
+
+          > Both your device and the server host must be on the same WiFi network.
+
+          ### What's Included
+
+          - IT Help Desk with ticket management
+          - Identity and access management (4 built-in roles)
+          - Admin panel with user/department/role management
+          - Workspaces and channels
+          - Emergency IT support queue
+          - Documents module foundation
+          - File storage via MinIO
+          - WiFi/LAN server deployment for team testing
+          "
+
+          # Delete existing release if present
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+
+          # Create fresh tag and release
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --prerelease \
+            release-assets/*

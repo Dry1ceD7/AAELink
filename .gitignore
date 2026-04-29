@@ -69,6 +69,7 @@ logs/
 # === Local-only tooling and internal docs ===
 .claude/
 .cursor/
+.gemini/
 _bmad/
 _bmad-output/
 AGENTS.md
@@ -77,6 +78,17 @@ docs/stories/
 docs/architecture/
 docs/runbooks/
 docs/ROADMAP.md
+docs/NORTH-STAR*.md
+docs/PHASE*.md
+docs/ARCHITECTURE*.md
+docs/HOSTING*.md
+docs/WHERE-IS-THE-ENGINE.md
+docs/ROADMAP-PHASES-AND-LAYERS.md
+docs/BRANDING.md
+docs/architecture-*.md
+docs/parity-*.md
+docs/phase-1/
+docs/deployment/
 
 # === Secrets (never commit these) ===
 *.pem
