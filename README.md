@@ -2,7 +2,7 @@
 
 Team collaboration hub: workspaces, channels, messages, tickets, and document storage. Collaboration data is stored in **PostgreSQL** (schema `aaelink`); files use S3-compatible storage when configured.
 
-See [`docs/NORTH-STAR-A.md`](./docs/NORTH-STAR-A.md) for scope and environment flags. **Documentation index:** [`docs/README.md`](./docs/README.md) (architecture, parity, phases, deployment). **Slack-class full parity map:** [`docs/parity-slack-mattermost-aaelink-full-map.md`](./docs/parity-slack-mattermost-aaelink-full-map.md).
+See [`docs/NORTH-STAR-A.md`](./docs/NORTH-STAR-A.md) for scope and environment flags. **Documentation index:** [`docs/README.md`](./docs/README.md) (architecture, parity, phases, deployment). **Enterprise chat full parity map:** [`docs/parity-slack-mattermost-aaelink-full-map.md`](./docs/parity-slack-mattermost-aaelink-full-map.md).
 
 ## Phase 1
 
@@ -47,7 +47,7 @@ company to work — tickets, files, notifications, identity, and (soon) chat,
 approvals, knowledge base and more.
 
 > **Latest update — v0.0.2-alpha**
-> Features a massive UI overhaul achieving parity with Slack/Mattermost (workspace dropdowns, user profile popovers, and styled confirmation modals). Also adds service readiness checks, stronger container health routing, emergency
+> Features a massive UI overhaul with modernized enterprise elements (workspace dropdowns, user profile popovers, and styled confirmation modals). Also adds service readiness checks, stronger container health routing, emergency
 > IT support queueing from the login screen, a dedicated documents module
 > foundation for PDF workflows, and 20 MB profile avatar uploads. See the
 > [release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.2-alpha)
