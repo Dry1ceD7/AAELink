@@ -89,7 +89,8 @@ function computeStartUrl() {
   const arg = process.argv.find((a) => a.startsWith("--url="));
   if (arg) return arg.slice("--url=".length).trim();
   if (!app.isPackaged) return defaultUnpackagedDevUrl();
-  return DEFAULT_APP_ORIGIN;
+  // Packaged: DEFAULT_APP_ORIGIN may be blank → show connect page
+  return DEFAULT_APP_ORIGIN || "";
 }
 
 // Dev / lab: trust Next.js experimental HTTPS (self-signed) on private IPs / localhost.
@@ -272,6 +273,8 @@ function createWindow() {
     minWidth:  400,
     minHeight: 360,
     title:     "AAELink",
+    show:      false,                          // hidden until content is ready
+    backgroundColor: "#001d36",                // AAE navy — eliminates white flash
     ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload:          path.join(__dirname, "preload.js"),
@@ -281,6 +284,15 @@ function createWindow() {
   });
 
   mainWindow = win;
+
+  // Show window only after the first paint to avoid white flash
+  win.once("ready-to-show", () => {
+    win.show();
+  });
+
+  // Safety: if ready-to-show never fires (e.g. server error), show after 4 s.
+  const showTimeout = setTimeout(() => { if (!win.isDestroyed()) win.show(); }, 4000);
+  win.once("ready-to-show", () => clearTimeout(showTimeout));
 
   // Close button minimises to tray (unless app is actually quitting)
   win.on("close", (e) => {
@@ -294,12 +306,19 @@ function createWindow() {
     if (mainWindow === win) mainWindow = null;
   });
 
-  win.loadURL(startUrl).catch((err) => {
-    console.error("Failed to load URL:", startUrl, err);
-    win.loadFile(path.join(__dirname, "offline.html"), {
-      hash: encodeURIComponent(startUrl),
+  // If no server URL configured (packaged first-launch), show the connect page
+  if (!startUrl) {
+    win.loadFile(path.join(__dirname, "offline.html"));
+  } else {
+    win.loadURL(startUrl).catch((err) => {
+      console.error("[AAELink] Failed to load URL:", startUrl, err.message || err);
+      if (!win.isDestroyed()) {
+        win.loadFile(path.join(__dirname, "offline.html"), {
+          hash: encodeURIComponent(startUrl),
+        });
+      }
     });
-  });
+  }
 
   // Open external links in the OS default browser, never inside Electron.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -317,8 +336,6 @@ function createWindow() {
       }
     } catch { /* allow same-origin navigation */ }
   });
-
-  win.webContents.openDevTools();
 }
 
 // ── Second-instance (Windows/Linux single-instance + deep link relay) ─────────

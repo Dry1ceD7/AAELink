@@ -3,94 +3,318 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AAELink - Connection Failed</title>
+  <title>AAELink — Connect to Server</title>
   <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      max-width: 42rem;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      line-height: 1.5;
-      background: #f8f9fa;
-      color: #333;
-    }
-    h1 { color: #d9534f; }
-    .card {
-      background: #fff;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      margin-top: 2rem;
-    }
-    input[type="text"] {
-      width: 100%;
-      padding: 10px;
-      margin: 10px 0;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 16px;
-      box-sizing: border-box;
-    }
-    button {
-      background: #005596;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(168deg, #001d36 0%, #003d6e 35%, #005596 60%, #0072b5 100%);
       color: #fff;
-      border: none;
-      padding: 10px 20px;
-      font-size: 16px;
+      padding: 2rem;
+    }
+
+    .connect-card {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 48px 40px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 16px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -1px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.65);
+      margin-bottom: 28px;
+      line-height: 1.4;
+    }
+
+    .failed-url {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.45);
+      margin-bottom: 20px;
+      word-break: break-all;
+    }
+    .failed-url code {
+      background: rgba(255,255,255,0.1);
+      padding: 2px 6px;
       border-radius: 4px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 11px;
+    }
+
+    label {
+      display: block;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.75);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      font-size: 15px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    input[type="text"]::placeholder {
+      color: rgba(255, 255, 255, 0.35);
+    }
+    input[type="text"]:focus {
+      border-color: rgba(255, 255, 255, 0.45);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-connect {
+      background: #1C58D9;
+      color: #fff;
       width: 100%;
     }
-    button:hover { background: #003d6e; }
-    code { background: #eee; padding: 2px 6px; border-radius: 4px; }
+    .btn-connect:hover { background: #386FE5; }
+    .btn-connect:active { transform: scale(0.98); }
+    .btn-connect:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .status {
+      font-size: 13px;
+      margin-top: 12px;
+      min-height: 20px;
+      transition: opacity 0.2s;
+    }
+    .status--error { color: #ff6b6b; }
+    .status--ok { color: #69db7c; }
+    .status--loading { color: rgba(255,255,255,0.6); }
+
+    .help {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      text-align: left;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.55);
+      line-height: 1.6;
+    }
+    .help strong {
+      color: rgba(255, 255, 255, 0.8);
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .help code {
+      background: rgba(255,255,255,0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 11px;
+    }
+    .help ol {
+      padding-left: 18px;
+      margin-top: 4px;
+    }
+    .help li { margin-bottom: 4px; }
   </style>
 </head>
 <body>
-  <h1>Connection Failed</h1>
-  <p>The AAELink desktop app could not connect to the server:</p>
-  <p><code id="url"></code></p>
+  <div class="connect-card">
+    <div class="logo">A</div>
+    <h1>Connect to AAELink Server</h1>
+    <p class="subtitle">
+      Enter the IP address of the computer hosting the AAELink server.<br>
+      Both devices must be on the same WiFi network.
+    </p>
 
-  <div class="card">
-    <h3>Connect to a Custom Server</h3>
-    <p>If the server is hosted on a shared WiFi or a different network, please enter the server's IP address below:</p>
-    <input type="text" id="custom-ip" placeholder="e.g. 192.168.2.1" onkeydown="if(event.key==='Enter') tryConnect()" />
-    <button onclick="tryConnect()">Connect</button>
-  </div>
+    <p class="failed-url" id="failed-info" style="display:none">
+      Previously tried: <code id="failed-url-text"></code>
+    </p>
 
-  <div style="margin-top: 2rem; font-size: 0.9em; color: #666;">
-    <p><strong>Note for Server Host:</strong><br>
-    Start the server with <code>npm run dev:lan:auto</code> to run it on your local network.</p>
+    <label for="server-ip">Server address</label>
+    <div class="input-group">
+      <input
+        type="text"
+        id="server-ip"
+        placeholder="192.168.x.x"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
+    <button class="btn-connect" id="btn-connect" onclick="tryConnect()">
+      Connect
+    </button>
+
+    <p class="status" id="status"></p>
+
+    <div class="help">
+      <strong>How to find the server address</strong>
+      <ol>
+        <li>On the host Mac, run: <code>npm run dev:lan:auto</code></li>
+        <li>It will display: <code>http://192.168.x.x:3040</code></li>
+        <li>Enter that IP address above (e.g. <code>192.168.11.80</code>)</li>
+        <li>Make sure both devices are on the same WiFi network</li>
+      </ol>
+    </div>
   </div>
 
   <script>
-    const hashUrl = decodeURIComponent(location.hash.slice(1) || "");
-    document.getElementById("url").textContent = hashUrl || "(unknown)";
+    const PORT = 3040;
+    const ipInput = document.getElementById('server-ip');
+    const statusEl = document.getElementById('status');
+    const btnEl = document.getElementById('btn-connect');
+    const failedInfoEl = document.getElementById('failed-info');
+    const failedUrlEl = document.getElementById('failed-url-text');
 
-    const savedUrl = localStorage.getItem('AAELINK_CUSTOM_URL');
-    
-    // Auto-redirect if we have a saved URL that we haven't tried in this specific failure yet
-    if (savedUrl && savedUrl !== hashUrl) {
-      window.location.href = savedUrl;
+    // Show the URL that failed (if redirected from a load error)
+    const hashUrl = decodeURIComponent(location.hash.slice(1) || '');
+    if (hashUrl) {
+      failedInfoEl.style.display = 'block';
+      failedUrlEl.textContent = hashUrl;
+
+      // Extract IP from the failed URL for convenience
+      try {
+        const u = new URL(hashUrl);
+        ipInput.value = u.hostname;
+      } catch {}
     }
 
-    if (savedUrl) {
-      document.getElementById('custom-ip').value = savedUrl.replace(/^http:\/\//, '').replace(/:3040$/, '');
-    }
-
-    function tryConnect() {
-      let ip = document.getElementById("custom-ip").value.trim();
-      if (!ip) return;
-      if (!ip.startsWith('http')) {
-        ip = 'http://' + ip;
+    // Load saved server URL
+    const saved = localStorage.getItem('AAELINK_SERVER_URL');
+    if (saved && !hashUrl) {
+      try {
+        const u = new URL(saved);
+        ipInput.value = u.hostname;
+      } catch {
+        ipInput.value = saved;
       }
-      if (!ip.match(/:\d+$/)) {
-        ip = ip + ':3040'; // append default port
-      }
-      
-      // Save for future auto-redirects
-      localStorage.setItem('AAELINK_CUSTOM_URL', ip);
-      window.location.href = ip;
     }
+
+    ipInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') tryConnect();
+    });
+
+    async function tryConnect() {
+      let raw = ipInput.value.trim();
+      if (!raw) {
+        showStatus('Please enter a server IP address', 'error');
+        return;
+      }
+
+      // Build the full URL
+      let url = raw;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'http://' + url;
+      }
+      // Append port if not specified
+      try {
+        const parsed = new URL(url);
+        if (!parsed.port) {
+          url = `${parsed.protocol}//${parsed.hostname}:${PORT}${parsed.pathname}`;
+        }
+      } catch {
+        showStatus('Invalid address format', 'error');
+        return;
+      }
+
+      // Remove trailing slash
+      url = url.replace(/\/+$/, '');
+
+      btnEl.disabled = true;
+      showStatus('Connecting…', 'loading');
+
+      try {
+        // Try to reach the server (with a short timeout)
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+
+        const resp = await fetch(url + '/api/health', {
+          signal: controller.signal,
+          mode: 'no-cors',  // The server may not have CORS headers
+        });
+        clearTimeout(timeout);
+
+        // If we get here (even opaque response with no-cors), server is reachable
+        localStorage.setItem('AAELINK_SERVER_URL', url);
+        showStatus('Connected! Loading AAELink…', 'ok');
+
+        // Navigate to the server
+        setTimeout(() => {
+          window.location.href = url;
+        }, 500);
+
+      } catch (err) {
+        // no-cors fetch will throw on network error; try direct navigation as fallback
+        // The server might be reachable but just doesn't support CORS
+        localStorage.setItem('AAELINK_SERVER_URL', url);
+        showStatus('Attempting connection…', 'loading');
+        setTimeout(() => {
+          window.location.href = url;
+        }, 300);
+      }
+
+      btnEl.disabled = false;
+    }
+
+    function showStatus(msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = 'status status--' + type;
+    }
+
+    // Auto-focus the input
+    ipInput.focus();
   </script>
 </body>
 </html>
