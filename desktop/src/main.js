@@ -80,7 +80,7 @@ function defaultUnpackagedDevUrl() {
     } catch { /* ignore */ }
   }
   const host = ip || "127.0.0.1";
-  return `https://${host}:3040`;
+  return `http://${host}:3040`;
 }
 
 function computeStartUrl() {
@@ -294,7 +294,8 @@ function createWindow() {
     if (mainWindow === win) mainWindow = null;
   });
 
-  win.loadURL(startUrl).catch(() => {
+  win.loadURL(startUrl).catch((err) => {
+    console.error("Failed to load URL:", startUrl, err);
     win.loadFile(path.join(__dirname, "offline.html"), {
       hash: encodeURIComponent(startUrl),
     });
@@ -316,6 +317,8 @@ function createWindow() {
       }
     } catch { /* allow same-origin navigation */ }
   });
+
+  win.webContents.openDevTools();
 }
 
 // ── Second-instance (Windows/Linux single-instance + deep link relay) ─────────

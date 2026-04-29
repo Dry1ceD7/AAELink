@@ -1,49 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AAELink</title>
+  <title>AAELink - Connection Failed</title>
   <style>
     body {
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
       max-width: 42rem;
       margin: 2rem auto;
       padding: 0 1rem;
       line-height: 1.5;
+      background: #f8f9fa;
+      color: #333;
     }
-
-    code,
-    pre {
-      background: #f0f0f0;
-      padding: 0.15rem 0.35rem;
+    h1 { color: #d9534f; }
+    .card {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-top: 2rem;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
       border-radius: 4px;
+      font-size: 16px;
+      box-sizing: border-box;
     }
-
-    pre {
-      padding: 1rem;
-      overflow: auto;
+    button {
+      background: #005596;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
     }
+    button:hover { background: #003d6e; }
+    code { background: #eee; padding: 2px 6px; border-radius: 4px; }
   </style>
 </head>
-
 <body>
-  <h1>Cannot reach AAELink server</h1>
-  <p>The desktop app tried to open this URL:</p>
+  <h1>Connection Failed</h1>
+  <p>The AAELink desktop app could not connect to the server:</p>
   <p><code id="url"></code></p>
-  <p>On the machine that runs the server, start the stack from the <code>AAELink</code> folder:</p>
-  <pre>docker compose up -d</pre>
-  <p>From another PC, point the app at that host (replace host and port):</p>
-  <pre>AAELink --url=http://192.168.1.10:3000</pre>
-  <p>Or set environment variable <code>AAELINK_DESKTOP_URL</code> before starting the app.</p>
+
+  <div class="card">
+    <h3>Connect to a Custom Server</h3>
+    <p>If the server is hosted on a shared WiFi or a different network, please enter the server's IP address below:</p>
+    <input type="text" id="custom-ip" placeholder="e.g. 192.168.2.1" onkeydown="if(event.key==='Enter') tryConnect()" />
+    <button onclick="tryConnect()">Connect</button>
+  </div>
+
+  <div style="margin-top: 2rem; font-size: 0.9em; color: #666;">
+    <p><strong>Note for Server Host:</strong><br>
+    Start the server with <code>npm run dev:lan:auto</code> to run it on your local network.</p>
+  </div>
+
   <script>
-    try {
-      document.getElementById("url").textContent = decodeURIComponent(location.hash.slice(1) || "") || "(unknown)";
-    } catch {
-      document.getElementById("url").textContent = "(unknown)";
+    const hashUrl = decodeURIComponent(location.hash.slice(1) || "");
+    document.getElementById("url").textContent = hashUrl || "(unknown)";
+
+    const savedUrl = localStorage.getItem('AAELINK_CUSTOM_URL');
+    
+    // Auto-redirect if we have a saved URL that we haven't tried in this specific failure yet
+    if (savedUrl && savedUrl !== hashUrl) {
+      window.location.href = savedUrl;
+    }
+
+    if (savedUrl) {
+      document.getElementById('custom-ip').value = savedUrl.replace(/^http:\/\//, '').replace(/:3040$/, '');
+    }
+
+    function tryConnect() {
+      let ip = document.getElementById("custom-ip").value.trim();
+      if (!ip) return;
+      if (!ip.startsWith('http')) {
+        ip = 'http://' + ip;
+      }
+      if (!ip.match(/:\d+$/)) {
+        ip = ip + ':3040'; // append default port
+      }
+      
+      // Save for future auto-redirects
+      localStorage.setItem('AAELINK_CUSTOM_URL', ip);
+      window.location.href = ip;
     }
   </script>
 </body>
-
 </html>

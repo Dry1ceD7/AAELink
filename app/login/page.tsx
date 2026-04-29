@@ -28,8 +28,9 @@ export default function LoginPage() {
 
   // ── Splash → fade-in ──────────────────────────────────────────────────
   useEffect(() => {
-    const id = requestAnimationFrame(() => setMounted(true))
-    return () => cancelAnimationFrame(id)
+    // Avoid requestAnimationFrame which can get cancelled or stalled in Electron
+    const id = setTimeout(() => setMounted(true), 10)
+    return () => clearTimeout(id)
   }, [])
 
   const itHelp = useMemo(

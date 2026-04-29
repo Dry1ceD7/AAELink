@@ -170,7 +170,7 @@ select.slack-input {
   min-height: 100dvh;
   height: 100dvh;
   overflow: hidden;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.45s ease;
 }
 .mm-login-shell--ready { opacity: 1; }
