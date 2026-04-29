@@ -1,4 +1,5 @@
-export function slugifyMattermostName(raw: string, fallback = 'item') {
+/** URL-safe slug for workspace or channel names. */
+export function slugifySegment(raw: string, fallback = 'item') {
   const s = raw
     .trim()
     .toLowerCase()

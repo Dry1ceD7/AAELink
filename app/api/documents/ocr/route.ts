@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
-import { readMattermostToken } from '@/lib/session'
+import { readSessionUserId } from '@/lib/session'
 import { getBucket, getObjectBytes, getS3Client } from '@/lib/s3'
+import { isWorkspaceMember } from '@/lib/workspaceAccess'
 
 const STIRLING_URL = process.env.STIRLING_URL || 'http://localhost:8085'
 
 export async function POST(req: Request) {
-  const token = await readMattermostToken()
-  if (!token) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const incoming = await req.formData()
   const documentId = String(incoming.get('document_id') || '').trim()
@@ -20,11 +21,16 @@ export async function POST(req: Request) {
     if (!pool || !s3) return NextResponse.json({ error: 'storage_or_database_not_configured' }, { status: 503 })
     await ensureSchema()
     const { rows } = await pool.query(
-      `SELECT filename, content_type, bucket_key FROM aaelink.documents WHERE id = $1`,
+      `SELECT filename, content_type, bucket_key, workspace_id FROM aaelink.documents WHERE id = $1`,
       [documentId]
     )
-    const row = rows[0] as { filename: string; content_type: string; bucket_key: string } | undefined
+    const row = rows[0] as
+      | { filename: string; content_type: string; bucket_key: string; workspace_id: string | null }
+      | undefined
     if (!row) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    if (row.workspace_id && !(await isWorkspaceMember(pool, uid, row.workspace_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     const bytes = await getObjectBytes(s3, getBucket(), row.bucket_key)
     file = new File([new Uint8Array(bytes)], row.filename, { type: row.content_type || 'application/pdf' })
   } else {

@@ -1,0 +1,70 @@
+{
+  "name": "aaelink-desktop",
+  "version": "0.0.2-alpha",
+  "private": true,
+  "description": "AAELink desktop shell — opens your AAELink server in a dedicated window.",
+  "main": "src/main.js",
+  "author": "Advanced ID Asia Engineering Co., Ltd.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dry1ceD7/AAELink.git"
+  },
+  "scripts": {
+    "start": "ELECTRON_OVERRIDE_APP_NAME=AAELink electron .",
+    "start:branded": "node scripts/open-branded-mac.cjs",
+    "icons:sync": "sips -s format png ../public/icons/pwa-512.png --out resources/.icon-tmp.png && sips -Z 1024 resources/.icon-tmp.png --out resources/icon.png && rm -f resources/.icon-tmp.png",
+    "pack": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:win": "electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "co.advancedid.aaelink.desktop",
+    "productName": "AAELink",
+    "copyright": "Copyright Advanced ID Asia Engineering Co., Ltd.",
+    "directories": {
+      "output": "dist"
+    },
+    "publish": {
+      "provider": "github"
+    },
+    "icon": "resources/icon.png",
+    "files": [
+      "src/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "AAELink-Setup-${version}.${ext}"
+    }
+  }
+}

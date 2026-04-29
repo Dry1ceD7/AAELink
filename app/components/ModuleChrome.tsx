@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-
-const STORAGE_KEY = 'aaelink_last_team'
+import { buildHomePathForTeam, readRememberedWorkspaceTeam } from '@/lib/workspaceNav'
 
 export function ModuleChrome({
   title,
@@ -17,10 +16,10 @@ export function ModuleChrome({
   const [team, setTeam] = useState('')
 
   useEffect(() => {
-    setTeam(typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY) || '' : '')
+    setTeam(readRememberedWorkspaceTeam())
   }, [])
 
-  const homeHref = team ? `/home?team=${encodeURIComponent(team)}` : '/home'
+  const homeHref = team ? buildHomePathForTeam(team) : '/home'
 
   return (
     <header className="module-chrome">

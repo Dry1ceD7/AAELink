@@ -1,7 +1,11 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
+import { AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/apiClient'
+import { buildHomePathForTeam, rememberWorkspaceTeam } from '@/lib/workspaceNav'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -14,7 +18,7 @@ export default function OnboardingPage() {
     e.preventDefault()
     setBusy(true)
     setError('')
-    const res = await fetch('/api/mattermost/teams', {
+    const res = await apiFetch('/api/workspaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -24,54 +28,77 @@ export default function OnboardingPage() {
     })
     setBusy(false)
     if (!res.ok) {
-      setError('Workspace could not be created. You may need a Mattermost account with permission to create teams.')
+      setError('Workspace could not be created. Sign in again or ask an admin for permission to create workspaces.')
       return
     }
     const data = await res.json()
     const id = data?.team?.id as string | undefined
-    if (id && typeof window !== 'undefined') {
-      sessionStorage.setItem('aaelink_last_team', id)
-    }
-    router.replace(id ? `/home?team=${encodeURIComponent(id)}` : '/workspaces')
+    if (id) rememberWorkspaceTeam(id)
+    router.replace(id ? buildHomePathForTeam(id) : '/workspaces')
   }
 
   return (
-    <main style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: '#1a1d21' }}>
-      <form className="slack-card" onSubmit={submit} style={{ width: 520, padding: 32 }}>
-        <h1 style={{ marginTop: 0 }}>Create workspace</h1>
-        <p style={{ color: '#616061' }}>Creates a Mattermost team that appears in your workspace list.</p>
-        <label className="field-label" style={{ marginTop: 8 }}>
-          Workspace name
-          <input
-            className="slack-input"
-            value={displayName}
-            onChange={e => setDisplayName(e.target.value)}
-            placeholder="e.g. AAELink Operations"
-            required
-          />
-        </label>
-        <label className="field-label" style={{ marginTop: 14 }}>
-          URL slug (optional)
-          <input
-            className="slack-input"
-            value={urlName}
-            onChange={e => setUrlName(e.target.value)}
-            placeholder="Lowercase letters, numbers, hyphens"
-          />
-        </label>
-        {error ? <p className="form-error">{error}</p> : null}
-        <button className="slack-button" type="submit" style={{ width: '100%', marginTop: 20 }} disabled={busy}>
-          {busy ? 'Creating' : 'Create workspace'}
-        </button>
-        <button
-          type="button"
-          className="ghost-button"
-          style={{ width: '100%', marginTop: 10 }}
-          onClick={() => router.push('/workspaces')}
-        >
-          Cancel
-        </button>
-      </form>
+    <main className="aae-auth-page">
+      <div className="aae-auth-card aae-auth-card--wide">
+        <form className="slack-card mm-auth-form" onSubmit={submit} style={{ padding: '28px 32px' }}>
+          <div className="aae-auth-brand">
+            <Image
+              src="/brand/aae-logo.png"
+              alt=""
+              width={120}
+              height={120}
+              className="aae-auth-logo"
+              style={{ width: 'min(120px, 40vw)' }}
+            />
+            <p className="aae-auth-company">Advanced ID Asia Engineering Co., Ltd</p>
+            <p className="aae-auth-product">AAELink</p>
+          </div>
+          <h1 className="aae-auth-title">
+            Create workspace
+          </h1>
+          <p className="aae-auth-lead">
+            A workspace groups channels, messages, and day-to-day collaboration for your team. It appears in your workspace list after you create it.
+          </p>
+          <label className="field-label" htmlFor="aae-onboard-display">
+            Workspace name
+            <input
+              id="aae-onboard-display"
+              className="slack-input"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+              placeholder="e.g. AAELink Operations"
+              required
+            />
+          </label>
+          <label className="field-label" htmlFor="aae-onboard-slug">
+            URL slug (optional)
+            <input
+              id="aae-onboard-slug"
+              className="slack-input"
+              value={urlName}
+              onChange={e => setUrlName(e.target.value)}
+              placeholder="Lowercase letters, numbers, hyphens"
+            />
+          </label>
+          {error ? (
+            <div className="mm-auth-alert mm-auth-alert--error" role="alert" style={{ marginTop: 12 }}>
+              <AlertCircle size={18} strokeWidth={2} aria-hidden />
+              <span>{error}</span>
+            </div>
+          ) : null}
+          <button className="slack-button mm-auth-submit" type="submit" style={{ width: '100%' }} disabled={busy}>
+            {busy ? 'Creating' : 'Create workspace'}
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            style={{ width: '100%', marginTop: 10 }}
+            onClick={() => router.push('/workspaces')}
+          >
+            Cancel
+          </button>
+        </form>
+      </div>
     </main>
   )
 }

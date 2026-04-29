@@ -2,70 +2,46 @@ name: aaelink-clean
 
 services:
   postgres:
+    # 17 matches existing named volumes from earlier setups; use a fresh volume before moving to 18+.
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: mattermost
-      POSTGRES_USER: mattermost
-      POSTGRES_PASSWORD: mattermost
+      POSTGRES_DB: aaelink
+      POSTGRES_USER: aaelink
+      POSTGRES_PASSWORD: aaelink
     ports:
       - "25432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mattermost"]
+      test: ['CMD-SHELL', 'pg_isready -U aaelink']
       interval: 10s
       timeout: 5s
       retries: 10
-
-  mattermost:
-    image: mattermost/mattermost-team-edition:latest
-    platform: linux/amd64
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      MM_SERVICESETTINGS_SITEURL: http://localhost:8065
-      MM_SERVICESETTINGS_LISTENADDRESS: ":8065"
-      MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
-      MM_SERVICESETTINGS_ENABLEUSERCREATION: "true"
-      MM_SQLSETTINGS_DRIVERNAME: postgres
-      MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:mattermost@postgres:5432/mattermost?sslmode=disable&connect_timeout=10
-    ports:
-      - "8065:8065"
-    volumes:
-      - mattermost-data:/mattermost/data
-      - mattermost-config:/mattermost/config
-      - mattermost-logs:/mattermost/logs
-      - mattermost-plugins:/mattermost/plugins
 
   stirling-pdf:
     image: frooodle/s-pdf:latest
     platform: linux/amd64
     environment:
-      DOCKER_ENABLE_SECURITY: "false"
-      SECURITY_ENABLE_LOGIN: "false"
-      SECURITY_ENABLE_API_KEY: "false"
-      INSTALL_BOOK_AND_ADVANCED_HTML_OPS: "false"
+      DOCKER_ENABLE_SECURITY: 'false'
+      SECURITY_ENABLE_LOGIN: 'false'
+      SECURITY_ENABLE_API_KEY: 'false'
+      INSTALL_BOOK_AND_ADVANCED_HTML_OPS: 'false'
       LANGS: en_US
     ports:
-      - "28085:8080"
+      - '28085:8080'
 
   minio:
     image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ':9001'
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "29000:9000"
-      - "29001:9001"
+      - '29000:9000'
+      - '29001:9001'
     volumes:
       - minio-data:/data
 
 volumes:
   postgres-data:
-  mattermost-data:
-  mattermost-config:
-  mattermost-logs:
-  mattermost-plugins:
   minio-data:

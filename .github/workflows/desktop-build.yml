@@ -1,0 +1,58 @@
+name: Desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-build.yml"
+
+jobs:
+  macos-dmg:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install and build DMG
+        env:
+          CSC_IDENTITY_AUTO_SELECT: "false"
+        run: |
+          npm ci
+          npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aaelink-desktop-macos-dmg
+          path: desktop/dist/*.dmg
+          if-no-files-found: error
+
+  windows-setup:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install and build NSIS installer
+        run: |
+          npm ci
+          npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aaelink-desktop-windows-setup
+          path: |
+            desktop/dist/AAELink-Setup-*.exe
+            desktop/dist/latest.yml
+          if-no-files-found: error

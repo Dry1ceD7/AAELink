@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -60,4 +61,8 @@ export async function getObjectBytes(s3: S3Client, bucket: string, key: string):
   const bytes = await out.Body?.transformToByteArray()
   if (!bytes) throw new Error('empty_object')
   return Buffer.from(bytes)
+}
+
+export async function deleteObject(s3: S3Client, bucket: string, key: string): Promise<void> {
+  await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
 }

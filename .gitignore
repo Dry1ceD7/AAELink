@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.lan.example
 node_modules/
 dist/
 build/
@@ -32,6 +33,7 @@ desktop.ini
 .env.local
 .env.*.local
 !.env.example
+!.env.lan.example
 
 # === Go ===
 services/**/bin/
@@ -82,3 +84,5 @@ docs/ROADMAP.md
 *.p12
 *.pfx
 secrets/
+sqlite.db
+.kilocode/

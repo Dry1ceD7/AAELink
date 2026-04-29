@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AAELink</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 42rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+
+    code,
+    pre {
+      background: #f0f0f0;
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    pre {
+      padding: 1rem;
+      overflow: auto;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Cannot reach AAELink server</h1>
+  <p>The desktop app tried to open this URL:</p>
+  <p><code id="url"></code></p>
+  <p>On the machine that runs the server, start the stack from the <code>AAELink</code> folder:</p>
+  <pre>docker compose up -d</pre>
+  <p>From another PC, point the app at that host (replace host and port):</p>
+  <pre>AAELink --url=http://192.168.1.10:3000</pre>
+  <p>Or set environment variable <code>AAELINK_DESKTOP_URL</code> before starting the app.</p>
+  <script>
+    try {
+      document.getElementById("url").textContent = decodeURIComponent(location.hash.slice(1) || "") || "(unknown)";
+    } catch {
+      document.getElementById("url").textContent = "(unknown)";
+    }
+  </script>
+</body>
+
+</html>

@@ -25,9 +25,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          MATTERMOST_URL: http://127.0.0.1:8065
-          MATTERMOST_WS_URL: ws://127.0.0.1:8065/api/v4/websocket
-          DATABASE_URL: postgres://mattermost:mattermost@127.0.0.1:5432/mattermost
+          DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
+          AAELINK_OPEN_REGISTRATION: '1'
           S3_ENDPOINT: http://127.0.0.1:9000
           S3_ACCESS_KEY: minioadmin
           S3_SECRET_KEY: minioadmin

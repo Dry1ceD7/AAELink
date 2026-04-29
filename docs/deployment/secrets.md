@@ -2,13 +2,15 @@
 
 This document lists the secrets and environment variables required to run AAELink in production. Store values in your platform secret manager (Kubernetes Secrets, GitHub Actions secrets, Vault, or your cloud provider) and inject them at deploy time. Do not commit real credentials.
 
+The shipped **Next.js** server uses the `aaelink` schema in PostgreSQL and its own HTTP APIs; it does **not** call an external team-chat engine at runtime. Variables named `MATTERMOST_*` below are **legacy / optional** and only relevant if you maintain a separate reference deployment (see `infra/k3s/README.md`).
+
 ## Application (Next.js server)
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `MATTERMOST_URL` | Yes | Base URL of the Mattermost API (internal service URL in cluster). |
-| `MATTERMOST_WS_URL` | Yes | WebSocket URL for Mattermost (e.g. `wss://chat.example.com/api/v4/websocket`). |
-| `DATABASE_URL` | Yes | PostgreSQL connection string. Uses schema `aaelink` inside the same database as Mattermost or a dedicated database. |
+| `MATTERMOST_URL` | No | Legacy: not used by the Next.js app. Omit unless you run optional sidecar integration. |
+| `MATTERMOST_WS_URL` | No | Legacy: not used by the Next.js app. |
+| `DATABASE_URL` | Yes | PostgreSQL connection string. Application uses schema `aaelink` (created on startup). |
 | `S3_ENDPOINT` | Yes | S3-compatible API endpoint (MinIO, AWS S3, etc.). |
 | `S3_ACCESS_KEY` | Yes | Object storage access key. |
 | `S3_SECRET_KEY` | Yes | Object storage secret key. |
@@ -33,7 +35,7 @@ For a typical `lint` + `build` workflow, no secrets are required unless you add 
 2. Replace placeholder values with base64-encoded strings (or use Sealed Secrets / External Secrets Operator).
 3. Mount the same variable names into the AAELink deployment as environment variables.
 
-Mattermost and PostgreSQL credentials must match what Mattermost expects (`MM_SQLSETTINGS_DATASOURCE`). The AAELink `DATABASE_URL` can point at the same Postgres server with schema `aaelink` created by the application on startup.
+If you co-locate Postgres with an optional legacy stack, keep credentials aligned with that stack’s expectations. Otherwise use a dedicated database and set `DATABASE_URL` only; the app creates the `aaelink` schema on startup.
 
 ## Object storage
 
@@ -44,3 +46,9 @@ Mattermost and PostgreSQL credentials must match what Mattermost expects (`MM_SQ
 
 - Rotate `S3_SECRET_KEY` and database passwords on a regular schedule.
 - After rotation, redeploy pods so they pick up new environment values.
+
+## See also
+
+- [`architecture-technical.md`](../architecture-technical.md) — Next.js layers and runtime assumptions  
+- [`Documentation index`](../README.md) — all docs in `docs/`  
+- [`architecture-ecosystem-map.md`](../architecture-ecosystem-map.md) — hub linking technical + parity
