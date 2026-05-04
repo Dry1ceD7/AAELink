@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Menu, Search, Hash, Lock, MessageCircle, ChevronDown, ChevronUp, Plus, MessageSquare, Bookmark, FileText, Settings, ShieldAlert, AlignLeft, Users, LogOut, UserPlus, Paintbrush, CircleDot, Info, Pin, Star, BellOff, Keyboard, CheckSquare, Book, Calendar, Puzzle, X, Package, SmilePlus, Copy, Check, Link2, GripVertical, PenLine } from 'lucide-react'
+import { Menu, Search, Hash, Lock, MessageCircle, ChevronDown, ChevronUp, Plus, MessageSquare, Bookmark, FileText, Settings, ShieldAlert, AlignLeft, Users, LogOut, UserPlus, Paintbrush, CircleDot, Info, Pin, Star, BellOff, Keyboard, CheckSquare, Book, Calendar, Puzzle, X, Package, SmilePlus, Copy, Check, Link2, GripVertical, PenLine, Paperclip } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { isPlatformAdmin } from '@/lib/platformRole'
 import { notifyDesktopChatMessage } from '@/lib/desktopNotify'
@@ -170,6 +170,8 @@ function HomeChat() {
   const [sidebarCustomizerOpen, setSidebarCustomizerOpen] = useState(false)
   const [showJumpBottom, setShowJumpBottom] = useState(false)
   const [newMsgCount, setNewMsgCount] = useState(0)
+  const [pageDragOver, setPageDragOver] = useState(false)
+  const pageDragCounter = useRef(0)
   const [unreadSepId, setUnreadSepId] = useState<string | null>(null)
   const [sidebarSections, setSidebarSections] = useState([
     { key: 'starred', label: 'Starred', icon: '⭐', enabled: true },
@@ -1378,7 +1380,35 @@ function HomeChat() {
         </section>
       ) : (
         <>
-        <section className="chat-pane">
+        <section className="chat-pane"
+          onDragEnter={(e) => { e.preventDefault(); pageDragCounter.current++; if (e.dataTransfer.types.includes('Files')) setPageDragOver(true) }}
+          onDragLeave={(e) => { e.preventDefault(); pageDragCounter.current--; if (pageDragCounter.current <= 0) { setPageDragOver(false); pageDragCounter.current = 0 } }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault(); setPageDragOver(false); pageDragCounter.current = 0
+            const files = e.dataTransfer.files
+            if (files.length > 0 && composerRef.current) {
+              // Focus composer and trigger file upload via the composer's hidden input
+              composerRef.current.focus()
+              // We'll pass files to the composer's upload mechanism
+              for (let i = 0; i < files.length; i++) {
+                const form = new FormData()
+                form.append('workspace_id', activeTeamId || '')
+                form.append('file', files[i], files[i].name)
+                void apiFetch('/api/documents', { method: 'POST', body: form })
+              }
+            }
+          }}
+        >
+        {pageDragOver && (
+          <div className="page-drag-overlay">
+            <div className="page-drag-overlay-content">
+              <Paperclip size={32} />
+              <h3>Drop files to upload</h3>
+              <p>Files will be uploaded to #{channelTitle}</p>
+            </div>
+          </div>
+        )}
         <UpdateBanner />
         <header className="chat-header">
           <div className="chat-header-nav">

@@ -86,6 +86,43 @@ html[data-theme="light"] {
 }
 
 /* Force DARK when manually selected (overrides OS light preference) */
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  color-scheme: dark;
+}
+html[data-theme="dark"] {
+  --mm-main-bg: #1e1e2e;
+  --mm-text: #cdd6f4;
+  --mm-muted: #8a9199;
+  --mm-header-border: rgba(255, 255, 255, 0.08);
+  --mm-compose-bg: #1e1e2e;
+  --mm-compose-border: rgba(255, 255, 255, 0.15);
+  --mm-border-subtle: rgba(255, 255, 255, 0.08);
+  --mm-border-input: rgba(255, 255, 255, 0.12);
+  --mm-border-input-hover: rgba(255, 255, 255, 0.2);
+  --mm-shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2);
+  --mm-link: #58a6ff;
+  --aae-link: #6b9cff;
+  --mm-rhs-bg: #181825;
+  --aae-sky: #1e2d3d;
+  --aae-page: #11111b;
+  --bg: #1e1e2e;
+  --fg: #cdd6f4;
+  --muted: #8a9199;
+  --mm-input-bg: rgba(255, 255, 255, 0.06);
+  --mm-hover: rgba(255, 255, 255, 0.05);
+  --mm-bg-secondary: #2b2d31;
+  --c-bg-tertiary: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Smooth Theme Transition ──────────────────────────────────────── */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.3s ease, color 0.15s ease, border-color 0.3s ease, box-shadow 0.3s ease !important;
+  transition-delay: 0s !important;
+}
 
 /* ── Dark element overrides via data-theme attribute ─────────────── */
 
@@ -1100,19 +1137,47 @@ select.slack-input {
   background: rgba(255, 255, 255, 0.12);
   text-decoration: none;
   flex-shrink: 0;
-  transition: all 0.15s ease;
+  transition: border-radius 0.2s ease, background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
   border: 2px solid transparent;
   position: relative;
 }
 
+/* Slack-style: circle → rounded square on hover */
 .app-shell .workspace-icon:hover {
   background: rgba(255, 255, 255, 0.22);
   border-color: rgba(255, 255, 255, 0.3);
+  border-radius: 30%;
+  transform: scale(1.05);
 }
 
 .app-shell .workspace-icon.active {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: var(--aae-cyan, #1C58D9);
+  border-color: rgba(255, 255, 255, 0.4);
+  border-radius: 30%;
+}
+
+/* Pill tooltip — appears on right of workspace icon */
+.app-shell .workspace-icon::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.9);
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 100;
+}
+.app-shell .workspace-icon:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
 }
 
 .app-shell .workspace-icon.active::before {
@@ -8999,6 +9064,56 @@ button.mm-user-pill {
   50% { background: rgba(22, 109, 224, 0.14); }
 }
 
+/* ── Full-page drag overlay (Slack-style) ──────────────────────────── */
+.page-drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(28, 88, 217, 0.06);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  animation: pageDragFadeIn 0.15s ease-out;
+}
+@keyframes pageDragFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.page-drag-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 60px;
+  border: 2.5px dashed var(--aae-link, #1C58D9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--aae-link, #1C58D9);
+  text-align: center;
+  animation: pageDragBounce 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pageDragBounce {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.page-drag-overlay-content h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.page-drag-overlay-content p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .page-drag-overlay-content {
+  background: rgba(30, 30, 46, 0.9);
+  border-color: var(--aae-link, #6b9cff);
+  color: var(--aae-link, #6b9cff);
+}
+
 .composer-file-strip {
   display: flex;
   flex-direction: column;
@@ -10998,4 +11113,254 @@ button.mm-user-pill {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Dark theme rules (auto-generated from media queries) ── */
+/* ═══════════════════════════════════════════════════════════════════════
+   Comprehensive Dark Theme Overrides [data-theme="dark"]
+   Ensures manual dark mode works independently of OS prefers-color-scheme
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Chat Area ─────────────────────────────────────────────────────── */
+[data-theme="dark"] .chat-header {
+  background: var(--mm-main-bg);
+  border-bottom-color: var(--mm-header-border);
+}
+[data-theme="dark"] .timeline {
+  background: var(--mm-main-bg);
+}
+[data-theme="dark"] .message:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-theme="dark"] .message--highlight {
+  background: rgba(255, 200, 50, 0.06);
+}
+
+/* ── Composer ──────────────────────────────────────────────────────── */
+[data-theme="dark"] .composer-outer {
+  background: var(--mm-compose-bg);
+  border-top-color: var(--mm-header-border);
+}
+[data-theme="dark"] .composer {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-compose-border);
+  color: var(--fg);
+}
+[data-theme="dark"] .composer:focus-within {
+  border-color: var(--aae-link);
+}
+[data-theme="dark"] .composer textarea,
+[data-theme="dark"] .composer .ProseMirror {
+  color: var(--fg);
+}
+[data-theme="dark"] .toolbar button {
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .toolbar button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}
+
+/* ── Messages ──────────────────────────────────────────────────────── */
+[data-theme="dark"] .message-author {
+  color: var(--fg);
+}
+[data-theme="dark"] .message-timestamp {
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .message-edited {
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .message-content {
+  color: var(--fg);
+}
+
+/* ── Reactions ─────────────────────────────────────────────────────── */
+[data-theme="dark"] .reaction-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .reaction-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .reaction-chip--mine {
+  background: rgba(107, 156, 255, 0.12);
+  border-color: rgba(107, 156, 255, 0.3);
+}
+
+/* ── Action Bar ────────────────────────────────────────────────────── */
+[data-theme="dark"] .message-actions-bar {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+[data-theme="dark"] .message-actions-bar button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Thread Panel / RHS ────────────────────────────────────────────── */
+[data-theme="dark"] .thread-panel {
+  background: var(--mm-rhs-bg, #181825);
+  border-left-color: var(--mm-header-border);
+}
+[data-theme="dark"] .thread-panel-header {
+  border-bottom-color: var(--mm-header-border);
+}
+
+/* ── Channel Info Panel ────────────────────────────────────────────── */
+[data-theme="dark"] .channel-info-panel {
+  background: var(--mm-rhs-bg, #181825);
+  border-left-color: var(--mm-header-border);
+}
+
+/* ── Modals & Overlays ─────────────────────────────────────────────── */
+[data-theme="dark"] .mm-modal {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .mm-modal input,
+[data-theme="dark"] .mm-modal textarea,
+[data-theme="dark"] .mm-modal select {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--mm-border-input);
+  color: var(--fg);
+}
+[data-theme="dark"] .mm-modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* ── Dropdowns & Menus ─────────────────────────────────────────────── */
+[data-theme="dark"] .ws-dropdown {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .context-menu {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+[data-theme="dark"] .context-menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Search ────────────────────────────────────────────────────────── */
+[data-theme="dark"] .global-search-modal,
+[data-theme="dark"] .quick-switcher {
+  background: var(--mm-bg-secondary, #2b2d31);
+  color: var(--fg);
+}
+[data-theme="dark"] .global-search-modal input,
+[data-theme="dark"] .quick-switcher input {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
+  border-color: var(--mm-border-input);
+}
+
+/* ── Settings ──────────────────────────────────────────────────────── */
+[data-theme="dark"] .settings-shell {
+  background: var(--mm-main-bg);
+  color: var(--fg);
+}
+[data-theme="dark"] .settings-sidebar {
+  background: var(--mm-rhs-bg, #181825);
+  border-right-color: var(--mm-header-border);
+}
+
+/* ── File Attachments ──────────────────────────────────────────────── */
+[data-theme="dark"] .file-attachment-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .file-attachment-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Code Blocks ───────────────────────────────────────────────────── */
+[data-theme="dark"] .mm-code-block {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .mm-inline-code {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Blockquotes ───────────────────────────────────────────────────── */
+[data-theme="dark"] .mm-rich-blockquote {
+  border-left-color: var(--aae-link);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* ── Date Divider ──────────────────────────────────────────────────── */
+[data-theme="dark"] .date-divider-text {
+  background: var(--mm-main-bg);
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .date-divider::before,
+[data-theme="dark"] .date-divider::after {
+  background: var(--mm-header-border);
+}
+
+/* ── Unread Separator ──────────────────────────────────────────────── */
+[data-theme="dark"] .unread-separator {
+  border-color: #e74c3c;
+}
+
+/* ── Skeleton Loaders ──────────────────────────────────────────────── */
+[data-theme="dark"] .message-skeleton-avatar,
+[data-theme="dark"] .message-skeleton-line {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.08) 40px, rgba(255,255,255,0.04) 80px);
+  background-size: 200px 100%;
+}
+
+/* ── Notification Toast ────────────────────────────────────────────── */
+[data-theme="dark"] .mm-notif-toast {
+  background: #2b2d31;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Notification Popover ──────────────────────────────────────────── */
+[data-theme="dark"] .mm-notif-popover {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .mm-notif-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-theme="dark"] .mm-notif-row--unread {
+  background: rgba(107, 156, 255, 0.06);
+}
+
+/* ── User Profile Card ────────────────────────────────────────────── */
+[data-theme="dark"] .user-profile-card {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* ── Jump-to-bottom ────────────────────────────────────────────────── */
+[data-theme="dark"] .jump-to-bottom-btn {
+  background: var(--mm-bg-secondary, #2b2d31);
+  color: var(--fg);
+  border-color: var(--mm-border-subtle);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Link Preview ──────────────────────────────────────────────────── */
+[data-theme="dark"] .link-preview {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--mm-border-subtle);
+}
+
+/* ── Emoji Picker (extends existing) ───────────────────────────────── */
+[data-theme="dark"] .emoji-picker {
+  background: var(--mm-bg-secondary, #2b2d31);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* ── Scrollbar Dark ────────────────────────────────────────────────── */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

@@ -84,6 +84,9 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 - **Smart Date Dividers** — "Today", "Yesterday", or full date separators between message groups.
 - **Active Channel Bar** — cyan left-edge indicator on the active sidebar channel.
 - **New Message Count** — "N new messages ↓" badge on the jump-to-bottom button when scrolled away.
+- **Comprehensive Dark Theme** — Full `[data-theme="dark"]` variable block with smooth animated transitions between Light/Dark/System modes.
+- **Full-Page Drag-Drop Overlay** — Slack-style immersive file drop zone with dashed border, backdrop blur, and spring animation.
+- **Workspace Icon Polish** — Slack-style circle-to-rounded-square hover transition with pill tooltips.
 - **Message Reminders** — "Remind me in 30m/1h/4h" from the message More menu, or `/remind [minutes] [text]`. Fires as in-app notification.
 - **Mark as Unread** — rewind the read cursor on any message so unread indicators re-appear in the sidebar.
 - **Custom Status with Expiry** — set status text + emoji with auto-clear timer (Slack-style "Clear after…"). Via `/status`, `/dnd`, or the settings panel.

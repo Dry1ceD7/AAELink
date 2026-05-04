@@ -41,8 +41,16 @@ export function applyTheme(pref: ThemePreference) {
   const effective = resolveTheme(pref)
   const html = document.documentElement
 
+  // Add transition class for smooth theme switching
+  html.classList.add('theme-transition')
+
   html.setAttribute('data-theme', effective)
   html.style.colorScheme = effective
+
+  // Remove transition class after animation completes
+  requestAnimationFrame(() => {
+    setTimeout(() => html.classList.remove('theme-transition'), 350)
+  })
 }
 
 /** Boot the theme system: apply saved preference and listen for OS changes. */
