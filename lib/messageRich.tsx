@@ -67,6 +67,8 @@ export function segmentMessageBlocks(raw: string): BlockSeg[] {
 function safeHref(raw: string): string | null {
   const t = raw.trim()
   if (!t) return null
+  if (t.startsWith('/')) return t
+  if (t.startsWith('mailto:')) return t
   try {
     const u = new URL(t)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
@@ -78,15 +80,25 @@ function safeHref(raw: string): string | null {
 
 const LINK_RE = /^\[([^\]]*)\]\(([^)]*)\)/
 
+const GROUP_MENTIONS = new Set(['here', 'channel', 'all'])
+
 function withMentions(text: string, keyPrefix: string): ReactNode[] {
   if (!text) return []
   const parts = text.split(/(@[a-zA-Z0-9._-]+)/g)
   return parts.map((p, idx) => {
     if (/^@[a-zA-Z0-9._-]+$/.test(p)) {
+      const username = p.slice(1) // strip leading @
+      const isGroup = GROUP_MENTIONS.has(username)
       return (
-        <span key={`${keyPrefix}-m${idx}`} className="mm-mention">
+        <button
+          key={`${keyPrefix}-m${idx}`}
+          type="button"
+          className={`mm-mention mm-mention--interactive${isGroup ? ' mm-mention--group' : ''}`}
+          data-mention-username={username}
+          title={isGroup ? `Notify ${username === 'here' ? 'online members' : 'all members'} in this channel` : `View ${p}'s profile`}
+        >
           {p}
-        </span>
+        </button>
       )
     }
     return p
@@ -153,11 +165,23 @@ export function parseMessageRichText(s: string, keyBase: string): ReactNode[] {
       if (m) {
         const href = safeHref(m[2] ?? '')
         if (href) {
-          out.push(
-            <a key={key()} href={href} target="_blank" rel="noopener noreferrer" className="mm-rich-link">
-              {m[1] ?? ''}
-            </a>
-          )
+          const label = m[1] ?? ''
+          if (href.startsWith('/api/documents/') && label.toLowerCase().match(/\.(png|jpe?g|gif|webp)(\s|\]|$)/)) {
+            out.push(
+              <span key={key()} style={{ display: 'block', marginTop: '8px' }}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className="mm-rich-link" style={{ display: 'block', marginBottom: '4px' }}>
+                  {label}
+                </a>
+                <img src={href} alt={label} style={{ maxWidth: '100%', maxHeight: '320px', borderRadius: '8px', objectFit: 'contain', backgroundColor: 'var(--c-bg-tertiary)' }} />
+              </span>
+            )
+          } else {
+            out.push(
+              <a key={key()} href={href} target="_blank" rel="noopener noreferrer" className="mm-rich-link">
+                {label}
+              </a>
+            )
+          }
           i += m[0].length
           continue
         }

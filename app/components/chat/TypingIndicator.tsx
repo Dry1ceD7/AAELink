@@ -2,149 +2,104 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/apiClient'
-import type { AppUser } from '@/app/components/chat/ChatMessage'
-import { displayName } from '@/app/components/chat/ChatMessage'
+import { type AppUser, displayName } from './ChatMessage'
 
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-/** How often to POST the typing signal (server TTL is 8 s). */
-const EMIT_INTERVAL_MS = 3_000
-/** How often to poll for other users typing. */
-const POLL_INTERVAL_MS = 2_500
-/** After this many ms of silence from our side, stop typing. */
-const IDLE_STOP_MS = 5_000
-
-// ── Emitter hook: sends "I am typing" to the server ────────────────────────
-
-export function useTypingEmitter(channelId: string, threadRootId?: string) {
-  const lastEmitRef = useRef(0)
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const channelRef = useRef(channelId)
-  const threadRef = useRef(threadRootId)
-
-  channelRef.current = channelId
-  threadRef.current = threadRootId
-
-  const sendStop = useCallback(() => {
-    if (!channelRef.current) return
-    void apiFetch('/api/collab/typing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        channel_id: channelRef.current,
-        stop: true,
-        ...(threadRef.current ? { thread_root_id: threadRef.current } : {})
-      })
-    }).catch(() => {})
-  }, [])
-
-  const emitTyping = useCallback(() => {
-    if (!channelRef.current) return
-    const now = Date.now()
-    if (now - lastEmitRef.current < EMIT_INTERVAL_MS) return
-    lastEmitRef.current = now
-
-    void apiFetch('/api/collab/typing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        channel_id: channelRef.current,
-        ...(threadRef.current ? { thread_root_id: threadRef.current } : {})
-      })
-    }).catch(() => {})
-
-    // Reset idle timer
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    idleTimerRef.current = setTimeout(() => {
-      sendStop()
-      lastEmitRef.current = 0
-    }, IDLE_STOP_MS)
-  }, [sendStop])
-
-  /** Call on every keystroke in the composer. */
-  const onDraftChange = useCallback(
-    (_text: string) => {
-      emitTyping()
-    },
-    [emitTyping]
-  )
-
-  // Cleanup on unmount or channel switch: send stop signal.
-  useEffect(() => {
-    return () => {
-      sendStop()
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
-    }
-  }, [channelId, threadRootId, sendStop])
-
-  return { onDraftChange }
-}
-
-// ── Display component: shows "X is typing…" ─────────────────────────────────
-
-interface TypingIndicatorProps {
+interface Props {
   channelId: string
-  threadRootId?: string
+  /** Map of userId → AppUser for labelling typing users. */
   userMap: Record<string, AppUser>
+  /** Current user's ID — excluded from the typing display. */
   myId: string
+  /** Optional thread root ID (for thread-scoped typing). */
+  threadRootId?: string
 }
 
-export function TypingIndicator({ channelId, threadRootId, userMap, myId }: TypingIndicatorProps) {
-  const [typingIds, setTypingIds] = useState<string[]>([])
+const POLL_INTERVAL = 2_000
+const EMIT_THROTTLE = 3_000
+
+/**
+ * TypingIndicator — displays "X is typing…" or "X, Y are typing…" below the
+ * message composer, just like Slack.
+ *
+ * Polls GET /api/typing every 2s to check who else is typing.
+ */
+export function TypingIndicator({ channelId, userMap, myId }: Props) {
+  const [typingNames, setTypingNames] = useState<string[]>([])
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const poll = useCallback(async () => {
+    if (!channelId) return
+    try {
+      const res = await apiFetch(`/api/typing?channel_id=${encodeURIComponent(channelId)}`)
+      if (res.ok) {
+        const data = (await res.json()) as { typing: string[] }
+        const names = (data.typing || [])
+          .filter(id => id !== myId)
+          .map(id => {
+            const user = userMap[id]
+            return user ? displayName(user) : 'Someone'
+          })
+        setTypingNames(names)
+      }
+    } catch {
+      // Silently ignore — typing indicators are non-critical
+    }
+  }, [channelId, userMap, myId])
 
   useEffect(() => {
+    setTypingNames([])
     if (!channelId) return
-    let cancelled = false
-
-    const poll = async () => {
-      try {
-        const q = new URLSearchParams({ channel_id: channelId })
-        if (threadRootId) q.set('root_id', threadRootId)
-        const res = await apiFetch(`/api/collab/typing?${q}`, { method: 'GET' })
-        if (res.ok && !cancelled) {
-          const data = (await res.json()) as { user_ids?: string[] }
-          setTypingIds((data.user_ids || []).filter(id => id !== myId))
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
     void poll()
-    const timer = setInterval(poll, POLL_INTERVAL_MS)
-
+    pollTimer.current = setInterval(() => void poll(), POLL_INTERVAL)
     return () => {
-      cancelled = true
-      clearInterval(timer)
+      if (pollTimer.current) clearInterval(pollTimer.current)
     }
-  }, [channelId, threadRootId, myId])
+  }, [channelId, poll])
 
-  if (typingIds.length === 0) return null
-
-  const names = typingIds.slice(0, 3).map(id => {
-    const u = userMap[id]
-    return u ? displayName(u) : id.slice(0, 8)
-  })
+  if (typingNames.length === 0) return null
 
   let label: string
-  if (names.length === 1) {
-    label = `${names[0]} is typing…`
-  } else if (names.length === 2) {
-    label = `${names[0]} and ${names[1]} are typing…`
-  } else if (names.length === 3 && typingIds.length === 3) {
-    label = `${names[0]}, ${names[1]}, and ${names[2]} are typing…`
+  if (typingNames.length === 1) {
+    label = `${typingNames[0]} is typing`
+  } else if (typingNames.length === 2) {
+    label = `${typingNames[0]} and ${typingNames[1]} are typing`
   } else {
-    label = `${names[0]}, ${names[1]}, and ${typingIds.length - 2} others are typing…`
+    label = `${typingNames[0]} and ${typingNames.length - 1} others are typing`
   }
 
   return (
     <div className="typing-indicator" aria-live="polite" aria-atomic="true">
-      <span className="typing-dots" aria-hidden="true">
-        <span />
-        <span />
-        <span />
+      <span className="typing-dots">
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="typing-dot" />
       </span>
       <span className="typing-label">{label}</span>
     </div>
   )
+}
+
+/**
+ * Hook used by the main page to create a `onDraftChange` callback that
+ * emits typing events (POST /api/typing) throttled to once every 3s.
+ *
+ * @param channelId  The channel to emit typing for
+ * @param threadRootId  Optional thread root (for thread-level typing — currently uses same channel endpoint)
+ */
+export function useTypingEmitter(channelId: string, _threadRootId?: string) {
+  const lastEmit = useRef(0)
+
+  const onDraftChange = useCallback((_text: string) => {
+    if (!channelId) return
+    const now = Date.now()
+    if (now - lastEmit.current < EMIT_THROTTLE) return
+    lastEmit.current = now
+    void apiFetch('/api/typing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_id: channelId })
+    })
+  }, [channelId])
+
+  return { onDraftChange }
 }

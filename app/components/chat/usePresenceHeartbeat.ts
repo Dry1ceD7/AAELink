@@ -23,6 +23,10 @@ export function usePresenceHeartbeat() {
     } catch {
       /* ignore */
     }
+    // Piggyback: dispatch any due scheduled messages (fire-and-forget)
+    apiFetch('/api/scheduled-messages/dispatch', { method: 'POST' }).catch(() => {})
+    // Piggyback: fire due reminders as notifications
+    apiFetch('/api/reminders/dispatch', { method: 'POST' }).catch(() => {})
   }, [])
 
   useEffect(() => {

@@ -3,7 +3,7 @@ import type { Pool } from 'pg'
 import { userCanReadChannel } from '@/lib/collab-access'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
-import { isAllowedReactionKey, type ReactionSummary } from '@/lib/reactions'
+import { type ReactionSummary } from '@/lib/reactions'
 import { readSessionUserId } from '@/lib/session'
 
 async function summarizeForMessage(
@@ -41,7 +41,8 @@ export async function POST(req: Request) {
   const body = (await req.json()) as { message_id?: string; key?: string }
   const messageId = String(body.message_id || '').trim()
   const key = String(body.key || '').trim()
-  if (!messageId || !isAllowedReactionKey(key)) {
+  // Accept any non-empty reaction key (emoji or legacy key like "thumbs_up"), max 20 chars
+  if (!messageId || !key || key.length > 20) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
   }
 
@@ -55,18 +56,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  const del = await pool.query(
-    `DELETE FROM aaelink.message_reactions
-     WHERE message_id = $1 AND user_id = $2 AND reaction_key = $3`,
-    [messageId, uid, key]
-  )
-  if ((del.rowCount ?? 0) === 0) {
-    const now = Date.now()
-    await pool.query(
-      `INSERT INTO aaelink.message_reactions (message_id, user_id, reaction_key, created_at)
-       VALUES ($1, $2, $3, $4)`,
-      [messageId, uid, key, now]
+  // Atomic toggle: try to delete first; if nothing was deleted, insert.
+  // Wrap in a transaction to prevent race conditions from rapid clicks.
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const del = await client.query(
+      `DELETE FROM aaelink.message_reactions
+       WHERE message_id = $1 AND user_id = $2 AND reaction_key = $3`,
+      [messageId, uid, key]
     )
+    if ((del.rowCount ?? 0) === 0) {
+      const now = Date.now()
+      await client.query(
+        `INSERT INTO aaelink.message_reactions (message_id, user_id, reaction_key, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (message_id, user_id, reaction_key) DO NOTHING`,
+        [messageId, uid, key, now]
+      )
+    }
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
   }
 
   const reactions = await summarizeForMessage(pool, uid, messageId)

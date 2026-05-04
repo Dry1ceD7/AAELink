@@ -76,6 +76,13 @@ export default function LoginPage() {
     const q = new URLSearchParams(window.location.search)
     if (q.get('registered') === '1') setBanner('Account created. Sign in below.')
     if (q.get('verified') === '1') setBanner('Your access request was confirmed. When IT creates your sign-in, use it here.')
+    
+    // SSO Error handling
+    const err = q.get('error')
+    if (err === 'sso_disabled') setError('SSO is currently disabled. Please sign in with email/password.')
+    else if (err === 'sso_failed') setError('SSO authentication failed. Please try again.')
+    else if (err === 'sso_profile_failed') setError('Failed to retrieve user profile from identity provider.')
+    else if (err === 'sso_error') setError('An unexpected SSO error occurred.')
   }, [])
 
   useEffect(() => {
@@ -358,6 +365,18 @@ export default function LoginPage() {
 
               <div className="mm-login-divider">
                 <span>or</span>
+              </div>
+
+              <div style={{ marginBottom: 24, textAlign: 'center' }}>
+                <a href="/api/auth/entra" className="ghost-button" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '12px 16px', background: '#fff', color: '#333', border: '1px solid #ccc', borderRadius: 4, textDecoration: 'none', fontWeight: 600 }}>
+                  <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                  </svg>
+                  Sign in with Microsoft
+                </a>
               </div>
 
               <p className="mm-login-request-row">

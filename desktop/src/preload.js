@@ -8,6 +8,9 @@ const { contextBridge, ipcRenderer } = require("electron");
  * Only whitelisted, named channels are bridged — no arbitrary ipcRenderer.send.
  */
 contextBridge.exposeInMainWorld("aaelinkDesktop", {
+  /** The host OS platform — used to show ⌘ vs Ctrl in shortcut hints. */
+  platform: process.platform,
+
   // ── Native OS notification ──────────────────────────────────────────────
   /**
    * @param {{ title?: string; body: string; workspace_id?: string; focus_message_id?: string }} payload
@@ -64,5 +67,45 @@ contextBridge.exposeInMainWorld("aaelinkDesktop", {
     const listener = (_event, payload) => callback(payload ?? {});
     ipcRenderer.on("aaelink-deep-link", listener);
     return () => ipcRenderer.removeListener("aaelink-deep-link", listener);
+  },
+
+  // ── App Update ────────────────────────────────────────────────────────
+  /**
+   * Check for updates via GitHub Releases.
+   * @returns {Promise<{ status: string; updateInfo?: object; error?: string }>}
+   */
+  checkForUpdate: () =>
+    ipcRenderer.invoke("aaelink:check-for-update"),
+
+  /**
+   * Get the current update status.
+   * @returns {Promise<{ status: string; version?: string; progress?: number; error?: string }>}
+   */
+  getUpdateStatus: () =>
+    ipcRenderer.invoke("aaelink:get-update-status"),
+
+  /**
+   * Get the current app version and packaged state.
+   * @returns {Promise<{ version: string; isPackaged: boolean }>}
+   */
+  getAppVersion: () =>
+    ipcRenderer.invoke("aaelink:get-app-version"),
+
+  /**
+   * Install a downloaded update (quits and restarts).
+   */
+  installUpdate: () =>
+    ipcRenderer.invoke("aaelink:install-update"),
+
+  /**
+   * Subscribe to update status events from the main process.
+   * @param {(status: { status: string; version?: string; progress?: number; error?: string }) => void} callback
+   * @returns {() => void}  Unsubscribe
+   */
+  subscribeUpdateStatus: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, status) => callback(status ?? {});
+    ipcRenderer.on("aaelink-update-status", listener);
+    return () => ipcRenderer.removeListener("aaelink-update-status", listener);
   },
 });

@@ -24,7 +24,7 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
   const [toast, setToast] = useState<{ title: string; id: string } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const [popoverFixed, setPopoverFixed] = useState<{ left: number; bottom: number } | null>(null)
+  const [popoverFixed, setPopoverFixed] = useState<{ left: number; top: number } | null>(null)
   const prevUnread = useRef(0)
   const firstPoll = useRef(true)
   const priorFocusBeforePopoverRef = useRef<HTMLElement | null>(null)
@@ -174,7 +174,7 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
     const wrap = wrapRef.current
     if (!wrap || !open) return
     const r = wrap.getBoundingClientRect()
-    setPopoverFixed({ left: r.left + r.width / 2, bottom: window.innerHeight - r.top + 8 })
+    setPopoverFixed({ left: r.left + r.width / 2, top: r.bottom + 8 })
   }, [open])
 
   useLayoutEffect(() => {
@@ -362,8 +362,9 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
         style={{
           position: 'fixed',
           left: popoverFixed.left,
-          bottom: popoverFixed.bottom,
-          transform: 'translateX(-50%)'
+          top: popoverFixed.top,
+          transform: 'translateX(-50%)',
+          maxHeight: `calc(100vh - ${popoverFixed.top + 16}px)`
         }}
       >
         <div className="mm-notif-popover-head">

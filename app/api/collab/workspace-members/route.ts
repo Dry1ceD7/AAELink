@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   )
   if (mem.length === 0) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   const { rows } = await pool.query(
-    `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.nickname, u.last_seen_at
+    `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.nickname, u.last_seen_at, u.avatar_url, u.job_title, u.phone, u.timezone, u.status_text, u.status_emoji
      FROM aaelink.users u
      INNER JOIN aaelink.workspace_members m ON m.user_id = u.id AND m.workspace_id = $1
      ORDER BY u.username ASC`,

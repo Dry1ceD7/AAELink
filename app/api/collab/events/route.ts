@@ -3,6 +3,10 @@ import { userCanReadChannel } from '@/lib/collab-access'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { startScheduledMessageProcessor } from '@/lib/scheduledMessageProcessor'
+
+// Start the scheduled message delivery processor on module load
+startScheduledMessageProcessor()
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

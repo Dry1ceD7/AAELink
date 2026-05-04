@@ -304,8 +304,7 @@
           window.location.href = url;
         }, 300);
       }
-
-      btnEl.disabled = false;
+      // Note: button stays disabled intentionally — navigation is in progress.
     }
 
     function showStatus(msg, type) {

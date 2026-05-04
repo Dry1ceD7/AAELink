@@ -25,6 +25,9 @@ export async function POST(req: Request) {
   if (!pool) {
     return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   }
+  const userAgent = req.headers.get('user-agent') || ''
+  const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip') || ''
   try {
     await ensureSchema()
   } catch (e) {
@@ -49,14 +52,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
     }
     const sessionId = randomUUID()
-    const expiresAt = Date.now() + SESSION_MS
-    await pool.query(`INSERT INTO aaelink.sessions (id, user_id, expires_at) VALUES ($1, $2, $3)`, [
-      sessionId,
-      row.id,
-      expiresAt
-    ])
+    const now = Date.now()
+    const expiresAt = now + SESSION_MS
+    await pool.query(
+      `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [sessionId, row.id, expiresAt, userAgent, ipAddress, now]
+    )
+    // Mark user as online immediately (don't wait for the first heartbeat)
+    await pool.query(
+      `UPDATE aaelink.users SET last_seen_at = $1 WHERE id = $2`,
+      [now, row.id]
+    )
     const u = await pool.query(
-      `SELECT id, username, email, first_name, last_name, nickname FROM aaelink.users WHERE id = $1`,
+      `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji FROM aaelink.users WHERE id = $1`,
       [row.id]
     )
     const user = u.rows[0]

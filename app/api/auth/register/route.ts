@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       [id, username, email, password_hash, first_name, last_name, now]
     )
     const { rows } = await pool.query(
-      `SELECT id, username, email, first_name, last_name, nickname FROM aaelink.users WHERE id = $1`,
+      `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji FROM aaelink.users WHERE id = $1`,
       [id]
     )
     return NextResponse.json({ user: rows[0] })

@@ -96,5 +96,7 @@ docs/deployment/
 *.p12
 *.pfx
 secrets/
+infra/*/secrets.yaml
+!infra/*/secrets.example.yaml
 sqlite.db
 .kilocode/

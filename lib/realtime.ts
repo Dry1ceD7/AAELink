@@ -4,6 +4,14 @@ import type { ReactionSummary } from '@/lib/reactions'
 import { apiFetch } from '@/lib/apiClient'
 import { subscribeNetworkOrVisibilityResume } from '@/lib/sseResilience'
 
+export interface FileAttachment {
+  id: string
+  name: string
+  size: number
+  mime_type: string
+  url: string
+}
+
 export interface ChatPost {
   id: string
   channel_id: string
@@ -18,6 +26,8 @@ export interface ChatPost {
   /** Server ms when body was last edited (only if after create_at). */
   edited_at?: number
   pending?: boolean
+  /** File attachments uploaded with this message. */
+  file_attachments?: FileAttachment[]
 }
 
 /** One HTTP poll for channel deltas (same contract as {@link startMessagePoll} intervals). */

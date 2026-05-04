@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Hash, Keyboard, LayoutGrid, Search, Settings, Shield, Ticket, FileText, MessageSquare, Plus, Users } from 'lucide-react'
+import { Hash, Keyboard, LayoutGrid, Package, Search, Settings, Shield, Ticket, FileText, MessageSquare, Plus, Users } from 'lucide-react'
 
 export type CommandPaletteItem = {
   id: string
@@ -23,6 +23,7 @@ export type CommandPaletteItem = {
     | 'plus'
     | 'members'
     | 'keyboard'
+    | 'marketplace'
   run: () => void
 }
 
@@ -49,6 +50,8 @@ function itemIcon(kind?: CommandPaletteItem['icon']) {
       return <Users size={s} aria-hidden="true" />
     case 'keyboard':
       return <Keyboard size={s} aria-hidden="true" />
+    case 'marketplace':
+      return <Package size={s} aria-hidden="true" />
     case 'channel':
     default:
       return <Hash size={s} aria-hidden="true" />

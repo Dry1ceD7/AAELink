@@ -310,7 +310,11 @@ function createWindow() {
   if (!startUrl) {
     win.loadFile(path.join(__dirname, "offline.html"));
   } else {
-    win.loadURL(startUrl).catch((err) => {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("ERR_CONNECTION_TIMED_OUT")), 7000);
+    });
+
+    Promise.race([win.loadURL(startUrl), timeoutPromise]).catch((err) => {
       console.error("[AAELink] Failed to load URL:", startUrl, err.message || err);
       if (!win.isDestroyed()) {
         win.loadFile(path.join(__dirname, "offline.html"), {
@@ -327,14 +331,20 @@ function createWindow() {
   });
 
   win.webContents.on("will-navigate", (event, url) => {
+    // Allow navigation away from the offline page (connect form submission)
+    const currentUrl = win.webContents.getURL();
+    if (currentUrl.startsWith("file://") && currentUrl.includes("offline.html")) {
+      return;
+    }
+
     try {
       const target = new URL(url);
-      const origin = new URL(startUrl);
+      const origin = new URL(currentUrl); // Use the actual current origin, not the initial startUrl
       if (target.origin !== origin.origin) {
         event.preventDefault();
         shell.openExternal(url);
       }
-    } catch { /* allow same-origin navigation */ }
+    } catch { /* allow if parsing fails */ }
   });
 }
 

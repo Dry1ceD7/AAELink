@@ -1,0 +1,64 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getPool } from '@/lib/db'
+import { ensureSchema } from '@/lib/migrate'
+import { readSessionUserId } from '@/lib/session'
+import { randomUUID } from 'crypto'
+
+export async function GET(req: NextRequest) {
+  await ensureSchema()
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const { searchParams } = new URL(req.url)
+  const workspaceId = searchParams.get('workspace_id')
+  
+  if (!workspaceId) {
+    return NextResponse.json({ error: 'workspace_id required' }, { status: 400 })
+  }
+
+  try {
+    const { rows: events } = await pool.query(
+      `SELECT e.*, u.username as creator_username, u.first_name, u.last_name
+       FROM aaelink.calendar_events e
+       LEFT JOIN aaelink.users u ON e.created_by = u.id
+       WHERE e.workspace_id = $1
+       ORDER BY e.start_time ASC`,
+      [workspaceId]
+    )
+    return NextResponse.json({ events })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  await ensureSchema()
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const userId = await readSessionUserId()
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  try {
+    const body = await req.json()
+    const { workspace_id, title, description, start_time, end_time, location, is_all_day } = body
+
+    if (!workspace_id || !title || !start_time || !end_time) {
+      return NextResponse.json({ error: 'missing required fields' }, { status: 400 })
+    }
+
+    const id = randomUUID()
+    const now = Date.now()
+
+    await pool.query(
+      `INSERT INTO aaelink.calendar_events 
+       (id, workspace_id, title, description, start_time, end_time, location, is_all_day, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, workspace_id, title, description || '', start_time, end_time, location || '', is_all_day || false, userId, now]
+    )
+
+    return NextResponse.json({ success: true, id })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}

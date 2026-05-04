@@ -6,7 +6,8 @@ export async function userIsItForWorkspace(pool: Pool, uid: string, workspaceId:
     `SELECT platform_role FROM aaelink.users WHERE id = $1`,
     [uid]
   )
-  if (pr[0]?.platform_role === 'super_admin') return true
+  const role = pr[0]?.platform_role
+  if (role === 'super_admin' || role === 'it_admin' || role === 'it_employee') return true
   const { rows } = await pool.query(
     `SELECT 1
      FROM aaelink.workspace_members m
@@ -33,7 +34,7 @@ export async function getMemberDepartmentId(
 export async function canViewTicket(
   pool: Pool,
   uid: string,
-  ticket: { workspace_id: string | null; department_id: string | null; created_by: string | null }
+  ticket: { workspace_id: string | null; department_id: string | null; created_by: string | null; assignee_id?: string | null }
 ): Promise<boolean> {
   if (!ticket.workspace_id) return false
   const member = await pool.query(
@@ -42,6 +43,7 @@ export async function canViewTicket(
   )
   if (!member.rows[0]) return false
   if (ticket.created_by && ticket.created_by === uid) return true
+  if (ticket.assignee_id && ticket.assignee_id === uid) return true
   if (await userIsItForWorkspace(pool, uid, ticket.workspace_id)) return true
   const dept = await getMemberDepartmentId(pool, uid, ticket.workspace_id)
   if (ticket.department_id && dept && ticket.department_id === dept) return true

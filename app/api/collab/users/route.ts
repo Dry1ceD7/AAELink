@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const ids = Array.isArray(body.ids) ? body.ids.filter(Boolean).slice(0, 200) : []
   if (ids.length === 0) return NextResponse.json({ users: [] })
   const { rows } = await pool.query(
-    `SELECT DISTINCT u.id, u.username, u.email, u.first_name, u.last_name, u.nickname
+    `SELECT DISTINCT u.id, u.username, u.email, u.first_name, u.last_name, u.nickname, u.avatar_url, u.job_title, u.phone, u.timezone, u.status_text, u.status_emoji
      FROM aaelink.users u
      WHERE u.id = ANY($1::text[])
      AND (

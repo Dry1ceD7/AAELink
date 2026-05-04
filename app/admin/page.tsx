@@ -7,6 +7,9 @@ import { createPortal } from 'react-dom'
 import { AlertCircle } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { isPlatformAdmin, isSuperAdmin } from '@/lib/platformRole'
+import { AuditLogPanel } from '@/app/components/admin/AuditLogPanel'
+import { WebhookManagementPanel } from '@/app/components/admin/WebhookManagementPanel'
+import { WorkflowManagementPanel } from '@/app/components/admin/WorkflowManagementPanel'
 
 type Me = { platform_role?: string }
 
@@ -62,6 +65,10 @@ export default function AdminPage() {
   const [itOnline, setItOnline] = useState(false)
   const [itPresenceBusy, setItPresenceBusy] = useState(false)
   const [emergencyRows, setEmergencyRows] = useState<EmergencyQueueRow[]>([])
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null)
+  const [editRole, setEditRole] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editMsg, setEditMsg] = useState('')
   const issuedPanelRef = useRef<HTMLDivElement>(null)
   const issuedCopyRef = useRef<HTMLButtonElement>(null)
   const priorFocusBeforeIssuedRef = useRef<HTMLElement | null>(null)
@@ -511,21 +518,57 @@ export default function AdminPage() {
                 <thead>
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
                     <th style={{ padding: '6px' }}>User name</th>
+                    <th style={{ padding: '6px' }}>Name</th>
                     <th style={{ padding: '6px' }}>Email</th>
                     <th style={{ padding: '6px' }}>Role</th>
+                    <th style={{ padding: '6px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.slice(0, 40).map(u => (
                     <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                       <td style={{ padding: '6px' }}>@{u.username}</td>
+                      <td style={{ padding: '6px' }}>{[u.first_name, u.last_name].filter(Boolean).join(' ') || '—'}</td>
                       <td style={{ padding: '6px' }}>{u.email}</td>
-                      <td style={{ padding: '6px' }}>{u.platform_role || 'employee'}</td>
+                      <td style={{ padding: '6px' }}>
+                        <span className={`mm-settings-role-badge${u.platform_role === 'super_admin' ? ' mm-settings-role-badge--admin' : u.platform_role === 'it_admin' ? ' mm-settings-role-badge--admin' : ''}`}>
+                          {u.platform_role === 'super_admin' ? 'Super Admin'
+                            : u.platform_role === 'it_admin' ? 'IT Admin'
+                            : u.platform_role === 'it_support' ? 'IT Support'
+                            : u.platform_role === 'it_employee' ? 'IT Employee'
+                            : 'Employee'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '6px' }}>
+                        <button type="button" className="ghost-button" style={{ fontSize: 12, padding: '3px 8px' }}
+                          onClick={() => setEditingUser(u)}>
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <DepartmentManagement />
+
+          {/* ── Audit Log ─────────────────────────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <AuditLogPanel />
+          </section>
+
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <h2 className="mm-auth-section-title">
+              Workflow management
+            </h2>
+            <WorkflowManagementPanel />
+          </section>
+
+          {/* ── Webhook Management ────────────────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <WebhookManagementPanel workspaceId="" />
           </section>
           </div>
         </div>
@@ -572,6 +615,165 @@ export default function AdminPage() {
             document.body
           )
         : null}
+
+      {/* User role edit modal */}
+      {editingUser && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="admin-user-edit-modal" role="presentation"
+              onClick={e => { if (e.target === e.currentTarget) { setEditingUser(null); setEditMsg('') } }}>
+              <div className="admin-user-edit-card" role="dialog" aria-modal="true">
+                <h3>Edit User — @{editingUser.username}</h3>
+                <div className="mm-settings-form-row" style={{ marginBottom: 12 }}>
+                  <label className="mm-settings-form-label" htmlFor="edit-role">Platform Role</label>
+                  <select id="edit-role" className="admin-role-select"
+                    value={editRole || editingUser.platform_role || 'employee'}
+                    onChange={e => setEditRole(e.target.value)}>
+                    <option value="employee">Employee</option>
+                    <option value="it_employee">IT Employee</option>
+                    <option value="it_support">IT Support</option>
+                    {isSuperAdmin(me?.platform_role) && <option value="it_admin">IT Admin</option>}
+                    {isSuperAdmin(me?.platform_role) && <option value="super_admin">Super Admin</option>}
+                  </select>
+                </div>
+                {editMsg && (
+                  <div className={`mm-auth-alert ${editMsg.startsWith('Error') ? 'mm-auth-alert--error' : 'mm-auth-alert--success'}`}
+                    role="alert" style={{ marginBottom: 12, fontSize: 12 }}>
+                    <span>{editMsg}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="ghost-button"
+                    onClick={() => { setEditingUser(null); setEditMsg(''); setEditRole('') }}>
+                    Cancel
+                  </button>
+                  <button type="button" className="slack-button" disabled={editBusy}
+                    onClick={async () => {
+                      const role = editRole || editingUser.platform_role || 'employee'
+                      setEditBusy(true)
+                      setEditMsg('')
+                      try {
+                        const res = await apiFetch('/api/admin/users', {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ user_id: editingUser.id, platform_role: role })
+                        })
+                        if (!res.ok) {
+                          const d = await res.json().catch(() => ({})) as { error?: string }
+                          setEditMsg(`Error: ${d.error || 'save failed'}`)
+                        } else {
+                          setEditMsg('Saved successfully!')
+                          // Refresh user list
+                          const r2 = await apiFetch('/api/admin/users')
+                          if (r2.ok) {
+                            const d2 = await r2.json() as { users?: UserRow[] }
+                            if (d2.users) setUsers(d2.users)
+                          }
+                          setTimeout(() => { setEditingUser(null); setEditMsg(''); setEditRole('') }, 1200)
+                        }
+                      } catch {
+                        setEditMsg('Error: network error')
+                      } finally {
+                        setEditBusy(false)
+                      }
+                    }}>
+                    {editBusy ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
+  )
+}
+
+function DepartmentManagement() {
+  const [depts, setDepts] = useState<{ id: string; name: string; code: string; member_count: number }[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    const res = await apiFetch('/api/admin/departments')
+    if (!res.ok) return
+    const data = (await res.json()) as { departments?: { id: string; name: string; code: string; member_count: number }[] }
+    setDepts(data.departments ?? [])
+    setLoaded(true)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function createDept(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newName.trim() || creating) return
+    setCreating(true)
+    setMsg('')
+    const res = await apiFetch('/api/admin/departments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim() })
+    })
+    setCreating(false)
+    if (res.status === 409) {
+      setMsg('A department with that name already exists.')
+      return
+    }
+    if (!res.ok) {
+      setMsg('Could not create the department.')
+      return
+    }
+    setNewName('')
+    setMsg('Department created.')
+    void load()
+  }
+
+  if (!loaded) return null
+
+  return (
+    <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+      <h2 className="mm-auth-section-title">
+        Departments
+      </h2>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--mm-border-subtle)' }}>
+              <th style={{ padding: '6px' }}>Name</th>
+              <th style={{ padding: '6px' }}>Code</th>
+              <th style={{ padding: '6px' }}>Members</th>
+            </tr>
+          </thead>
+          <tbody>
+            {depts.map(d => (
+              <tr key={d.id} style={{ borderBottom: '1px solid var(--mm-border-subtle)' }}>
+                <td style={{ padding: '6px', fontWeight: 500 }}>{d.name}</td>
+                <td style={{ padding: '6px', fontFamily: 'monospace', fontSize: 12 }}>{d.code}</td>
+                <td style={{ padding: '6px' }}>{d.member_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <form onSubmit={createDept} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div>
+          <label className="field-label" htmlFor="new-dept-name">New department</label>
+          <input
+            id="new-dept-name"
+            type="text"
+            className="field-input"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="e.g. Marketing"
+            style={{ minWidth: 200 }}
+          />
+        </div>
+        <button type="submit" className="slack-button" disabled={creating || !newName.trim()}>
+          {creating ? 'Creating…' : 'Create'}
+        </button>
+      </form>
+      {msg && <p style={{ marginTop: 8, fontSize: 13, color: msg.includes('created') ? 'var(--mm-online)' : '#d24b4e' }}>{msg}</p>}
+    </section>
   )
 }

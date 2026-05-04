@@ -3,6 +3,7 @@ import './styles.css'
 import { Open_Sans } from 'next/font/google'
 import { DesktopNavigateSubscriber } from './components/DesktopNavigateSubscriber'
 import { UiDensityBoot } from './components/UiDensityBoot'
+import { ThemeBoot } from './components/ThemeBoot'
 
 const openSans = Open_Sans({
   subsets: ['latin'],
@@ -41,9 +42,29 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={openSans.variable}>
+    <html lang="en" className={openSans.variable} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var pref = localStorage.getItem('aaelink-theme');
+                  var effective = pref;
+                  if (!pref || pref === 'system') {
+                    effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                  }
+                  document.documentElement.setAttribute('data-theme', effective);
+                  document.documentElement.style.colorScheme = effective;
+                } catch (e) {}
+              })();
+            `
+          }}
+        />
+      </head>
       <body className={openSans.className}>
         <UiDensityBoot />
+        <ThemeBoot />
         <DesktopNavigateSubscriber />
         {children}
       </body>

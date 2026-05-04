@@ -30,8 +30,10 @@ export async function GET(req: Request) {
         } catch { /* ignored */ }
       }
 
+      let pending = false
       const tick = async () => {
-        if (stopped || req.signal.aborted) return
+        if (stopped || req.signal.aborted || pending) return
+        pending = true
         try {
           // Get all users in workspace
           const { rows } = await pool.query<{ id: string; last_seen_at: string }>(
@@ -50,6 +52,8 @@ export async function GET(req: Request) {
           controller.enqueue(enc.encode(`data: ${JSON.stringify({ presence })}\n\n`))
         } catch {
           // ignore
+        } finally {
+          pending = false
         }
       }
 

@@ -12,7 +12,7 @@
 [![Downloads](https://img.shields.io/github/downloads/Dry1ceD7/AAELink/total?label=downloads&color=blue)](https://github.com/Dry1ceD7/AAELink/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-0a2342)](#license)
 
-### Current version: **`v0.0.2-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.2-alpha)
+### Current version: **`v0.0.3-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.3-alpha)
 
 </div>
 
@@ -52,18 +52,35 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 
 ---
 
-## Current Features (Alpha 0.0.2)
+## Current Features (Alpha 0.0.3)
 
 - **IT Help Desk** — submit, comment, triage and resolve tickets with realtime updates.
 - **Identity & access** — sign-in, sessions, four built-in roles: `super_admin`, `it_admin`, `it_employee`, `employee`.
 - **Super-admin oversight** — cross-departmental visibility over every ticket, user, and module; protected against accidental lockout.
-- **Admin panel** — user CRUD, department CRUD, custom role CRUD, permission assignment.
-- **Workspaces & channels** — team-based workspace organization with channel messaging.
-- **Notifications** — realtime in-app alerts via SSE.
+- **Admin panel** — user CRUD, department CRUD, custom role CRUD, permission assignment, webhook management.
+- **Workspaces & channels** — team-based workspace organization with channel messaging, topic editing, bookmarks, and channel info panels.
+- **Multi-Party Direct Messages** — robust group chat, user presence indicators (online/away/DND/offline), and inline document media previews.
+- **Rich Messaging** — TipTap-powered composer with bold/italic/strikethrough/code formatting, @mention autocomplete, :emoji: inline autocomplete, message reactions (emoji picker), message forwarding, message pinning, threaded replies, and message drafts.
+- **Slash Commands** — 21 built-in commands: `/shrug`, `/tableflip`, `/unflip`, `/me`, `/status`, `/dnd`, `/mute`, `/unmute`, `/remind`, `/topic`, `/join`, `/invite`, `/archive`, `/unarchive`, `/rename`, `/who`, `/collapse`, `/expand`, `/code`, `/clear`, `/help`. Autocomplete popup with keyboard navigation.
+- **Channel Header Dropdown** — Chevron dropdown on the channel name: Star, Mute/Unmute, Copy Link, Invite People, Archive, Leave Channel.
+- **Jump to Latest** — floating button appears when scrolled away from the bottom of the chat timeline.
+- **New Messages Separator** — red divider line at the first unread message (Slack-style). Click to dismiss.
+- **Channel Archive/Unarchive** — archive channels from the header dropdown or `/archive` command. `/unarchive` to restore.
+- **User Profile Card** — local time display from timezone, DND badge, enhanced status.
+- **Message Reminders** — "Remind me in 30m/1h/4h" from the message More menu, or `/remind [minutes] [text]`. Fires as in-app notification.
+- **Mark as Unread** — rewind the read cursor on any message so unread indicators re-appear in the sidebar.
+- **Custom Status with Expiry** — set status text + emoji with auto-clear timer (Slack-style "Clear after…"). Via `/status`, `/dnd`, or the settings panel.
+- **Channel Categories** — sidebar channel grouping API (Favorites, Channels, DMs, custom sections) with per-user sort ordering.
+- **@here / @channel / @all** — group mentions with autocomplete and Slack-style amber highlight rendering.
+- **Link Previews** — automatic URL unfurling with OpenGraph title/description/image cards inline in messages.
+- **Search & Navigation** — Quick Switcher (⌘K), global full-text message search (⌘⇧F), keyboard shortcuts reference (⌘/), and channel details toggle (⌘.).
+- **File Management** — drag-and-drop file upload with progress bars, file attachment cards, presigned S3 downloads via MinIO.
+- **Notifications** — realtime in-app alerts via SSE, per-channel notification preferences, typing indicators.
+- **Notification Sounds** — Web Audio API chime (Default/Subtle/None) with volume slider in Settings. No external audio files needed.
+- **Scheduled Messages** — send-later date/time picker in the composer for deferred delivery.
 - **Emergency IT support** — OTP-verified login screen request queue for urgent access help.
 - **Documents foundation** — document upload/download with PDF operation queues.
-- **File storage** — uploads and downloads via MinIO with presigned URLs.
-- **Native desktop clients** — Windows `.exe` installer and macOS `.dmg`.
+- **Native desktop clients** — Windows `.exe` installer and macOS `.dmg` with auto-update support.
 - **WiFi/LAN deployable** — one host can serve the whole office for alpha testing.
 
 ---
@@ -72,14 +89,12 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 
 | Status | Item |
 |---|---|
-| Shipped (Alpha 0.0.2) | IT Help Desk, identity, admin panel, file uploads, desktop clients, emergency support, documents |
-| Next | Group chat, direct messages, channels |
+| Shipped (Alpha 0.0.3) | IT Help Desk, identity, admin panel, file uploads, desktop clients, emergency support, documents, group chat, direct messages, channels, SSO (Microsoft Entra ID) |
 | Next | Approvals and workflows |
 | Later | Knowledge base / wiki |
 | Later | Calendar, leave requests, attendance |
 | Later | HR, finance and procurement integrations |
 | Later | Mobile clients (iOS, Android) |
-| Later | Single sign-on with Microsoft Entra ID |
 
 ---
 

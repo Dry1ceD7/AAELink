@@ -3,10 +3,11 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Menu, Search, Hash, Lock, MessageCircle, ChevronDown, ChevronUp, Plus, MessageSquare, Bookmark, FileText, Settings, ShieldAlert, AlignLeft, Users, LogOut, UserPlus, Paintbrush, CircleDot } from 'lucide-react'
+import { Menu, Search, Hash, Lock, MessageCircle, ChevronDown, ChevronUp, Plus, MessageSquare, Bookmark, FileText, Settings, ShieldAlert, AlignLeft, Users, LogOut, UserPlus, Paintbrush, CircleDot, Info, Pin, Star, BellOff, Keyboard, CheckSquare, Book, Calendar, Puzzle, X, Package, SmilePlus, Copy, Check, Link2, GripVertical, PenLine } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { isPlatformAdmin } from '@/lib/platformRole'
 import { notifyDesktopChatMessage } from '@/lib/desktopNotify'
+import { playNotificationSound } from '@/lib/notificationSound'
 import { connectCollab, type ChatPost, type CollabDeletion } from '@/lib/realtime'
 import { cachePosts, readCachedPosts, removeCachedPosts, setChannelMeta, pruneChannel } from '@/lib/messageCache'
 import { ChatMessage, type AppUser, displayName } from '@/app/components/chat/ChatMessage'
@@ -19,12 +20,36 @@ import { useReadState } from '@/app/components/chat/useReadState'
 import { useVirtualTimeline } from '@/app/components/chat/useVirtualTimeline'
 import { NotificationsBell } from '@/app/components/NotificationsBell'
 import { CommandPalette, type CommandPaletteItem } from '@/app/components/CommandPalette'
+import { NewMessageModal } from '@/app/components/NewMessageModal'
 import { SearchPanel } from '@/app/components/chat/SearchPanel'
 import type { ReactionSummary } from '@/lib/reactions'
 import type { SlashMeUser } from '@/lib/composerSlash'
 import { enqueueMessage, startOutboxFlushListener } from '@/lib/outboxQueue'
 import { TicketsPanel } from '@/app/components/TicketsPanel'
 import { DocumentsPanel } from '@/app/components/DocumentsPanel'
+import { ApprovalsPanel } from '@/app/components/ApprovalsPanel'
+import { KnowledgeBasePanel } from '@/app/components/KnowledgeBasePanel'
+import { CalendarPanel } from '@/app/components/CalendarPanel'
+import { IntegrationsPanel } from '@/app/components/IntegrationsPanel'
+import { SsoSettingsPanel } from '@/app/components/SsoSettingsPanel'
+import { ThreadsListPanel } from '@/app/components/ThreadsListPanel'
+import { SavedItemsPanel } from '@/app/components/SavedItemsPanel'
+import { ChannelInfoPanel } from '@/app/components/ChannelInfoPanel'
+import { BookmarkBar } from '@/app/components/BookmarkBar'
+import { ChannelTopicInline } from '@/app/components/chat/ChannelTopicInline'
+import { PinnedMessagesPanel } from '@/app/components/PinnedMessagesPanel'
+import { UpdateBanner } from '@/app/components/UpdateBanner'
+import { ChannelNotifPrefsModal } from '@/app/components/ChannelNotifPrefsModal'
+import { UserProfileCard } from '@/app/components/UserProfileCard'
+import { KeyboardShortcutsModal } from '@/app/components/KeyboardShortcutsModal'
+import { ForwardMessageModal } from '@/app/components/chat/ForwardMessageModal'
+import { readStarredChannels, toggleStarChannel } from '@/lib/channelStars'
+import { getChannelIdsWithDrafts } from '@/lib/messageDrafts'
+import { GlobalSearchModal } from '@/app/components/GlobalSearchModal'
+import { QuickSwitcher } from '@/app/components/QuickSwitcher'
+import { SettingsShell } from '@/app/components/SettingsShell'
+import { MarketplacePanel } from '@/app/components/MarketplacePanel'
+import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
 
 interface Channel {
   id: string
@@ -34,6 +59,8 @@ interface Channel {
   type?: string
   unread_count?: number
   dm_peer_display?: string
+  purpose?: string
+  header?: string
 }
 
 interface Team {
@@ -58,22 +85,21 @@ function SidebarSection({ id, title, children, onAdd }: { id: string, title: str
     if (val !== null) setOpen(val === 'true')
   }, [id])
 
-  const toggle = (e: React.MouseEvent) => {
-    e.preventDefault()
-    const next = !open
+  const handleToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    const next = e.currentTarget.open
     setOpen(next)
     localStorage.setItem(`sidebar_section_${id}`, String(next))
   }
 
   return (
-    <details className="channel-section" open={open}>
-      <summary className="channel-section-head" onClick={toggle}>
+    <details className="channel-section" open={open} onToggle={handleToggle}>
+      <summary className="channel-section-head">
         <div className="section-title-wrap">
           <ChevronDown size={14} className="section-chevron" style={{ transform: open ? 'none' : 'rotate(-90deg)' }} />
           <p>{title}</p>
         </div>
         {onAdd && (
-          <button type="button" className="channel-add" onClick={(e) => { e.stopPropagation(); onAdd(); }}>
+          <button type="button" className="channel-add" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdd(); }}>
             <Plus size={16} />
           </button>
         )}
@@ -101,6 +127,8 @@ function HomeChat() {
   const [newChannelOpen, setNewChannelOpen] = useState(false)
   const [newChannelDisplay, setNewChannelDisplay] = useState('')
   const [newChannelSlug, setNewChannelSlug] = useState('')
+  const [newChannelPurpose, setNewChannelPurpose] = useState('')
+  const [newChannelPrivate, setNewChannelPrivate] = useState(false)
   const [channelBusy, setChannelBusy] = useState(false)
   const [channelFormError, setChannelFormError] = useState('')
   const [channelsOpen, setChannelsOpen] = useState(false)
@@ -112,6 +140,37 @@ function HomeChat() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [pendingDeleteMsg, setPendingDeleteMsg] = useState<ChatPost | null>(null)
+  const [channelInfoOpen, setChannelInfoOpen] = useState(false)
+  const [profileUserId, setProfileUserId] = useState<string | null>(null)
+  const [forwardMsg, setForwardMsg] = useState<ChatPost | null>(null)
+  const [forwardTarget, setForwardTarget] = useState('')
+  const [forwardBusy, setForwardBusy] = useState(false)
+  const [newMessageOpen, setNewMessageOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false)
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
+  const [draftIds, setDraftIds] = useState<Set<string>>(new Set())
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false)
+  const [customStatusOpen, setCustomStatusOpen] = useState(false)
+  const [channelNotifPrefsOpen, setChannelNotifPrefsOpen] = useState(false)
+  const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false)
+  const [customStatusEmoji, setCustomStatusEmoji] = useState('')
+  const [customStatusText, setCustomStatusText] = useState('')
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [sidebarCustomizerOpen, setSidebarCustomizerOpen] = useState(false)
+  const [showJumpBottom, setShowJumpBottom] = useState(false)
+  const [unreadSepId, setUnreadSepId] = useState<string | null>(null)
+  const [sidebarSections, setSidebarSections] = useState([
+    { key: 'starred', label: 'Starred', icon: '⭐', enabled: true },
+    { key: 'channels', label: 'Channels', icon: '#', enabled: true },
+    { key: 'direct', label: 'Direct Messages', icon: '💬', enabled: true },
+    { key: 'modules', label: 'Modules', icon: '📦', enabled: true },
+    { key: 'people', label: 'People', icon: '👥', enabled: true }
+  ])
   const sinceMsRef = useRef(0)
   const meRef = useRef<AppUser | null>(null)
   const userMapRef = useRef<Record<string, AppUser>>({})
@@ -149,6 +208,18 @@ function HomeChat() {
       if (el) el.scrollTop = el.scrollHeight
     })
   }, [])
+
+  // ── Show "jump to bottom" button when scrolled away ──────────────────
+  useEffect(() => {
+    const el = timelineRef.current
+    if (!el) return
+    const onScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowJumpBottom(distFromBottom > 200)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [channel?.id])
 
   // ── Virtualized timeline ────────────────────────────────────────────────
   const { visibleRange, scrollToBottomIfPinned } = useVirtualTimeline(
@@ -228,7 +299,11 @@ function HomeChat() {
     })()
   }, [activeTeamId])
 
-  useEffect(() => { loadChannels() }, [loadChannels])
+  useEffect(() => { 
+    loadChannels()
+    const id = setInterval(loadChannels, 15000)
+    return () => clearInterval(id)
+  }, [loadChannels])
 
   // ── Deep-link navigation from desktop ───────────────────────────────────
   useEffect(() => {
@@ -320,6 +395,8 @@ function HomeChat() {
     setStreamUp(false)
     setOlderAvailable(false)
     setThreadRoot(null)
+    setUnreadSepId(null)
+    setShowJumpBottom(false)
 
     const chId = channel.id
 
@@ -370,6 +447,15 @@ function HomeChat() {
           workspaceId: wsId,
           focusMessageId: last.id
         })
+        playNotificationSound()
+        // Set unread separator if the user is scrolled away
+        const el = timelineRef.current
+        if (el) {
+          const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+          if (distFromBottom > 200) {
+            setUnreadSepId(prev => prev || others[0]!.id)
+          }
+        }
       }
       // Only add root-level posts to the main timeline
       const rootPosts = incoming.filter(p => !p.root_id)
@@ -456,6 +542,40 @@ function HomeChat() {
     }
   }, [pendingDeleteMsg])
 
+  // ── Pin message ─────────────────────────────────────────────────────────
+  const handlePinMessage = useCallback(async (post: ChatPost) => {
+    if (!channel) return
+    await apiFetch('/api/pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_id: channel.id, message_id: post.id })
+    })
+  }, [channel])
+
+  // ── Forward message ─────────────────────────────────────────────────────
+  const handleForwardMessage = useCallback((post: ChatPost) => {
+    setForwardMsg(post)
+    setForwardTarget('')
+  }, [])
+
+  const performForwardMsg = useCallback(async () => {
+    if (!forwardMsg || !forwardTarget || forwardBusy) return
+    setForwardBusy(true)
+    const target = channels.find(c => c.name === forwardTarget || c.id === forwardTarget)
+    if (target) {
+      await apiFetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel_id: target.id,
+          message: `> _Forwarded message:_\n> ${forwardMsg.message}`
+        })
+      })
+    }
+    setForwardBusy(false)
+    setForwardMsg(null)
+  }, [forwardMsg, forwardTarget, forwardBusy, channels])
+
   // ── Send message ────────────────────────────────────────────────────────
   const handleSend = useCallback(async (message: string) => {
     if (!message.trim() || !channel || !me) return
@@ -521,7 +641,6 @@ function HomeChat() {
     }
   }
 
-  // ── Create channel ──────────────────────────────────────────────────────
   async function createChannel() {
     setChannelFormError('')
     const display_name = newChannelDisplay.trim()
@@ -530,23 +649,35 @@ function HomeChat() {
     const res = await apiFetch('/api/channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace_id: activeTeamId, display_name, name: newChannelSlug.trim() || undefined })
+      body: JSON.stringify({ 
+        workspace_id: activeTeamId, 
+        display_name, 
+        name: newChannelSlug.trim() || undefined,
+        purpose: newChannelPurpose.trim() || undefined,
+        type: newChannelPrivate ? 'P' : 'O'
+      })
     })
     setChannelBusy(false)
     if (!res.ok) { setChannelFormError('Could not create channel.'); return }
     const data = (await res.json()) as { channel?: Channel }
-    setNewChannelOpen(false); setNewChannelDisplay(''); setNewChannelSlug('')
+    setNewChannelOpen(false); setNewChannelDisplay(''); setNewChannelSlug(''); setNewChannelPurpose(''); setNewChannelPrivate(false)
     loadChannels()
     if (data?.channel?.id) setChannel(data.channel)
   }
 
-  // ── Create DM ───────────────────────────────────────────────────────────
-  const openDm = useCallback(async (peerId: string) => {
-    if (!activeTeamId) return
+  // ── Create DM or Group DM ───────────────────────────────────────────────
+  const startChat = useCallback(async (peerIds: string[]) => {
+    if (!activeTeamId || peerIds.length === 0) return
+    const body: Record<string, any> = { workspace_id: activeTeamId, type: 'D' }
+    if (peerIds.length === 1) {
+      body.peer_user_id = peerIds[0]
+    } else {
+      body.peer_user_ids = peerIds
+    }
     const res = await apiFetch('/api/channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace_id: activeTeamId, type: 'D', peer_user_id: peerId })
+      body: JSON.stringify(body)
     })
     if (!res.ok) return
     const data = (await res.json()) as { channel?: Channel }
@@ -557,7 +688,9 @@ function HomeChat() {
     }
   }, [activeTeamId, loadChannels])
 
-  const channelTitle = channel?.display_name || channel?.name || 'channel'
+  const openDm = useCallback((peerId: string) => startChat([peerId]), [startChat])
+
+  const channelTitle = channel?.type === 'D' ? (channel.dm_peer_display || channel.name) : (channel?.display_name || channel?.name || 'channel')
   const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId), [teams, activeTeamId])
   const dmPreview = useMemo(() => teamMembers.filter(u => u.id !== me?.id).slice(0, 8), [teamMembers, me])
 
@@ -577,7 +710,8 @@ function HomeChat() {
     list.push(
       { id: 'nav-tickets', group: 'Modules', label: 'Tickets', icon: 'tickets', run: () => router.push('/tickets') },
       { id: 'nav-documents', group: 'Modules', label: 'Documents', icon: 'documents', run: () => router.push('/documents') },
-      { id: 'nav-settings', group: 'Account', label: 'Settings', icon: 'settings', run: () => router.push('/settings') },
+      { id: 'nav-settings', group: 'Account', label: 'Settings', icon: 'settings', run: () => setSettingsDrawerOpen(true) },
+      { id: 'nav-marketplace', group: 'Modules', label: 'Plugin Marketplace', icon: 'marketplace', run: () => router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=marketplace`) },
       { id: 'nav-workspaces', group: 'Account', label: 'All Workspaces', icon: 'workspaces', run: () => router.push('/workspaces') }
     )
     if (me && isPlatformAdmin(me.platform_role)) {
@@ -586,12 +720,43 @@ function HomeChat() {
     return list
   }, [channels, me, router])
 
-  // ── ⌘K / Ctrl+K: command palette shortcut ───────────────────────────────
+  // ── Load starred channels from localStorage ─────────────────────────────
+  useEffect(() => {
+    setStarredIds(readStarredChannels())
+    setDraftIds(new Set(getChannelIdsWithDrafts()))
+  }, [])
+
+  const handleToggleStar = useCallback((channelId: string) => {
+    toggleStarChannel(channelId)
+    setStarredIds(readStarredChannels())
+  }, [])
+
+  // Refresh draft indicators when channel changes
+  useEffect(() => {
+    setDraftIds(new Set(getChannelIdsWithDrafts()))
+  }, [channel?.id])
+
+  // ── ⌘/ / Ctrl+/: keyboard shortcuts modal ──────────────────────────────
+  // ── ⌘⇧F / Ctrl+Shift+F: global search ────────────────────────────────
+  // ── ⌘. / Ctrl+.: toggle right panel (channel info) ────────────────────
+  // ── ⌘⇧L / Ctrl+Shift+L: toggle sidebar ───────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault()
-        setCmdPaletteOpen(v => !v)
+        setShortcutsOpen(v => !v)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault()
+        setGlobalSearchOpen(v => !v)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault()
+        setChannelInfoOpen(v => !v)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault()
+        setChannelsOpen(v => !v)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -629,6 +794,18 @@ function HomeChat() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [wsMenuOpen, userMenuOpen])
+
+  // ── Cmd+K Quick Switcher ───────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setQuickSwitcherOpen(o => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <main className={`app-shell${channelsOpen ? ' app-shell--channels-open' : ''}${threadRoot ? ' app-shell--thread-open' : ''}`}>
@@ -674,14 +851,35 @@ function HomeChat() {
                   </div>
                 </div>
                 <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); /* invite flow */ }}>
+                <button type="button" className="ws-dropdown-item" onClick={async () => {
+                  setWsMenuOpen(false)
+                  setInviteBusy(true)
+                  setInviteUrl('')
+                  setInviteCopied(false)
+                  setInviteModalOpen(true)
+                  try {
+                    const res = await apiFetch('/api/workspaces/invite', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ workspace_id: activeTeamId })
+                    })
+                    if (res.ok) {
+                      const data = await res.json() as { invite_url: string }
+                      setInviteUrl(`${window.location.origin}${data.invite_url}`)
+                    }
+                  } catch { /* ignore */ }
+                  setInviteBusy(false)
+                }}>
                   <UserPlus size={16} /> Invite people to {activeTeam?.display_name || 'workspace'}
                 </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); router.push('/settings') }}>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setSettingsDrawerOpen(true) }}>
                   <Settings size={16} /> Preferences
                 </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); }}>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setSidebarCustomizerOpen(true) }}>
                   <Paintbrush size={16} /> Customize sidebar
+                </button>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setShortcutsOpen(true) }}>
+                  <Keyboard size={16} /> Keyboard shortcuts
                 </button>
                 <div className="ws-dropdown-divider" />
                 <Link href="/workspaces" className="ws-dropdown-item" onClick={() => setWsMenuOpen(false)}>
@@ -721,23 +919,62 @@ function HomeChat() {
             <button className={`channel${activeModule === 'saved' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=saved`) }}><Bookmark size={16} className="channel-icon" /> Saved items</button>
           </section>
 
+          {/* ── Starred Channels ──────────────────────────────────── */}
+          {channels.filter(c => starredIds.has(c.id)).length > 0 && (
+            <SidebarSection id="starred" title="Starred">
+              {channels.filter(c => starredIds.has(c.id)).map(item => (
+                <button type="button"
+                  className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
+                  key={`star-${item.id}`}
+                  onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
+                  <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
+                  <span className="channel-name">{item.display_name || item.name}</span>
+                  {(item.unread_count ?? 0) > 0 ? (
+                    <span className="channel-unread">{item.unread_count}</span>
+                  ) : null}
+                </button>
+              ))}
+            </SidebarSection>
+          )}
+
           <SidebarSection id="channels" title="Channels" onAdd={() => setNewChannelOpen(true)}>
             {channels.filter(c => c.type !== 'D').map(item => (
               <button type="button"
                 className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
                 key={item.id}
+                onContextMenu={(e) => { e.preventDefault(); handleToggleStar(item.id) }}
                 onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
-                <Hash size={15} className="channel-icon" />
+                {starredIds.has(item.id)
+                  ? <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
+                  : item.type === 'P' ? <Lock size={15} className="channel-icon" /> : <Hash size={15} className="channel-icon" />}
                 <span className="channel-name">{item.display_name || item.name}</span>
                 {(item.unread_count ?? 0) > 0 ? (
                   <span className="channel-unread">{item.unread_count}</span>
+                ) : draftIds.has(item.id) ? (
+                  <PenLine size={12} className="channel-draft-icon" />
                 ) : null}
               </button>
             ))}
           </SidebarSection>
 
-          <SidebarSection id="dms" title="Direct messages">
-            {channels.filter(c => c.type === 'D').map(item => {
+          <SidebarSection id="dms" title="Direct messages" onAdd={() => setNewMessageOpen(true)}>
+            {channels.filter(c => c.type === 'D' || c.type === 'G').map(item => {
+              if (item.type === 'G') {
+                return (
+                  <button type="button"
+                    className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
+                    key={item.id}
+                    onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', background: 'var(--c-bg-tertiary)', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
+                      {item.display_name.split(',').length + 1}
+                    </div>
+                    <span className="channel-name" style={{ marginLeft: '6px' }}>{item.display_name}</span>
+                    {(item.unread_count ?? 0) > 0 ? (
+                      <span className="channel-unread">{item.unread_count}</span>
+                    ) : null}
+                  </button>
+                )
+              }
               const peerId = item.name.split('__').find(id => id !== me?.id) || ''
               const status = getStatus(peerId)
               return (
@@ -758,6 +995,12 @@ function HomeChat() {
           <SidebarSection id="modules" title="Modules">
             <button className={`channel${activeModule === 'tickets' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=tickets`) }}><AlignLeft size={15} className="channel-icon"/> <span className="channel-name">Tickets</span></button>
             <button className={`channel${activeModule === 'documents' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=documents`) }}><FileText size={15} className="channel-icon"/> <span className="channel-name">Documents</span></button>
+            <button className={`channel${activeModule === 'approvals' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=approvals`) }}><CheckSquare size={15} className="channel-icon"/> <span className="channel-name">Approvals</span></button>
+            <button className={`channel${activeModule === 'knowledge' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=knowledge`) }}><Book size={15} className="channel-icon"/> <span className="channel-name">Knowledge Base</span></button>
+            <button className={`channel${activeModule === 'calendar' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=calendar`) }}><Calendar size={15} className="channel-icon"/> <span className="channel-name">HR & Calendar</span></button>
+            {me && isPlatformAdmin(me.platform_role) && <button className={`channel${activeModule === 'integrations' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=integrations`) }}><Puzzle size={15} className="channel-icon"/> <span className="channel-name">Integrations</span></button>}
+            {me && isPlatformAdmin(me.platform_role) && <button className={`channel${activeModule === 'sso' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=sso`) }}><ShieldAlert size={15} className="channel-icon"/> <span className="channel-name">SSO Settings</span></button>}
+            <button className={`channel${activeModule === 'marketplace' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=marketplace`) }}><Package size={15} className="channel-icon"/> <span className="channel-name">Marketplace</span></button>
           </SidebarSection>
 
           <SidebarSection id="people" title="People">
@@ -789,7 +1032,9 @@ function HomeChat() {
             <div className="sidebar-user-info">
               <strong>{me ? displayName(me) : 'Loading...'}</strong>
               <span className="sidebar-user-status">
-                <CircleDot size={10} /> Active
+                {getStatus(me?.id || '') === 'dnd'
+                  ? <><BellOff size={10} /> Do Not Disturb</>
+                  : <><CircleDot size={10} /> Active</>}
               </span>
             </div>
             <ChevronUp size={16} className="sidebar-user-chevron" />
@@ -808,14 +1053,52 @@ function HomeChat() {
                   </div>
                 </div>
                 <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item" onClick={() => { setUserMenuOpen(false); router.push('/settings') }}>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setUserMenuOpen(false); setSettingsDrawerOpen(true) }}>
                   <Settings size={16} /> Profile &amp; preferences
+                </button>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setUserMenuOpen(false); setCustomStatusOpen(true) }}>
+                  <SmilePlus size={16} /> Set a custom status
                 </button>
                 {me && isPlatformAdmin(me.platform_role) ? (
                   <Link href="/admin" className="ws-dropdown-item" onClick={() => setUserMenuOpen(false)}>
                     <ShieldAlert size={16} /> Administration
                   </Link>
                 ) : null}
+                <div className="ws-dropdown-divider" />
+                <div className="ws-dropdown-status-section" style={{ padding: '6px 12px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--mm-muted)', letterSpacing: '0.5px' }}>Set status</span>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                    {([
+                      { key: 'online', label: 'Online', color: 'var(--mm-online)' },
+                      { key: 'away', label: 'Away', color: 'var(--mm-away)' },
+                      { key: 'dnd', label: 'DND', color: '#d24b4e' },
+                      { key: 'offline', label: 'Offline', color: 'var(--mm-offline)' }
+                    ] as const).map(s => (
+                      <button key={s.key} type="button"
+                        style={{
+                          flex: 1, padding: '5px 0', border: '1px solid var(--mm-border-subtle)',
+                          borderRadius: 6, background: 'transparent', cursor: 'pointer',
+                          fontSize: 11, fontWeight: 500, color: 'var(--fg)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(128,128,128,0.1)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                        onClick={async () => {
+                          await apiFetch('/api/user-status', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: s.key })
+                          })
+                          setUserMenuOpen(false)
+                        }}
+                      >
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="ws-dropdown-divider" />
                 <button type="button" className="ws-dropdown-item ws-dropdown-item--danger"
                   onClick={async () => { setUserMenuOpen(false); await apiFetch('/api/auth/logout', { method: 'POST' }); router.replace('/login') }}>
@@ -874,6 +1157,144 @@ function HomeChat() {
             <DocumentsPanel workspaceId={activeTeamId} />
           </div>
         </section>
+      ) : activeModule === 'approvals' ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>Approvals</h1>
+              <p>Manage pending workflows and requests</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <ApprovalsPanel workspaceId={activeTeamId} />
+          </div>
+        </section>
+      ) : activeModule === 'knowledge' ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>Knowledge Base</h1>
+              <p>Company wiki and documentation</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <KnowledgeBasePanel workspaceId={activeTeamId} />
+          </div>
+        </section>
+      ) : activeModule === 'calendar' ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>HR & Calendar</h1>
+              <p>Schedule events, manage leaves, and track attendance</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <CalendarPanel workspaceId={activeTeamId} />
+          </div>
+        </section>
+      ) : activeModule === 'integrations' && me && isPlatformAdmin(me.platform_role) ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>Integrations</h1>
+              <p>Connect external tools, webhooks, and apps</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <IntegrationsPanel workspaceId={activeTeamId} />
+          </div>
+        </section>
+      ) : activeModule === 'sso' && me && isPlatformAdmin(me.platform_role) ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>SSO Settings</h1>
+              <p>Configure Single Sign-On and Identity Providers</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
+            <SsoSettingsPanel />
+          </div>
+        </section>
+      ) : activeModule === 'marketplace' ? (
+        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
+          <header className="chat-header">
+            <div className="chat-header-nav">
+              <button type="button" className="app-shell-menu-btn"
+                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
+                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
+                onClick={() => setChannelsOpen(o => !o)}>
+                <Menu size={20} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1>Plugin Marketplace</h1>
+              <p>Browse, install, and publish workspace plugins</p>
+            </div>
+            <div className="chat-header-nav">
+              <NotificationsBell enabled={Boolean(me)} />
+            </div>
+          </header>
+          <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
+            <MarketplacePanel workspaceId={activeTeamId} />
+          </div>
+        </section>
       ) : activeModule === 'threads' ? (
         <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
           <header className="chat-header">
@@ -891,13 +1312,13 @@ function HomeChat() {
               <NotificationsBell enabled={Boolean(me)} />
             </div>
           </header>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mm-muted)' }}>
-            <div style={{ textAlign: 'center' }}>
-              <MessageSquare size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
-              <h2>No threads yet</h2>
-              <p>When you reply to a message in a channel, it will show up here.</p>
-            </div>
-          </div>
+          <ThreadsListPanel workspaceId={activeTeamId} onOpenThread={(chId, rootId) => {
+            // Navigate to the channel and open the thread
+            const ch = channels.find(c => c.id === chId)
+            if (ch) {
+              router.push(`/home?team=${encodeURIComponent(activeTeamId)}&channel=${encodeURIComponent(ch.name)}&thread=${encodeURIComponent(rootId)}`)
+            }
+          }} />
         </section>
       ) : activeModule === 'saved' ? (
         <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
@@ -916,17 +1337,18 @@ function HomeChat() {
               <NotificationsBell enabled={Boolean(me)} />
             </div>
           </header>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mm-muted)' }}>
-            <div style={{ textAlign: 'center' }}>
-              <Bookmark size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
-              <h2>No saved items</h2>
-              <p>Save messages to easily find them later.</p>
-            </div>
-          </div>
+          <SavedItemsPanel onOpenMessage={(chId, msgId) => {
+            const ch = channels.find(c => c.id === chId)
+            if (ch) {
+              const qs = `team=${encodeURIComponent(activeTeamId)}&channel=${encodeURIComponent(ch.name)}${msgId ? `&focus_msg=${encodeURIComponent(msgId)}` : ''}`
+              router.push(`/home?${qs}`)
+            }
+          }} />
         </section>
       ) : (
         <>
         <section className="chat-pane">
+        <UpdateBanner />
         <header className="chat-header">
           <div className="chat-header-nav">
             <button type="button" className="app-shell-menu-btn"
@@ -936,15 +1358,59 @@ function HomeChat() {
               <Menu size={20} strokeWidth={2} aria-hidden />
             </button>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1>{channel?.type === 'D' ? '' : '# '}{channelTitle}</h1>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              {channel?.type === 'P' ? <Lock size={22} style={{marginRight: 8, color: 'var(--mm-muted)'}} /> : channel?.type === 'D' ? null : <Hash size={22} style={{marginRight: 8, color: 'var(--mm-muted)'}} />}
+              <h1 style={{ margin: 0, fontSize: 18 }}>{channelTitle}</h1>
+              {channel && channel.type !== 'D' && (
+                <ChannelHeaderDropdown
+                  channelId={channel.id}
+                  channelName={channel.display_name || channel.name}
+                  channelType={channel.type || 'O'}
+                  isStarred={starredIds.has(channel.id)}
+                  onToggleStar={() => handleToggleStar(channel.id)}
+                  onLeaveChannel={async () => {
+                    await apiFetch(`/api/channel-members?channel_id=${encodeURIComponent(channel.id)}&user_id=me`, { method: 'DELETE' })
+                    setChannels(prev => prev.filter(c => c.id !== channel.id))
+                    setChannel(null)
+                  }}
+                  onInviteToChannel={() => setInviteModalOpen(true)}
+                />
+              )}
+            </div>
+            {channel && channel.type !== 'D' && (
+              <ChannelTopicInline
+                channelId={channel.id}
+                topic={channel.purpose || ''}
+                onSaved={(newTopic) => {
+                  setChannels(prev => prev.map(c => c.id === channel.id ? { ...c, purpose: newTopic } : c))
+                }}
+              />
+            )}
           </div>
           <div className="chat-header-nav">
             <button type="button" className="mm-icon-btn" title="Search messages"
               aria-label="Search messages" onClick={() => setSearchOpen(true)}>
               <Search size={18} aria-hidden />
             </button>
+            <button type="button" className={`mm-icon-btn${channelInfoOpen ? ' mm-icon-btn--active' : ''}`} title="Channel details"
+              aria-label="Channel details" aria-pressed={channelInfoOpen}
+              onClick={() => setChannelInfoOpen(o => !o)}>
+              <Info size={18} aria-hidden />
+            </button>
+            <button type="button" className={`mm-icon-btn${pinnedPanelOpen ? ' mm-icon-btn--active' : ''}`} title="Pinned messages"
+              aria-label="Pinned messages" aria-pressed={pinnedPanelOpen}
+              onClick={() => setPinnedPanelOpen(o => !o)}>
+              <Pin size={16} aria-hidden />
+            </button>
             <NotificationsBell enabled={Boolean(me)} />
+            {channel && channel.type !== 'D' && (
+              <button type="button" className="mm-icon-btn" title="Notification preferences"
+                aria-label="Notification preferences"
+                onClick={() => setChannelNotifPrefsOpen(true)}>
+                <BellOff size={16} aria-hidden />
+              </button>
+            )}
             <button type="button" className={`mm-icon-btn${memberListOpen ? ' mm-icon-btn--active' : ''}`} title="Members"
               aria-label="Channel members" aria-pressed={memberListOpen}
               onClick={() => setMemberListOpen(o => !o)}
@@ -957,6 +1423,9 @@ function HomeChat() {
             </span>
           </div>
         </header>
+
+        {/* ── Bookmark bar (Slack-style channel bookmarks) ──── */}
+        {channel && <BookmarkBar channelId={channel.id} channelType={channel.type} />}
 
         <div className="message-timeline" ref={timelineRef}>
           {olderAvailable ? (
@@ -971,7 +1440,7 @@ function HomeChat() {
           {posts.length === 0 && (
             <div className="channel-intro-block" style={{ padding: '40px 20px', marginTop: 'auto' }}>
               <div style={{ width: '72px', height: '72px', background: 'var(--mm-sidebar-bg)', color: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
-                {channel?.type === 'D' ? <Users size={36} /> : <Hash size={36} />}
+                {channel?.type === 'D' ? <Users size={36} /> : channel?.type === 'P' ? <Lock size={36} /> : <Hash size={36} />}
               </div>
               <h2 style={{ margin: '0 0 10px 0', fontSize: '24px', fontWeight: 'bold' }}>
                 {channel?.type === 'D' 
@@ -997,6 +1466,11 @@ function HomeChat() {
 
             return (
               <div key={post.id} className="message-group-wrapper">
+                {unreadSepId === post.id && (
+                  <div className="unread-separator" onClick={() => setUnreadSepId(null)} role="button" tabIndex={0} aria-label="Clear new messages marker">
+                    <span className="unread-separator-text">New messages</span>
+                  </div>
+                )}
                 {showDateDivider && (
                   <div className="date-divider">
                     <span className="date-divider-text">
@@ -1027,6 +1501,14 @@ function HomeChat() {
                     onOpenThread={setThreadRoot}
                     onEditMessage={handleEditMessage}
                     onDeleteMessage={handleDeleteMessage}
+                    onForwardMessage={handleForwardMessage}
+                    onPinMessage={handlePinMessage}
+                    onAvatarClick={uid => setProfileUserId(uid)}
+                    onMentionClick={username => {
+                      // Resolve @username to userId and open profile card
+                      const found = Object.values(userMap).find(u => u.username === username)
+                      if (found) setProfileUserId(found.id)
+                    }}
                     onReactionsUpdated={onReactionsUpdated} 
                   />
                 )}
@@ -1038,6 +1520,18 @@ function HomeChat() {
             <TypingIndicator channelId={channel.id} userMap={userMap} myId={me?.id || ''} />
           ) : null}
         </div>
+
+        {/* ── Jump to bottom floating button ────────────────────── */}
+        {showJumpBottom && (
+          <button
+            type="button"
+            className="jump-to-bottom-btn"
+            onClick={() => { scrollToBottom(); setShowJumpBottom(false) }}
+            aria-label="Jump to latest messages"
+          >
+            ↓ Jump to latest
+          </button>
+        )}
 
         <Composer ref={composerRef} channelId={channel?.id || ''} channelTitle={channelTitle}
           channelType={channel?.type} me={me as SlashMeUser | null}
@@ -1078,6 +1572,23 @@ function HomeChat() {
             )}
           </div>
         </aside>
+      )}
+
+      {/* ── Channel Info panel (right sidebar) ─────────────────── */}
+      {channelInfoOpen && channel && me && (
+        <ChannelInfoPanel channelId={channel.id} currentUserId={me.id} onClose={() => setChannelInfoOpen(false)} />
+      )}
+
+      {/* ── Pinned Messages panel (right sidebar) ─────────────── */}
+      {channel && (
+        <PinnedMessagesPanel
+          channelId={channel.id}
+          open={pinnedPanelOpen}
+          onClose={() => setPinnedPanelOpen(false)}
+          userNames={Object.fromEntries(
+            Object.entries(userMap).map(([id, u]) => [id, displayName(u)])
+          )}
+        />
       )}
       </>
       )}
@@ -1122,6 +1633,17 @@ function HomeChat() {
               <input className="slack-input" value={newChannelSlug}
                 onChange={e => setNewChannelSlug(e.target.value)} placeholder="Auto from display name if empty" />
             </label>
+            <label className="field-label" style={{ marginTop: 12 }}>Purpose (optional)
+              <textarea className="slack-input" value={newChannelPurpose}
+                onChange={e => setNewChannelPurpose(e.target.value)}
+                placeholder="What is this channel about?"
+                rows={2}
+                style={{ resize: 'vertical', minHeight: 48, fontFamily: 'inherit' }} />
+            </label>
+            <label className="field-label" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={newChannelPrivate} onChange={e => setNewChannelPrivate(e.target.checked)} />
+              <span>Make private (invite only)</span>
+            </label>
             {channelFormError ? <p className="form-error">{channelFormError}</p> : null}
             <div className="modal-actions">
               <button type="button" className="ghost-button" onClick={() => !channelBusy && setNewChannelOpen(false)}>Cancel</button>
@@ -1147,6 +1669,254 @@ function HomeChat() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Forward message modal ──────────────────────────────── */}
+      <ForwardMessageModal
+        open={!!forwardMsg}
+        messageBody={forwardMsg?.message || ''}
+        originalAuthor={forwardMsg ? (userMap[forwardMsg.user_id] ? displayName(userMap[forwardMsg.user_id]) : forwardMsg.user_id) : ''}
+        currentWorkspaceId={activeTeamId}
+        onClose={() => setForwardMsg(null)}
+      />
+
+      {/* ── Keyboard shortcuts modal ──────────────────────────── */}
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      {/* ── Global message search modal ─────────────────────────── */}
+      <GlobalSearchModal
+        open={globalSearchOpen}
+        onClose={() => setGlobalSearchOpen(false)}
+        workspaceId={activeTeamId}
+        onJumpToMessage={(channelId) => {
+          const match = channels.find(c => c.id === channelId)
+          if (match) { setChannel(match); setChannelsOpen(false) }
+        }}
+      />
+
+      {/* ── Quick Switcher (Cmd+K) ────────────────────────────── */}
+      <QuickSwitcher
+        open={quickSwitcherOpen}
+        onClose={() => setQuickSwitcherOpen(false)}
+        channels={channels}
+        teamMembers={teamMembers}
+        workspaceId={activeTeamId}
+        onSelectChannel={ch => { setChannel(ch); setChannelsOpen(false) }}
+        onSelectDm={uid => void openDm(uid)}
+      />
+
+      {/* ── User profile card popup ────────────────────────────── */}
+      {profileUserId && userMap[profileUserId] && (
+        <>
+          <button type="button" className="user-profile-backdrop" onClick={() => setProfileUserId(null)} aria-label="Close profile" />
+          <UserProfileCard
+            user={userMap[profileUserId]}
+            presenceStatus={getStatus(profileUserId)}
+            onClose={() => setProfileUserId(null)}
+            onStartDm={uid => { void openDm(uid); setProfileUserId(null) }}
+          />
+        </>
+      )}
+
+      {newMessageOpen && (
+        <NewMessageModal
+          open={newMessageOpen}
+          onClose={() => setNewMessageOpen(false)}
+          users={teamMembers}
+          meId={me?.id || ''}
+          onStartChat={startChat}
+        />
+      )}
+
+      {/* ── Settings Drawer (Slack-style fullscreen overlay) ── */}
+      {settingsDrawerOpen && (
+        <>
+          <div className="settings-drawer-backdrop" onClick={() => setSettingsDrawerOpen(false)} />
+          <div className="settings-drawer" role="dialog" aria-modal="true" aria-label="Settings"
+            onKeyDown={e => { if (e.key === 'Escape') setSettingsDrawerOpen(false) }}>
+            <div className="settings-drawer-header">
+              <h2>Preferences</h2>
+              <button type="button" className="settings-drawer-close"
+                onClick={() => setSettingsDrawerOpen(false)} aria-label="Close settings">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="settings-drawer-body">
+              <SettingsShell variant="drawer" onClose={() => setSettingsDrawerOpen(false)} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Channel Notification Preferences ─────────────── */}
+      {channel && (
+        <ChannelNotifPrefsModal
+          channelId={channel.id}
+          channelName={channel.display_name || channel.name}
+          open={channelNotifPrefsOpen}
+          onClose={() => setChannelNotifPrefsOpen(false)}
+        />
+      )}
+
+      {/* ── Custom Status Popup (Slack-style) ──────────────── */}
+      {customStatusOpen && (
+        <>
+          <div className="ws-menu-backdrop" onClick={() => setCustomStatusOpen(false)} />
+          <div className="aae-auth-modal-overlay" onClick={() => setCustomStatusOpen(false)}>
+            <div className="custom-status-popup" style={{
+              position: 'relative', bottom: 'auto', left: 'auto', right: 'auto',
+              maxWidth: 420, width: '100%', margin: '0 auto'
+            }} onClick={e => e.stopPropagation()}>
+              <h4>Set a status</h4>
+              <div className="custom-status-row">
+                <button type="button" className="custom-status-emoji-btn"
+                  onClick={() => {
+                    const emojis = ['😊', '🏠', '🌴', '🤒', '🚀', '📅', '🎯', '💬', '🔇', '⛔']
+                    const idx = emojis.indexOf(customStatusEmoji)
+                    setCustomStatusEmoji(emojis[(idx + 1) % emojis.length])
+                  }}>
+                  {customStatusEmoji || '😊'}
+                </button>
+                <input type="text" className="custom-status-input"
+                  placeholder="What's your status?"
+                  value={customStatusText}
+                  onChange={e => setCustomStatusText(e.target.value)}
+                  maxLength={64}
+                  autoFocus />
+              </div>
+              <div className="custom-status-presets">
+                {([
+                  { emoji: '📅', text: 'In a meeting' },
+                  { emoji: '🚌', text: 'Commuting' },
+                  { emoji: '🤒', text: 'Out sick' },
+                  { emoji: '🌴', text: 'Vacationing' },
+                  { emoji: '🏠', text: 'Working remotely' },
+                  { emoji: '🔇', text: 'Focusing' }
+                ]).map(p => (
+                  <button key={p.text} type="button" className="custom-status-preset"
+                    onClick={() => { setCustomStatusEmoji(p.emoji); setCustomStatusText(p.text) }}>
+                    <span>{p.emoji}</span> {p.text}
+                  </button>
+                ))}
+              </div>
+              <div className="custom-status-actions">
+                <button type="button" className="ghost-button" style={{ fontSize: 13 }}
+                  onClick={async () => {
+                    setCustomStatusEmoji('')
+                    setCustomStatusText('')
+                    await apiFetch('/api/auth/me', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ status_emoji: '', status_text: '' })
+                    })
+                    setCustomStatusOpen(false)
+                  }}>
+                  Clear status
+                </button>
+                <button type="button" className="slack-button" style={{ fontSize: 13 }}
+                  onClick={async () => {
+                    await apiFetch('/api/auth/me', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        status_emoji: customStatusEmoji || '😊',
+                        status_text: customStatusText
+                      })
+                    })
+                    setCustomStatusOpen(false)
+                  }}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Invite Members Modal (Slack-style) ─────────────── */}
+      {inviteModalOpen && (
+        <>
+          <div className="ws-menu-backdrop" onClick={() => setInviteModalOpen(false)} />
+          <div className="aae-auth-modal-overlay" onClick={() => setInviteModalOpen(false)}>
+            <div className="invite-modal" onClick={e => e.stopPropagation()}>
+              <div className="invite-modal-header">
+                <h3>Invite people to {activeTeam?.display_name || 'workspace'}</h3>
+                <button type="button" className="mm-icon-btn" onClick={() => setInviteModalOpen(false)} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="invite-modal-body">
+                <p className="invite-modal-desc">
+                  Share this link with colleagues so they can join your workspace. The link expires in 7 days.
+                </p>
+                {inviteBusy ? (
+                  <div className="invite-modal-loading">
+                    <span className="module-loading">Generating invite link…</span>
+                  </div>
+                ) : inviteUrl ? (
+                  <div className="invite-modal-link-wrap">
+                    <div className="invite-modal-link-box">
+                      <Link2 size={15} style={{ flexShrink: 0, color: 'var(--mm-link)' }} />
+                      <span className="invite-modal-link-text">{inviteUrl}</span>
+                    </div>
+                    <button type="button" className="slack-button invite-modal-copy-btn"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(inviteUrl)
+                          setInviteCopied(true)
+                          setTimeout(() => setInviteCopied(false), 2500)
+                        } catch { /* fallback */ }
+                      }}>
+                      {inviteCopied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy link</>}
+                    </button>
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--mm-muted)', fontSize: 13 }}>Could not generate invite link. You may not have permission.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Sidebar Customizer (Slack-style) ───────────────── */}
+      {sidebarCustomizerOpen && (
+        <>
+          <div className="sidebar-customizer-overlay" onClick={() => setSidebarCustomizerOpen(false)} />
+          <div className="sidebar-customizer" role="dialog" aria-modal="true" aria-label="Customize sidebar">
+            <div className="sidebar-customizer-header">
+              <h3>Customize your sidebar</h3>
+              <button type="button" className="mm-icon-btn" onClick={() => setSidebarCustomizerOpen(false)} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="sidebar-customizer-body">
+              <p style={{ padding: '0 18px 8px', margin: 0, fontSize: 12, color: 'var(--mm-muted)' }}>
+                Toggle sections to show or hide them in your sidebar.
+              </p>
+              {sidebarSections.map((section, idx) => (
+                <div key={section.key} className="sidebar-customizer-item">
+                  <GripVertical size={16} className="grip-icon" />
+                  <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{section.icon}</span>
+                  <span className="item-label">{section.label}</span>
+                  <button
+                    type="button"
+                    className={`item-toggle${section.enabled ? ' active' : ''}`}
+                    aria-label={`Toggle ${section.label}`}
+                    onClick={() => {
+                      setSidebarSections(prev => {
+                        const next = [...prev]
+                        next[idx] = { ...next[idx], enabled: !next[idx].enabled }
+                        try { localStorage.setItem('aaelink_sidebar_sections', JSON.stringify(next)) } catch {}
+                        return next
+                      })
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </main>
   )

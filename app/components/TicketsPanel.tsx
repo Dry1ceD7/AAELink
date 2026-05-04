@@ -126,6 +126,7 @@ export function TicketsPanel({
   const [softSyncDepth, setSoftSyncDepth] = useState(0)
   const [threadLoadError, setThreadLoadError] = useState('')
   const [composeDiscardConfirmOpen, setComposeDiscardConfirmOpen] = useState(false)
+  const [itStaff, setItStaff] = useState<URow[]>([])
 
   const workspaceIdRef = useRef(workspaceId)
   const detailBusyRef = useRef(false)
@@ -387,6 +388,20 @@ export function TicketsPanel({
   useEffect(() => {
     setThreadLoadError('')
   }, [selectedId])
+
+  // Load IT-eligible staff for assignee dropdown (only when viewer is IT)
+  useEffect(() => {
+    if (!viewerIsIt || !workspaceId) return
+    void (async () => {
+      const res = await apiFetch('/api/admin/users')
+      if (!res.ok) return
+      const data = (await res.json()) as { users?: URow[] }
+      const staff = (data.users ?? []).filter((u: any) =>
+        ['super_admin', 'it_admin', 'it_support', 'it_employee'].includes(u.platform_role || '')
+      )
+      setItStaff(staff)
+    })()
+  }, [viewerIsIt, workspaceId])
 
   useEffect(() => {
     const el = panelRootRef.current
@@ -692,12 +707,18 @@ export function TicketsPanel({
 
   async function updateTicket(id: string, patch: Partial<Ticket>) {
     if (detailBusy) return
-    if (!viewerIsIt && (patch.status || patch.priority)) return
+    if (!viewerIsIt && (patch.status || patch.priority || patch.assigneeId !== undefined)) return
     setActionError('')
+    // Map camelCase fields to snake_case for the API
+    const apiPatch: Record<string, unknown> = { ...patch }
+    if ('assigneeId' in patch) {
+      apiPatch.assignee_id = patch.assigneeId || null
+      delete apiPatch.assigneeId
+    }
     const res = await apiFetch(`/api/tickets/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch)
+      body: JSON.stringify(apiPatch)
     })
     if (!res.ok) {
       setActionError(await messageFromFailedResponse(res, 'Could not update the ticket.'))
@@ -1000,6 +1021,22 @@ export function TicketsPanel({
                             <option value="medium">Medium</option>
                             <option value="urgent">Urgent</option>
                             <option value="critical">Critical</option>
+                          </select>
+                        </label>
+                        <label>
+                          Assignee
+                          <select
+                            value={selected.assigneeId || ''}
+                            disabled={detailBusy}
+                            onChange={e => {
+                              const val = e.target.value || null
+                              void updateTicket(selected.id, { assigneeId: val ?? undefined } as any)
+                            }}
+                          >
+                            <option value="">Unassigned</option>
+                            {itStaff.map(u => (
+                              <option key={u.id} value={u.id}>{displayU(u)} (@{u.username})</option>
+                            ))}
                           </select>
                         </label>
                       </div>

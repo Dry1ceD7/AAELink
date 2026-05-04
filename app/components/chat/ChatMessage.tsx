@@ -1,11 +1,14 @@
 'use client'
 
-import { memo, useCallback, useRef, useState } from 'react'
-import { Smile, MessageSquare, Forward, Pencil, Trash2 } from 'lucide-react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { Smile, MessageSquare, Forward, Pencil, Trash2, Bookmark, BookmarkCheck, Pin, Link2, MoreVertical, Copy, Clock, EyeOff } from 'lucide-react'
 import { MessageRichText } from '@/lib/messageRich'
-import { REACTION_KEYS, type ReactionSummary } from '@/lib/reactions'
+import { type ReactionSummary } from '@/lib/reactions'
 import { apiFetch } from '@/lib/apiClient'
 import type { ChatPost } from '@/lib/realtime'
+import { EmojiPicker } from './EmojiPicker'
+import { FileAttachmentCards } from './FileAttachmentCards'
+import { LinkPreview, extractPreviewUrl } from './LinkPreview'
 
 // ── Reaction icons (Lucide-mapped, no heavy emoji deps) ────────────────────
 const REACTION_ICON: Record<string, string> = {
@@ -23,6 +26,12 @@ export interface AppUser {
   last_name?: string
   nickname?: string
   platform_role?: string
+  avatar_url?: string
+  job_title?: string
+  phone?: string
+  timezone?: string
+  status_text?: string
+  status_emoji?: string
 }
 
 export function displayName(u: AppUser): string {
@@ -40,24 +49,35 @@ interface ChatMessageProps {
   onEditMessage: (post: ChatPost) => void
   onDeleteMessage: (post: ChatPost) => void
   onForwardMessage?: (post: ChatPost) => void
+  onPinMessage?: (post: ChatPost) => void
+  onAvatarClick?: (userId: string) => void
+  onMentionClick?: (username: string) => void
   onReactionsUpdated: (messageId: string, reactions: ReactionSummary[]) => void
   compact?: boolean
 }
 
-function MessageHeader({ label, time, edited }: { label: string, time: string, edited?: boolean }) {
+function MessageHeader({ label, time, fullDate, edited, onAuthorClick }: { label: string, time: string, fullDate?: string, edited?: boolean, onAuthorClick?: () => void }) {
   return (
     <div className="message-meta">
-      <strong>{label}</strong>
-      <span>{time}</span>
-      {edited ? <span className="message-edited">(edited)</span> : null}
+      {onAuthorClick ? (
+        <button type="button" className="message-author-btn" onClick={onAuthorClick}>
+          <strong>{label}</strong>
+        </button>
+      ) : (
+        <strong>{label}</strong>
+      )}
+      <span title={fullDate || time} className="message-time">{time}</span>
+      {edited ? <span className="message-edited" title="This message has been edited">(edited)</span> : null}
     </div>
   )
 }
 
 const MessageBody = memo(function MessageBody({ message }: { message: string }) {
+  const previewUrl = extractPreviewUrl(message)
   return (
     <div className="message-content">
       <MessageRichText text={message} />
+      {previewUrl ? <LinkPreview url={previewUrl} /> : null}
     </div>
   )
 })
@@ -101,6 +121,7 @@ function MessageActions({
   onEditMessage,
   onDeleteMessage,
   onForwardMessage,
+  onPinMessage,
   toggleReaction
 }: {
   post: ChatPost,
@@ -112,8 +133,11 @@ function MessageActions({
   onEditMessage: (p: ChatPost) => void,
   onDeleteMessage: (p: ChatPost) => void,
   onForwardMessage?: (p: ChatPost) => void,
+  onPinMessage?: (p: ChatPost) => void,
   toggleReaction: (k: string) => void
 }) {
+  const [saved, setSaved] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   return (
     <div className="message-actions-bar" role="toolbar" aria-label="Message actions">
       <button
@@ -134,11 +158,120 @@ function MessageActions({
       ) : null}
       <button
         type="button"
-        title="Forward message"
-        onClick={() => onForwardMessage?.(post)}
+        title={saved ? 'Saved!' : 'Save message'}
+        className={saved ? 'message-action-saved' : undefined}
+        onClick={async () => {
+          await apiFetch('/api/saved', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message_id: post.id, channel_id: post.channel_id })
+          })
+          setSaved(true)
+          setTimeout(() => setSaved(false), 1500)
+        }}
       >
-        <Forward size={16} />
+        {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
       </button>
+      <button
+        type="button"
+        title="Pin message"
+        onClick={() => onPinMessage?.(post)}
+      >
+        <Pin size={16} />
+      </button>
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button"
+          title="More actions"
+          onClick={() => setMoreOpen(o => !o)}
+        >
+          <MoreVertical size={16} />
+        </button>
+        {moreOpen && (
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setMoreOpen(false)} />
+            <div className="message-more-menu" role="menu">
+              <button type="button" role="menuitem" onClick={() => {
+                const text = post.message.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+                void navigator.clipboard.writeText(text)
+                setMoreOpen(false)
+              }}>
+                <Copy size={14} /> Copy text
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                const base = `${window.location.origin}${window.location.pathname}`
+                const sep = window.location.search ? '&' : '?'
+                void navigator.clipboard.writeText(`${base}${window.location.search}${sep}focus_msg=${post.id}`)
+                setMoreOpen(false)
+              }}>
+                <Link2 size={14} /> Copy link
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                onForwardMessage?.(post)
+                setMoreOpen(false)
+              }}>
+                <Forward size={14} /> Forward
+              </button>
+              <div style={{ height: 1, background: 'var(--mm-border-subtle)', margin: '4px 0' }} />
+              <button type="button" role="menuitem" onClick={() => {
+                void apiFetch('/api/collab/mark-unread', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ channel_id: post.channel_id, from_create_at: post.create_at })
+                })
+                setMoreOpen(false)
+              }}>
+                <EyeOff size={14} /> Mark as unread
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                void apiFetch('/api/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    body: post.message.replace(/<[^>]+>/g, '').slice(0, 200),
+                    message_id: post.id,
+                    channel_id: post.channel_id,
+                    fire_at: Date.now() + 30 * 60_000
+                  })
+                })
+                setMoreOpen(false)
+              }}>
+                <Clock size={14} /> Remind me in 30m
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                void apiFetch('/api/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    body: post.message.replace(/<[^>]+>/g, '').slice(0, 200),
+                    message_id: post.id,
+                    channel_id: post.channel_id,
+                    fire_at: Date.now() + 60 * 60_000
+                  })
+                })
+                setMoreOpen(false)
+              }}>
+                <Clock size={14} /> Remind me in 1h
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                void apiFetch('/api/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    body: post.message.replace(/<[^>]+>/g, '').slice(0, 200),
+                    message_id: post.id,
+                    channel_id: post.channel_id,
+                    fire_at: Date.now() + 4 * 60 * 60_000
+                  })
+                })
+                setMoreOpen(false)
+              }}>
+                <Clock size={14} /> Remind me in 4h
+              </button>
+            </div>
+          </>
+        )}
+      </div>
       {isSelf ? (
         <>
           <button
@@ -160,19 +293,11 @@ function MessageActions({
 
       {/* ── Reaction picker flyout ─────────────────────────── */}
       {reactionPickerOpen ? (
-        <div className="reaction-picker" role="menu">
-          {REACTION_KEYS.map(k => (
-            <button
-              key={k}
-              type="button"
-              className="reaction-pick"
-              title={k.replace(/_/g, ' ')}
-              disabled={reactBusy}
-              onClick={() => void toggleReaction(k)}
-            >
-              {REACTION_ICON[k] || k}
-            </button>
-          ))}
+        <div className="reaction-picker-container">
+          <EmojiPicker
+            onSelect={(emoji) => void toggleReaction(emoji)}
+            onClose={() => setReactionPickerOpen(false)}
+          />
         </div>
       ) : null}
     </div>
@@ -187,6 +312,9 @@ export const ChatMessage = memo(function ChatMessage({
   onEditMessage,
   onDeleteMessage,
   onForwardMessage,
+  onPinMessage,
+  onAvatarClick,
+  onMentionClick,
   onReactionsUpdated,
   compact
 }: ChatMessageProps) {
@@ -194,6 +322,13 @@ export const ChatMessage = memo(function ChatMessage({
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
   const [reactBusy, setReactBusy] = useState(false)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clean up hover timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    }
+  }, [])
 
   const isSelf = Boolean(me?.id && post.user_id === me.id)
   const u = userMap[post.user_id]
@@ -205,6 +340,10 @@ export const ChatMessage = memo(function ChatMessage({
         hour: '2-digit',
         minute: '2-digit'
       })
+  const fullDate = post.pending ? '' : new Date(post.create_at).toLocaleString([], {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  })
 
   const toggleReaction = useCallback(
     async (key: string) => {
@@ -267,7 +406,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <article
-      className={`message${post.pending ? ' message--pending' : ''}${compact ? ' message--compact' : ''}`}
+      className={`message${post.pending ? ' message--pending' : ''}${compact ? ' message--compact' : ''}${me && post.message.includes(`@${me.username}`) ? ' message--mention-me' : ''}`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       data-message-id={post.id}
@@ -277,13 +416,33 @@ export const ChatMessage = memo(function ChatMessage({
           <span className="compact-time">{time}</span>
         </div>
       ) : (
-        <div className="avatar" aria-hidden="true">
+        <div className="avatar" aria-hidden="true"
+          style={{ 
+            cursor: onAvatarClick ? 'pointer' : undefined,
+            ...(u?.avatar_url ? {
+              backgroundImage: `url(${u.avatar_url})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              color: 'transparent'
+            } : {})
+          }}
+          onClick={() => onAvatarClick?.(post.user_id)}>
           {initial}
         </div>
       )}
-      <div className="message-body-wrap">
-        {!compact && <MessageHeader label={label} time={time} edited={Boolean(post.edited_at)} />}
+      <div className="message-body-wrap" onClick={(e) => {
+        // Event delegation for @mention clicks
+        const target = (e.target as HTMLElement).closest('[data-mention-username]') as HTMLElement | null
+        if (target && onMentionClick) {
+          e.stopPropagation()
+          onMentionClick(target.dataset.mentionUsername!)
+        }
+      }}>
+        {!compact && <MessageHeader label={label} time={time} fullDate={fullDate} edited={Boolean(post.edited_at)} onAuthorClick={onAvatarClick ? () => onAvatarClick(post.user_id) : undefined} />}
         <MessageBody message={post.message} />
+        {post.file_attachments && post.file_attachments.length > 0 && (
+          <FileAttachmentCards attachments={post.file_attachments} />
+        )}
         <MessageReactions reactions={post.reactions} reactBusy={reactBusy} toggleReaction={toggleReaction} />
 
         {/* ── Thread tease ─────────────────────────────────────── */}
@@ -310,6 +469,7 @@ export const ChatMessage = memo(function ChatMessage({
           onEditMessage={onEditMessage}
           onDeleteMessage={onDeleteMessage}
           onForwardMessage={onForwardMessage}
+          onPinMessage={onPinMessage}
           toggleReaction={toggleReaction}
         />
       ) : null}
