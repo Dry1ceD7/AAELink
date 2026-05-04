@@ -169,6 +169,7 @@ function HomeChat() {
   const [inviteCopied, setInviteCopied] = useState(false)
   const [sidebarCustomizerOpen, setSidebarCustomizerOpen] = useState(false)
   const [showJumpBottom, setShowJumpBottom] = useState(false)
+  const [newMsgCount, setNewMsgCount] = useState(0)
   const [unreadSepId, setUnreadSepId] = useState<string | null>(null)
   const [sidebarSections, setSidebarSections] = useState([
     { key: 'starred', label: 'Starred', icon: '⭐', enabled: true },
@@ -225,7 +226,9 @@ function HomeChat() {
     if (!el) return
     const onScroll = () => {
       const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      setShowJumpBottom(distFromBottom > 200)
+      const away = distFromBottom > 200
+      setShowJumpBottom(away)
+      if (!away) setNewMsgCount(0)
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
@@ -466,6 +469,7 @@ function HomeChat() {
           const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
           if (distFromBottom > 200) {
             setUnreadSepId(prev => prev || others[0]!.id)
+            setNewMsgCount(c => c + others.length)
           }
         }
       }
@@ -1503,7 +1507,16 @@ function HomeChat() {
                 {showDateDivider && (
                   <div className="date-divider">
                     <span className="date-divider-text">
-                      {new Date(post.create_at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+                      {(() => {
+                        const d = new Date(post.create_at)
+                        const now = new Date()
+                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                        const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+                        const diff = today.getTime() - msgDay.getTime()
+                        if (diff === 0) return 'Today'
+                        if (diff === 86400000) return 'Yesterday'
+                        return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+                      })()}
                     </span>
                   </div>
                 )}
@@ -1555,10 +1568,10 @@ function HomeChat() {
           <button
             type="button"
             className="jump-to-bottom-btn"
-            onClick={() => { scrollToBottom(); setShowJumpBottom(false) }}
+            onClick={() => { scrollToBottom(); setShowJumpBottom(false); setNewMsgCount(0) }}
             aria-label="Jump to latest messages"
           >
-            ↓ Jump to latest
+            {newMsgCount > 0 ? `${newMsgCount} new message${newMsgCount > 1 ? 's' : ''} ↓` : '↓ Jump to latest'}
           </button>
         )}
 

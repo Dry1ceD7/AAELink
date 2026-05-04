@@ -4721,6 +4721,38 @@ button.mm-user-pill {
   border: 1px solid var(--mm-border, rgba(127, 127, 127, 0.2));
 }
 
+/* Fenced code block */
+.mm-code-block {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 4px 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--c-bg-tertiary, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--mm-border, rgba(127, 127, 127, 0.18));
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+.mm-code-block code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.mm-code-block-lang {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--mm-muted, #8a9199);
+  padding: 2px 8px;
+  margin-bottom: -4px;
+  font-weight: 600;
+}
+
 .mm-rich-link {
   color: var(--mm-link);
   font-weight: 600;
@@ -10811,6 +10843,159 @@ button.mm-user-pill {
   .lightbox-overlay {
     background: rgba(0, 0, 0, 0.92);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Batch 9 — Toast Animations, Date Dividers, Jump Badge, Code Copy
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Toast Notification — Slide-down entrance + auto-dismiss ───────── */
+@keyframes toastSlideDown {
+  from { opacity: 0; transform: translate(-50%, -100%); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes toastSlideUp {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, -100%); }
+}
+.mm-notif-toast {
+  animation: toastSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Notification Popover — Spring entrance ────────────────────────── */
+@keyframes notifPopoverSpring {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.mm-notif-popover-portal {
+  animation: notifPopoverSpring 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Notification row staggered entrance */
+.mm-notif-row {
+  animation: notifRowFade 0.2s ease-out both;
+}
+@keyframes notifRowFade {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.mm-notif-row:nth-child(1) { animation-delay: 0s; }
+.mm-notif-row:nth-child(2) { animation-delay: 0.03s; }
+.mm-notif-row:nth-child(3) { animation-delay: 0.06s; }
+.mm-notif-row:nth-child(4) { animation-delay: 0.09s; }
+.mm-notif-row:nth-child(5) { animation-delay: 0.12s; }
+
+/* ── Enhanced Date Divider — Sticky + subtle appearance ────────────── */
+.app-shell .date-divider {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.app-shell .date-divider-text {
+  transition: background 0.2s ease;
+  user-select: none;
+}
+
+/* ── Jump-to-bottom — New message count badge styling ──────────────── */
+.jump-to-bottom-btn {
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.jump-to-bottom-btn:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+.jump-to-bottom-btn:active {
+  transform: translateY(0);
+}
+
+/* ── Code Block — Copy button overlay ──────────────────────────────── */
+.mm-code-block-wrap {
+  position: relative;
+}
+.mm-code-block-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.12s ease;
+  font-family: inherit;
+}
+.mm-code-block-wrap:hover .mm-code-block-copy {
+  opacity: 1;
+}
+.mm-code-block-copy:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+.mm-code-block-copy--done {
+  background: rgba(46, 125, 50, 0.8) !important;
+  opacity: 1 !important;
+}
+
+/* ── Unread Separator — Enhanced pulse ─────────────────────────────── */
+@keyframes unreadSepPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+.unread-separator {
+  animation: unreadSepPulse 3s ease-in-out 2;
+}
+
+/* ── Message Group Wrapper — Fade on first render ──────────────────── */
+.message-group-wrapper {
+  animation: msgGroupFade 0.15s ease-out;
+}
+@keyframes msgGroupFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Sidebar Active Channel — Left indicator bar ───────────────────── */
+.app-shell .channel.active {
+  position: relative;
+}
+.app-shell .channel.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--aae-cyan, #00c2e8);
+  animation: activeBarSlide 0.2s ease-out;
+}
+@keyframes activeBarSlide {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* ── Channel Create Modal — Form field focus animation ─────────────── */
+.mm-modal input:focus,
+.mm-modal textarea:focus,
+.mm-modal select:focus {
+  border-color: var(--aae-link, #1c58d9);
+  box-shadow: 0 0 0 2px rgba(28, 88, 217, 0.15);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* ── Bookmark bar — subtle entrance ────────────────────────────────── */
+.bookmark-bar {
+  animation: bookmarkBarSlide 0.2s ease-out;
+}
+@keyframes bookmarkBarSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Dark theme rules (auto-generated from media queries) ── */

@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useState, useCallback } from 'react'
 
 type BlockSeg =
   | { kind: 'plain'; text: string }
   | { kind: 'quote'; lines: string[] }
   | { kind: 'olist'; items: string[] }
   | { kind: 'ulist'; items: string[] }
+  | { kind: 'codeblock'; lang: string; code: string }
 
 /** Split on blockquotes (`> line`), numbered lists (`1. item`), and bullets (`- item` / `* item`). */
 export function segmentMessageBlocks(raw: string): BlockSeg[] {
@@ -24,6 +25,20 @@ export function segmentMessageBlocks(raw: string): BlockSeg[] {
     if (L === '') {
       buf.push('')
       i++
+      continue
+    }
+    // Fenced code blocks: ```lang ... ```
+    if (L.startsWith('```')) {
+      flushBuf()
+      const lang = L.slice(3).trim()
+      const codeLines: string[] = []
+      i++
+      while (i < lines.length && !lines[i]!.startsWith('```')) {
+        codeLines.push(lines[i]!)
+        i++
+      }
+      if (i < lines.length) i++ // skip closing ```
+      out.push({ kind: 'codeblock', lang, code: codeLines.join('\n') })
       continue
     }
     if (/^>\s?/.test(L)) {
@@ -238,6 +253,9 @@ export function MessageRichText({ text }: { text: string }) {
             </span>
           )
         }
+        if (s.kind === 'codeblock') {
+          return <CodeBlock key={kb} lang={s.lang} code={s.code} />
+        }
         if (s.kind === 'quote') {
           return (
             <blockquote key={kb} className="mm-rich-blockquote">
@@ -266,6 +284,34 @@ export function MessageRichText({ text }: { text: string }) {
           </ul>
         )
       })}
+    </div>
+  )
+}
+
+/** Fenced code block with hover-to-show copy button */
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* ignore */ }
+  }, [code])
+
+  return (
+    <div className="mm-code-block-wrap">
+      {lang && <span className="mm-code-block-lang">{lang}</span>}
+      <button
+        type="button"
+        className={`mm-code-block-copy${copied ? ' mm-code-block-copy--done' : ''}`}
+        onClick={handleCopy}
+        aria-label="Copy code"
+      >
+        {copied ? '✓ Copied' : 'Copy'}
+      </button>
+      <pre className="mm-code-block"><code>{code}</code></pre>
     </div>
   )
 }
