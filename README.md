@@ -77,6 +77,9 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 - **Sidebar Tooltips** — hovering channels in the sidebar shows purpose/description.
 - **20 Micro-Animations** — reaction pop, message hover accent, action bar fade, skeleton loading, composer glow pulse, channel fade, modal spring, thread slide-in, thin scrollbar, dropdown animations, and more. Full Slack/Mattermost-grade interaction polish.
 - **Skeleton Loading** — animated shimmer placeholders while messages load from the server.
+- **Image Lightbox** — click-to-expand fullscreen image viewer with zoom, rotate, download, and keyboard controls.
+- **Presence Dot Animations** — online pulse glow + DND strikethrough indicator on sidebar presence dots.
+- **Profile Card Spring** — bouncy entrance animation for user profile cards with avatar ring hover glow.
 - **Message Reminders** — "Remind me in 30m/1h/4h" from the message More menu, or `/remind [minutes] [text]`. Fires as in-app notification.
 - **Mark as Unread** — rewind the read cursor on any message so unread indicators re-appear in the sidebar.
 - **Custom Status with Expiry** — set status text + emoji with auto-clear timer (Slack-style "Clear after…"). Via `/status`, `/dnd`, or the settings panel.

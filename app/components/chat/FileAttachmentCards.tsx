@@ -1,8 +1,9 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Download, FileText, FileSpreadsheet, FileImage, Film, Music, Archive, File } from 'lucide-react'
 import type { FileAttachment } from '@/lib/realtime'
+import { ImageLightbox } from './ImageLightbox'
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -36,6 +37,8 @@ interface Props {
 }
 
 export const FileAttachmentCards = memo(function FileAttachmentCards({ attachments }: Props) {
+  const [lightboxImg, setLightboxImg] = useState<{ src: string; alt: string } | null>(null)
+
   if (!attachments || attachments.length === 0) return null
 
   // Separate image attachments (rendered inline) from file cards
@@ -44,16 +47,15 @@ export const FileAttachmentCards = memo(function FileAttachmentCards({ attachmen
 
   return (
     <div className="file-attachments">
-      {/* Inline image previews */}
+      {/* Inline image previews — click to open lightbox */}
       {images.length > 0 && (
         <div className="file-attachment-images">
           {images.map(img => (
-            <a
+            <button
               key={img.id}
-              href={img.url}
-              target="_blank"
-              rel="noopener noreferrer"
+              type="button"
               className="file-attachment-image-link"
+              onClick={() => setLightboxImg({ src: img.url, alt: img.name })}
             >
               <img
                 src={img.url}
@@ -62,7 +64,7 @@ export const FileAttachmentCards = memo(function FileAttachmentCards({ attachmen
                 loading="lazy"
               />
               <span className="file-attachment-image-name">{img.name}</span>
-            </a>
+            </button>
           ))}
         </div>
       )}
@@ -95,6 +97,16 @@ export const FileAttachmentCards = memo(function FileAttachmentCards({ attachmen
           ))}
         </div>
       )}
+
+      {/* Image Lightbox */}
+      {lightboxImg && (
+        <ImageLightbox
+          src={lightboxImg.src}
+          alt={lightboxImg.alt}
+          onClose={() => setLightboxImg(null)}
+        />
+      )}
     </div>
   )
 })
+
