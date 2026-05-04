@@ -52,6 +52,7 @@ import { MarketplacePanel } from '@/app/components/MarketplacePanel'
 import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
 import { ChannelBrowseModal } from '@/app/components/ChannelBrowseModal'
 import { CustomEmojiPanel } from '@/app/components/CustomEmojiPanel'
+import { MessageSkeleton } from '@/app/components/chat/MessageSkeleton'
 import { useAutoAway } from '@/lib/useAutoAway'
 import { isDndActive } from '@/lib/dndSchedule'
 
@@ -122,6 +123,7 @@ function HomeChat() {
   const [channels, setChannels] = useState<Channel[]>([])
   const [channel, setChannel] = useState<Channel | null>(null)
   const [posts, setPosts] = useState<ChatPost[]>([])
+  const [postsLoading, setPostsLoading] = useState(false)
   const [olderAvailable, setOlderAvailable] = useState(false)
   const [olderLoading, setOlderLoading] = useState(false)
   const [streamUp, setStreamUp] = useState(false)
@@ -401,6 +403,7 @@ function HomeChat() {
     let cancelled = false
     sinceMsRef.current = 0
     setStreamUp(false)
+    setPostsLoading(true)
     setOlderAvailable(false)
     setThreadRoot(null)
     setUnreadSepId(null)
@@ -425,6 +428,7 @@ function HomeChat() {
       const list = data.posts ?? []
       if (cancelled) return
       setPosts(list)
+      setPostsLoading(false)
       bumpSinceFromPosts(list)
       setOlderAvailable(Boolean(data.older_available))
       scrollToBottom()
@@ -1458,7 +1462,11 @@ function HomeChat() {
             </div>
           ) : null}
 
-          {posts.length === 0 && (
+          {postsLoading && posts.length === 0 && (
+            <MessageSkeleton count={6} />
+          )}
+
+          {!postsLoading && posts.length === 0 && (
             <div className="channel-intro-block" style={{ padding: '40px 20px', marginTop: 'auto' }}>
               <div style={{ width: '72px', height: '72px', background: 'var(--mm-sidebar-bg)', color: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
                 {channel?.type === 'D' ? <Users size={36} /> : channel?.type === 'P' ? <Lock size={36} /> : <Hash size={36} />}

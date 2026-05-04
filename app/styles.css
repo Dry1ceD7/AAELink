@@ -10286,4 +10286,292 @@ button.mm-user-pill {
 }
 
 
+/* ═══════════════════════════════════════════════════════════════════════
+   UI/UX POLISH — Slack/Mattermost Micro-interactions & Animations
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Reaction Pop Animation ─────────────────────────────────────── */
+@keyframes reactionPop {
+  0%   { transform: scale(0.5); opacity: 0; }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.app-shell .reaction-chip {
+  animation: reactionPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.app-shell .reaction-chip:active {
+  transform: scale(0.92);
+}
+
+/* ── 2. Message Hover — Mattermost-style left accent border ────────── */
+.app-shell .message {
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease, border-color 0.18s ease;
+}
+.app-shell .message:hover {
+  background: rgba(0, 85, 150, 0.045);
+  border-left-color: var(--aae-cyan, #00c2e8);
+}
+
+/* ── 3. Message Action Bar — Fade-in with subtle slide ─────────────── */
+.app-shell .message-actions-bar {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.app-shell .message:hover .message-actions-bar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+@media (prefers-color-scheme: dark) {
+  .app-shell .message-actions-bar {
+    background: var(--mm-bg-secondary, #2b2d31);
+    border-color: var(--mm-border-subtle, #3f4147);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  .app-shell .message-actions-bar button:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ── 4. Skeleton Message Loading ───────────────────────────────────── */
+@keyframes skeletonShimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.message-skeleton {
+  display: flex;
+  gap: 12px;
+  padding: 12px 20px;
+  align-items: flex-start;
+}
+.message-skeleton-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, var(--mm-hover) 0px, rgba(255,255,255,0.15) 40px, var(--mm-hover) 80px);
+  background-size: 200px 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.message-skeleton-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.message-skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--mm-hover) 0px, rgba(255,255,255,0.15) 40px, var(--mm-hover) 80px);
+  background-size: 200px 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+.message-skeleton-line--name { width: 120px; height: 14px; }
+.message-skeleton-line--long { width: 80%; }
+.message-skeleton-line--medium { width: 55%; }
+.message-skeleton-line--short { width: 35%; }
+
+/* ── 5. Sidebar Section Collapse Animation ─────────────────────────── */
+.channel-section[open] > .channel-section-body {
+  animation: sidebarSectionOpen 0.2s ease-out;
+}
+@keyframes sidebarSectionOpen {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.channel-section summary {
+  transition: background 0.12s ease;
+}
+.channel-section summary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── 6. Composer Focus Glow ────────────────────────────────────────── */
+@keyframes composerFocusPulse {
+  0%, 100% { box-shadow: 0 0 0 1px #1164A3, 0 0 6px rgba(17, 100, 163, 0.15); }
+  50%      { box-shadow: 0 0 0 1px #1164A3, 0 0 12px rgba(17, 100, 163, 0.3); }
+}
+.app-shell .tiptap-composer-wrap:focus-within {
+  animation: composerFocusPulse 2s ease-in-out infinite;
+  border-color: #1164A3;
+}
+
+/* ── 7. Channel Switch Fade ────────────────────────────────────────── */
+@keyframes channelFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.app-shell .timeline {
+  animation: channelFadeIn 0.2s ease-out;
+}
+
+/* ── 8. Enhanced Modal Backdrop Blur ───────────────────────────────── */
+.modal-overlay,
+.mm-modal-overlay {
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  transition: background 0.2s ease;
+}
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-panel,
+.mm-modal {
+  animation: modalSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 9. Sidebar Unread — Bold text + glow pulse ────────────────────── */
+.channel--unread .channel-name {
+  font-weight: 700 !important;
+  color: var(--mm-sidebar-text-active, #fff) !important;
+}
+.channel--unread .channel-unread {
+  background: #cd2b31;
+  color: #fff;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  min-width: 18px;
+  text-align: center;
+  animation: unreadPulse 2s ease-in-out infinite;
+}
+@keyframes unreadPulse {
+  0%, 100% { box-shadow: none; }
+  50%      { box-shadow: 0 0 6px rgba(205, 43, 49, 0.5); }
+}
+
+/* ── 10. Icon Button Hover Scale ───────────────────────────────────── */
+.mm-icon-btn {
+  transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
+}
+.mm-icon-btn:hover {
+  transform: scale(1.05);
+}
+.mm-icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* Slack-style link previews — subtle card hover */
+.link-preview-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.link-preview-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-color: var(--aae-cyan, #00c2e8);
+}
+
+/* ── 11. Thread Panel Slide-in ─────────────────────────────────────── */
+.thread-pane--open {
+  animation: threadSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes threadSlideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── 12. Pending Message — Pulse opacity ───────────────────────────── */
+.message--pending {
+  opacity: 0.6;
+  animation: pendingPulse 1.5s ease-in-out infinite;
+}
+@keyframes pendingPulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 0.85; }
+}
+
+/* ── 13. Reaction Picker — Slide-up entrance ───────────────────────── */
+.reaction-picker {
+  animation: reactionPickerSlide 0.15s ease-out;
+}
+@keyframes reactionPickerSlide {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── 14. "More" Dropdown — Fade + slide ────────────────────────────── */
+.app-shell .message-more-menu {
+  animation: moreMenuSlide 0.12s ease-out;
+}
+@keyframes moreMenuSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 15. Workspace Menu — Spring animation ─────────────────────────── */
+.ws-dropdown {
+  animation: wsMenuSpring 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes wsMenuSpring {
+  from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── 16. Pinned/Saved Icon — Subtle glow ───────────────────────────── */
+.message-action-saved::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 4px;
+  background: rgba(46, 125, 50, 0.1);
+  pointer-events: none;
+}
+
+/* ── 17. Notification Bell — Shake ─────────────────────────────────── */
+@keyframes bellShake {
+  0%   { transform: rotate(0); }
+  15%  { transform: rotate(14deg); }
+  30%  { transform: rotate(-14deg); }
+  45%  { transform: rotate(8deg); }
+  60%  { transform: rotate(-8deg); }
+  75%  { transform: rotate(3deg); }
+  100% { transform: rotate(0); }
+}
+.notif-bell--has-unread {
+  animation: bellShake 0.6s ease-in-out;
+}
+
+/* ── 18. Mattermost Thin Scrollbar ─────────────────────────────────── */
+.timeline::-webkit-scrollbar,
+.thread-body::-webkit-scrollbar,
+.channel-browse-list::-webkit-scrollbar,
+.custom-emoji-grid::-webkit-scrollbar {
+  width: 6px;
+}
+.timeline::-webkit-scrollbar-track,
+.thread-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.timeline::-webkit-scrollbar-thumb,
+.thread-body::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+.timeline::-webkit-scrollbar-thumb:hover,
+.thread-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* ── 19. Side Panel Slide-in (Channel Info, Saved, etc.) ───────────── */
+.channel-info-panel,
+.saved-items-panel,
+.pinned-panel {
+  animation: panelSlideRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes panelSlideRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── 20. Emoji Picker Item — Hover scale ───────────────────────────── */
+.reaction-pick:hover {
+  background: rgba(0, 194, 232, 0.12) !important;
+  transform: scale(1.15);
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+
 /* ── Dark theme rules (auto-generated from media queries) ── */
