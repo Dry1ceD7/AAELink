@@ -8,6 +8,7 @@ import { Composer, type ComposerHandle } from '@/app/components/chat/Composer'
 import { TypingIndicator, useTypingEmitter } from '@/app/components/chat/TypingIndicator'
 import type { ReactionSummary } from '@/lib/reactions'
 import type { SlashMeUser } from '@/lib/composerSlash'
+import { Bell, BellRing } from 'lucide-react'
 
 interface ThreadPanelProps {
   rootPost: ChatPost
@@ -219,6 +220,18 @@ export function ThreadPanel({
   const rootUser = userMap[rootPost.user_id]
   const rootLabel = rootUser ? displayName(rootUser) : rootPost.user_id.slice(0, 8)
 
+  const [following, setFollowing] = useState(true) // Replying = auto-follow
+
+  const toggleFollow = useCallback(async () => {
+    const newVal = !following
+    setFollowing(newVal)
+    await apiFetch('/api/collab/thread-follow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: rootPost.id, follow: newVal })
+    }).catch(() => setFollowing(!newVal))
+  }, [following, rootPost.id])
+
   return (
     <aside className="thread-pane thread-pane--open" aria-label="Thread">
       <header>
@@ -227,14 +240,27 @@ export function ThreadPanel({
           {channelType === 'D' ? '' : '# '}
           {channelTitle}
         </span>
-        <button
-          type="button"
-          className="thread-close"
-          aria-label="Close thread"
-          onClick={onClose}
-        >
-          ✕
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className={`mm-icon-btn${following ? ' mm-icon-btn--active' : ''}`}
+            title={following ? 'Following thread — click to unfollow' : 'Follow thread'}
+            aria-label={following ? 'Unfollow thread' : 'Follow thread'}
+            onClick={() => void toggleFollow()}
+            style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 3 }}
+          >
+            {following ? <BellRing size={14} /> : <Bell size={14} />}
+            <span style={{ fontSize: 11 }}>{following ? 'Following' : 'Follow'}</span>
+          </button>
+          <button
+            type="button"
+            className="thread-close"
+            aria-label="Close thread"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
       </header>
 
       <div className="thread-body" ref={scrollRef}>

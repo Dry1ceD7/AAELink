@@ -51,6 +51,7 @@ import { SettingsShell } from '@/app/components/SettingsShell'
 import { MarketplacePanel } from '@/app/components/MarketplacePanel'
 import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
 import { ChannelBrowseModal } from '@/app/components/ChannelBrowseModal'
+import { CustomEmojiPanel } from '@/app/components/CustomEmojiPanel'
 import { useAutoAway } from '@/lib/useAutoAway'
 import { isDndActive } from '@/lib/dndSchedule'
 
@@ -185,6 +186,8 @@ function HomeChat() {
   useAutoAway()
   const { getStatus } = usePresenceListener(activeTeamId)
   const [channelBrowseOpen, setChannelBrowseOpen] = useState(false)
+  const [emojiPanelOpen, setEmojiPanelOpen] = useState(false)
+  const [leaveConfirmChannelId, setLeaveConfirmChannelId] = useState<string | null>(null)
 
   // ── Typing emitter for channel composer ─────────────────────────────────
   const { onDraftChange: emitTyping } = useTypingEmitter(channel?.id || '')
@@ -886,6 +889,9 @@ function HomeChat() {
                 <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setShortcutsOpen(true) }}>
                   <Keyboard size={16} /> Keyboard shortcuts
                 </button>
+                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setEmojiPanelOpen(true) }}>
+                  <SmilePlus size={16} /> Custom emoji
+                </button>
                 <div className="ws-dropdown-divider" />
                 <Link href="/workspaces" className="ws-dropdown-item" onClick={() => setWsMenuOpen(false)}>
                   <Plus size={16} /> Create or join a workspace
@@ -947,6 +953,7 @@ function HomeChat() {
               <button type="button"
                 className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
                 key={item.id}
+                title={item.purpose ? `${item.display_name || item.name}\n${item.purpose}` : (item.display_name || item.name)}
                 onContextMenu={(e) => { e.preventDefault(); handleToggleStar(item.id) }}
                 onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
                 {starredIds.has(item.id)
@@ -1385,10 +1392,8 @@ function HomeChat() {
                   channelType={channel.type || 'O'}
                   isStarred={starredIds.has(channel.id)}
                   onToggleStar={() => handleToggleStar(channel.id)}
-                  onLeaveChannel={async () => {
-                    await apiFetch(`/api/channel-members?channel_id=${encodeURIComponent(channel.id)}&user_id=me`, { method: 'DELETE' })
-                    setChannels(prev => prev.filter(c => c.id !== channel.id))
-                    setChannel(null)
+                  onLeaveChannel={() => {
+                    setLeaveConfirmChannelId(channel.id)
                   }}
                   onInviteToChannel={() => setInviteModalOpen(true)}
                 />
@@ -1654,6 +1659,36 @@ function HomeChat() {
           })()
         }}
       />
+
+      {/* ── Custom emoji panel ─────────────────────────────────── */}
+      <CustomEmojiPanel
+        open={emojiPanelOpen}
+        onClose={() => setEmojiPanelOpen(false)}
+        workspaceId={activeTeamId}
+      />
+
+      {/* ── Leave channel confirmation ─────────────────────────── */}
+      {leaveConfirmChannelId && (
+        <div className="mm-modal-overlay" role="presentation" onClick={() => setLeaveConfirmChannelId(null)}>
+          <div className="mm-modal" role="alertdialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+            <h2>Leave channel?</h2>
+            <p className="mm-editor-hint" style={{ marginTop: 8 }}>
+              Are you sure you want to leave <strong>{channels.find(c => c.id === leaveConfirmChannelId)?.display_name || 'this channel'}</strong>? You can rejoin it later from the channel browser.
+            </p>
+            <div className="mm-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setLeaveConfirmChannelId(null)}>Cancel</button>
+              <button type="button" className="slack-button" style={{ background: '#D24B4E' }}
+                onClick={async () => {
+                  const chId = leaveConfirmChannelId
+                  setLeaveConfirmChannelId(null)
+                  await apiFetch(`/api/channel-members?channel_id=${encodeURIComponent(chId)}&user_id=me`, { method: 'DELETE' })
+                  setChannels(prev => prev.filter(c => c.id !== chId))
+                  if (channel?.id === chId) setChannel(null)
+                }}>Leave Channel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Create channel modal ────────────────────────────────── */}
       {newChannelOpen ? (

@@ -84,8 +84,8 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
   }
 
   function highlightBody(body: string) {
-    if (!query || query.length < 2) return <MessageRichText text={body} />
-    // Truncate long bodies around the match
+    if (!query || query.length < 2) return <MessageRichText text={body.slice(0, 200)} />
+    // Truncate around the match
     const lower = body.toLowerCase()
     const qLower = query.toLowerCase()
     const idx = lower.indexOf(qLower)
@@ -93,7 +93,27 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
     const start = Math.max(0, idx - 60)
     const end = Math.min(body.length, idx + query.length + 100)
     const snippet = (start > 0 ? '…' : '') + body.slice(start, end) + (end < body.length ? '…' : '')
-    return <MessageRichText text={snippet} />
+
+    // Split snippet around all occurrences of query and wrap matches
+    const parts: React.ReactNode[] = []
+    const snipLower = snippet.toLowerCase()
+    let cursor = 0
+    let matchIdx = snipLower.indexOf(qLower, cursor)
+    let key = 0
+    while (matchIdx !== -1) {
+      if (matchIdx > cursor) {
+        parts.push(<span key={key++}>{snippet.slice(cursor, matchIdx)}</span>)
+      }
+      parts.push(
+        <mark key={key++} className="search-highlight">{snippet.slice(matchIdx, matchIdx + query.length)}</mark>
+      )
+      cursor = matchIdx + query.length
+      matchIdx = snipLower.indexOf(qLower, cursor)
+    }
+    if (cursor < snippet.length) {
+      parts.push(<span key={key++}>{snippet.slice(cursor)}</span>)
+    }
+    return <span className="search-result-text">{parts}</span>
   }
 
   return createPortal(

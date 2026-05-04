@@ -70,6 +70,11 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 - **Channel Browse** — Slack-style "Browse channels" modal for discovering and joining public channels with search, member count, and one-click join.
 - **Auto-Away** — presence automatically switches to "away" after 5 min idle; restores to "online" on activity.
 - **DND Schedule** — configurable Do Not Disturb hours in Settings. Notification sounds suppressed during schedule.
+- **Custom Emoji** — upload, search, and manage custom workspace emoji from the workspace menu.
+- **Search Highlighting** — matching terms highlighted in yellow in global search results.
+- **Thread Follow/Unfollow** — follow/unfollow toggle in thread panel header for notification control.
+- **Leave Confirmation** — confirmation dialog before leaving a channel, with rejoin instructions.
+- **Sidebar Tooltips** — hovering channels in the sidebar shows purpose/description.
 - **Message Reminders** — "Remind me in 30m/1h/4h" from the message More menu, or `/remind [minutes] [text]`. Fires as in-app notification.
 - **Mark as Unread** — rewind the read cursor on any message so unread indicators re-appear in the sidebar.
 - **Custom Status with Expiry** — set status text + emoji with auto-clear timer (Slack-style "Clear after…"). Via `/status`, `/dnd`, or the settings panel.
