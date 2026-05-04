@@ -10,6 +10,7 @@ import { SessionManagementPanel } from '@/app/components/SessionManagementPanel'
 import { persistUiDensity, readUiDensity, type UiDensity } from '@/lib/uiDensity'
 import { readThemePreference, persistThemePreference, type ThemePreference } from '@/lib/theme'
 import { getNotifSoundPref, setNotifSoundPref, getNotifVolume, setNotifVolume, playNotificationSound, type NotifSoundPref } from '@/lib/notificationSound'
+import { getDndSchedule, setDndSchedule, formatSchedule, type DndSchedule } from '@/lib/dndSchedule'
 
 const phone = process.env.NEXT_PUBLIC_AAELINK_IT_PHONE?.trim() || ''
 const email = process.env.NEXT_PUBLIC_AAELINK_IT_EMAIL?.trim() || ''
@@ -658,6 +659,59 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
                     onChange={e => setNotifVolume(parseFloat(e.target.value))}
                   />
                 </label>
+              </div>
+
+              {/* ── Do Not Disturb schedule ──────────────────────── */}
+              <div style={{ marginTop: 16, padding: '0 4px' }}>
+                <p className="field-label" style={{ marginBottom: 8 }}>Do Not Disturb schedule</p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
+                  <input
+                    type="checkbox"
+                    defaultChecked={getDndSchedule().enabled}
+                    onChange={e => {
+                      const s = getDndSchedule()
+                      setDndSchedule({ ...s, enabled: e.target.checked })
+                    }}
+                  />
+                  Automatically pause notifications on a schedule
+                </label>
+                {getDndSchedule().enabled && (
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      From
+                      <input
+                        type="time"
+                        className="slack-input"
+                        style={{ width: 100, fontSize: 13, padding: '4px 8px' }}
+                        defaultValue={`${String(getDndSchedule().startHour).padStart(2, '0')}:${String(getDndSchedule().startMinute).padStart(2, '0')}`}
+                        onChange={e => {
+                          const [h, m] = e.target.value.split(':').map(Number)
+                          const s = getDndSchedule()
+                          setDndSchedule({ ...s, startHour: h!, startMinute: m! })
+                        }}
+                      />
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      To
+                      <input
+                        type="time"
+                        className="slack-input"
+                        style={{ width: 100, fontSize: 13, padding: '4px 8px' }}
+                        defaultValue={`${String(getDndSchedule().endHour).padStart(2, '0')}:${String(getDndSchedule().endMinute).padStart(2, '0')}`}
+                        onChange={e => {
+                          const [h, m] = e.target.value.split(':').map(Number)
+                          const s = getDndSchedule()
+                          setDndSchedule({ ...s, endHour: h!, endMinute: m! })
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+                {getDndSchedule().enabled && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--mm-muted)' }}>
+                    🔕 Notifications paused daily {formatSchedule(getDndSchedule())}
+                  </p>
+                )}
               </div>
             </div>
           )}

@@ -10149,4 +10149,62 @@ button.mm-user-pill {
 }
 
 
+/* ── Channel Browse Modal ──────────────────────────────────────────── */
+.channel-browse-modal {
+  animation: modalSlideIn 0.2s ease-out;
+}
+.channel-browse-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--mm-hover);
+  border: 1px solid var(--mm-border-input);
+  border-radius: var(--mm-radius-ui);
+  transition: border-color 0.15s;
+}
+.channel-browse-search:focus-within {
+  border-color: var(--aae-cyan);
+}
+.channel-browse-list {
+  min-height: 120px;
+}
+.channel-browse-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--mm-border-subtle);
+  transition: background 0.1s;
+}
+.channel-browse-item:hover {
+  background: var(--mm-hover);
+}
+.channel-browse-item:last-child {
+  border-bottom: none;
+}
+.channel-browse-join-btn {
+  padding: 4px 16px !important;
+  font-size: 12px !important;
+  flex-shrink: 0;
+}
+.channel-browse-joined {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mm-online);
+  padding: 4px 12px;
+}
+
+/* ── Browse channels sidebar link ──────────────────────────────────── */
+.channel--browse {
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.channel--browse:hover {
+  opacity: 1 !important;
+}
+
+
 /* ── Dark theme rules (auto-generated from media queries) ── */

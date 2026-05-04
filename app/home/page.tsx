@@ -50,6 +50,9 @@ import { QuickSwitcher } from '@/app/components/QuickSwitcher'
 import { SettingsShell } from '@/app/components/SettingsShell'
 import { MarketplacePanel } from '@/app/components/MarketplacePanel'
 import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
+import { ChannelBrowseModal } from '@/app/components/ChannelBrowseModal'
+import { useAutoAway } from '@/lib/useAutoAway'
+import { isDndActive } from '@/lib/dndSchedule'
 
 interface Channel {
   id: string
@@ -179,7 +182,9 @@ function HomeChat() {
 
   // ── Presence heartbeat & listener ───────────────────────────────────────
   usePresenceHeartbeat()
+  useAutoAway()
   const { getStatus } = usePresenceListener(activeTeamId)
+  const [channelBrowseOpen, setChannelBrowseOpen] = useState(false)
 
   // ── Typing emitter for channel composer ─────────────────────────────────
   const { onDraftChange: emitTyping } = useTypingEmitter(channel?.id || '')
@@ -447,7 +452,7 @@ function HomeChat() {
           workspaceId: wsId,
           focusMessageId: last.id
         })
-        playNotificationSound()
+        if (!isDndActive()) playNotificationSound()
         // Set unread separator if the user is scrolled away
         const el = timelineRef.current
         if (el) {
@@ -956,6 +961,17 @@ function HomeChat() {
               </button>
             ))}
           </SidebarSection>
+
+          {/* Browse channels link */}
+          <button
+            type="button"
+            className="channel channel--browse"
+            onClick={() => setChannelBrowseOpen(true)}
+            style={{ fontSize: 12, color: 'var(--mm-sidebar-text)', opacity: 0.8, paddingLeft: 20, gap: 6 }}
+          >
+            <Search size={13} className="channel-icon" />
+            <span className="channel-name">Browse channels</span>
+          </button>
 
           <SidebarSection id="dms" title="Direct messages" onAdd={() => setNewMessageOpen(true)}>
             {channels.filter(c => c.type === 'D' || c.type === 'G').map(item => {
@@ -1618,6 +1634,26 @@ function HomeChat() {
       {/* ── Backdrop for mobile channel slide-over ──────────────── */}
       <button type="button" className="app-shell-backdrop" tabIndex={-1}
         aria-label="Close channels" onClick={() => setChannelsOpen(false)} />
+
+      {/* ── Browse channels modal ──────────────────────────────── */}
+      <ChannelBrowseModal
+        workspaceId={activeTeamId}
+        open={channelBrowseOpen}
+        onClose={() => setChannelBrowseOpen(false)}
+        onJoined={(ch) => {
+          setChannelBrowseOpen(false)
+          // Refresh channel list
+          void (async () => {
+            const r = await apiFetch(`/api/channels?team_id=${encodeURIComponent(activeTeamId)}`)
+            if (r.ok) {
+              const data = await r.json() as { channels?: Channel[] }
+              setChannels(data.channels ?? [])
+              const joined = (data.channels ?? []).find(c => c.id === ch.id)
+              if (joined) setChannel(joined)
+            }
+          })()
+        }}
+      />
 
       {/* ── Create channel modal ────────────────────────────────── */}
       {newChannelOpen ? (
