@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Reminders API
@@ -12,7 +13,7 @@ import { readSessionUserId } from '@/lib/session'
  * DELETE — Cancel a reminder
  */
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   return NextResponse.json({ id, fire_at })
 }
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -62,7 +63,7 @@ export async function GET() {
   return NextResponse.json({ reminders: rows })
 }
 
-export async function DELETE(req: Request) {
+async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -79,3 +80,8 @@ export async function DELETE(req: Request) {
 
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST',   '/api/reminders', _POST)
+export const GET    = tracedRoute('GET',    '/api/reminders', _GET)
+export const DELETE = tracedRoute('DELETE', '/api/reminders', _DELETE)

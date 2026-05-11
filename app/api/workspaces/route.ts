@@ -4,8 +4,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { slugifySegment } from '@/lib/slug'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -26,7 +27,7 @@ export async function GET() {
   return NextResponse.json({ teams: rows })
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -59,6 +60,18 @@ export async function POST(req: Request) {
            VALUES ($1, $2, 'all-aaelink', 'All AAELink', 'O', $3)`,
           [cid, wid, now]
         )
+        // Create default #general channel (Slack parity — auto-join target)
+        const generalId = randomUUID()
+        await client.query(
+          `INSERT INTO aaelink.channels (id, workspace_id, name, display_name, type, purpose, is_default, created_at)
+           VALUES ($1, $2, 'general', 'General', 'O', $3, TRUE, $4)`,
+          [generalId, wid, "This is the one channel that will always include everyone. It's a great spot for announcements and team-wide conversations.", now]
+        )
+        // Auto-join creator to #general
+        await client.query(
+          `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at) VALUES ($1, $2, 'admin', $3)`,
+          [generalId, uid, now]
+        )
         await client.query('COMMIT')
         const team = { id: wid, name, display_name }
         return NextResponse.json({ team })
@@ -76,3 +89,7 @@ export async function POST(req: Request) {
     client.release()
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/workspaces', _GET)
+export const POST   = tracedRoute('POST', '/api/workspaces', _POST)

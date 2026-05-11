@@ -3,13 +3,14 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * POST   /api/marketplace/install  → Install a plugin (body: { workspace_id, plugin_id })
  * DELETE /api/marketplace/install?workspace_id=...&plugin_id=...  → Uninstall
  */
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     await client.query('COMMIT')
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK')
     console.error('[marketplace/install POST]', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -83,8 +84,12 @@ export async function DELETE(req: NextRequest) {
       [uid, workspaceId, pluginId]
     )
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[marketplace/install DELETE]', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/marketplace/install', _POST)
+export const DELETE = tracedRoute('DELETE', '/api/marketplace/install', _DELETE)

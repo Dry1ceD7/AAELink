@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const VALID_LEVELS = ['default', 'all', 'mentions', 'nothing']
 
@@ -12,7 +13,7 @@ const VALID_LEVELS = ['default', 'all', 'mentions', 'nothing']
  * PUT  /api/channel-prefs                  → upsert pref
  */
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ channel_id: channelId, level: pref.level, muted: pref.muted })
 }
 
-export async function PUT(req: NextRequest) {
+async function _PUT(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -68,3 +69,7 @@ export async function PUT(req: NextRequest) {
 
   return NextResponse.json({ channel_id: channelId, level, muted })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/channel-prefs', _GET)
+export const PUT    = tracedRoute('PUT', '/api/channel-prefs', _PUT)

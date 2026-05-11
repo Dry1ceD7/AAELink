@@ -3,11 +3,15 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const userId = await readSessionUserId()
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
   const workspaceId = searchParams.get('workspace_id')
@@ -26,12 +30,13 @@ export async function GET(req: NextRequest) {
       [workspaceId]
     )
     return NextResponse.json({ events })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'calendar_query_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -58,7 +63,12 @@ export async function POST(req: NextRequest) {
     )
 
     return NextResponse.json({ success: true, id })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'calendar_create_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/calendar/events', _GET)
+export const POST   = tracedRoute('POST', '/api/calendar/events', _POST)

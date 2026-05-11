@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Channel members management.
@@ -12,7 +13,7 @@ import { readSessionUserId } from '@/lib/session'
  */
 
 /** GET — list members of a channel. */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
 }
 
 /** POST — invite a user to a private/group channel. */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** DELETE — remove a user from a private/group channel (or leave). */
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -154,3 +155,8 @@ export async function DELETE(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/channel-members', _GET)
+export const POST   = tracedRoute('POST', '/api/channel-members', _POST)
+export const DELETE = tracedRoute('DELETE', '/api/channel-members', _DELETE)

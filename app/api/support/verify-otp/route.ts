@@ -3,12 +3,13 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { verifyPassword } from '@/lib/password'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 import {
   createSupportContactSession,
   setSupportSessionCookie
 } from '@/lib/supportSession'
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -54,3 +55,6 @@ export async function POST(req: Request) {
   setSupportSessionCookie(res, sessionId)
   return res
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/support/verify-otp', _POST)

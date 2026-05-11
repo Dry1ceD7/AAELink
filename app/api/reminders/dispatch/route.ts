@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Reminder Dispatcher — POST /api/reminders/dispatch
@@ -11,7 +12,7 @@ import { ensureSchema } from '@/lib/migrate'
  *
  * Called periodically from the presence heartbeat (same as scheduled messages).
  */
-export async function POST() {
+async function _POST() {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -63,7 +64,7 @@ export async function POST() {
         [now, r.id]
       )
       dispatched++
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(`[reminders-dispatch] Failed ${r.id}:`, err)
       await pool.query(
         `UPDATE aaelink.reminders SET status = 'failed' WHERE id = $1`,
@@ -74,3 +75,6 @@ export async function POST() {
 
   return NextResponse.json({ dispatched })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/reminders/dispatch', _POST)

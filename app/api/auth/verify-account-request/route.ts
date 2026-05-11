@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { verifyPassword } from '@/lib/password'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -44,3 +45,6 @@ export async function POST(req: Request) {
   )
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/auth/verify-account-request', _POST)

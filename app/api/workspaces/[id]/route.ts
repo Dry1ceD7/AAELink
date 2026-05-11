@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -29,3 +30,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   await pool.query(`DELETE FROM aaelink.workspaces WHERE id = $1`, [workspaceId])
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const DELETE = tracedRoute('DELETE', '/api/workspaces/:id', _DELETE)

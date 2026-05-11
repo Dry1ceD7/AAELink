@@ -3,8 +3,9 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'Database not configured' }, { status: 503 })
@@ -50,13 +51,13 @@ export async function GET(req: NextRequest) {
     )
 
     return NextResponse.json({ my_requests: myRequests, pending_approvals: pendingApprovals })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error fetching approval requests:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'Database not configured' }, { status: 503 })
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     await client.query('COMMIT')
     return NextResponse.json({ success: true, id: requestId })
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK')
     console.error('Error creating approval request:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -130,3 +131,7 @@ export async function POST(req: NextRequest) {
     client.release()
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/approvals/requests', _GET)
+export const POST   = tracedRoute('POST', '/api/approvals/requests', _POST)

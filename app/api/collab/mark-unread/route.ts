@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Mark as Unread — POST /api/collab/mark-unread
@@ -11,7 +12,7 @@ import { readSessionUserId } from '@/lib/session'
  *
  * Body: { channel_id, from_create_at }
  */
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -38,3 +39,6 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, last_read_at: rewindTo })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/collab/mark-unread', _POST)

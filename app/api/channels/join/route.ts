@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * POST /api/channels/join — join a public channel by name.
@@ -9,7 +10,7 @@ import { readSessionUserId } from '@/lib/session'
  * Body: { channel_name: string }
  * Only works for public channels (type = 'O').
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -51,3 +52,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, channel_id: ch.id })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/channels/join', _POST)

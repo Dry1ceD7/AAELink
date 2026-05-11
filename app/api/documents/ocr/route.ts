@@ -4,10 +4,11 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { getBucket, getObjectBytes, getS3Client } from '@/lib/s3'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const STIRLING_URL = process.env.STIRLING_URL || 'http://localhost:8085'
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -62,3 +63,6 @@ export async function POST(req: Request) {
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/documents/ocr', _POST)

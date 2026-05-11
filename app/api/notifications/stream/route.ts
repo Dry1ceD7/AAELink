@@ -2,11 +2,12 @@ import type { ApiNotification } from '@/lib/notificationTypes'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return new Response('database_not_configured', { status: 503 })
   const uid = await readSessionUserId()
@@ -135,3 +136,6 @@ export async function GET(req: Request) {
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/notifications/stream', _GET)

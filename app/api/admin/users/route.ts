@@ -6,10 +6,12 @@ import { getAdminSession } from '@/lib/adminAuth'
 import { hashPassword } from '@/lib/password'
 import { isItAdmin, isSuperAdmin } from '@/lib/platformRole'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
+import { autoJoinDefaultChannels } from '@/lib/defaultChannel'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const ALLOWED_ROLES = new Set(['', 'employee', 'it_employee', 'it_admin'])
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -22,7 +24,7 @@ export async function GET() {
   return NextResponse.json({ users: rows })
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -68,6 +70,8 @@ export async function POST(req: Request) {
        ON CONFLICT (workspace_id, user_id) DO NOTHING`,
       [AAELINK_GLOBAL_WORKSPACE_ID, id]
     )
+    // Auto-join new user to default channels (#general, etc.)
+    await autoJoinDefaultChannels(pool, AAELINK_GLOBAL_WORKSPACE_ID, id)
     const ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
     const userAgent = req.headers.get('user-agent') || ''
     await pool.query(`
@@ -87,7 +91,7 @@ export async function POST(req: Request) {
 }
 
 /** PATCH /api/admin/users — update user role / profile (admin only). */
-export async function PATCH(req: Request) {
+async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -175,3 +179,8 @@ export async function PATCH(req: Request) {
   )
   return NextResponse.json({ user: rows[0] || null })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/admin/users', _GET)
+export const POST   = tracedRoute('POST', '/api/admin/users', _POST)
+export const PATCH  = tracedRoute('PATCH', '/api/admin/users', _PATCH)

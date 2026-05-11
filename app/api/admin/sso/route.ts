@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { readSessionUserId } from '@/lib/session'
 import { isPlatformAdmin } from '@/lib/platformRole'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const userId = await readSessionUserId()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -21,12 +22,13 @@ export async function GET(req: NextRequest) {
     const config = ssoRes.rows[0] || null
 
     return NextResponse.json({ config })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'sso_query_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const userId = await readSessionUserId()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -77,7 +79,12 @@ export async function POST(req: NextRequest) {
     ])
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'sso_update_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/admin/sso', _GET)
+export const POST   = tracedRoute('POST', '/api/admin/sso', _POST)

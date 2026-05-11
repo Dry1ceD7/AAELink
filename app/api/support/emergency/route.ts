@@ -5,10 +5,11 @@ import { ensureSchema } from '@/lib/migrate'
 import { notifySupportEmergencyStaff } from '@/lib/notificationsServer'
 import { readSessionUserId } from '@/lib/session'
 import { readSupportVerifiedUserId } from '@/lib/supportSession'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const MAX_BODY = 4000
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -48,3 +49,6 @@ export async function POST(req: Request) {
   })
   return NextResponse.json({ ok: true, id })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/support/emergency', _POST)

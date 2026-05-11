@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID, randomBytes } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -27,12 +28,13 @@ export async function GET(req: NextRequest) {
       [workspaceId]
     )
     return NextResponse.json({ webhooks })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'webhook_query_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -60,7 +62,12 @@ export async function POST(req: NextRequest) {
     )
 
     return NextResponse.json({ success: true, id, secret_token })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'webhook_create_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/integrations/webhooks', _GET)
+export const POST   = tracedRoute('POST', '/api/integrations/webhooks', _POST)

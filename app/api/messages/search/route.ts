@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const MAX_Q = 200
 const DEFAULT_LIMIT = 30
 
 /** Workspace-wide message search (channels the user can access). */
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -31,7 +32,6 @@ export async function GET(req: Request) {
 
   const escaped = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
   const pattern = `%${escaped}%`
-  const rootFilter = `(m.root_id IS NULL OR m.root_id = '')`
 
   const { rows } = await pool.query<{
     id: string
@@ -41,14 +41,25 @@ export async function GET(req: Request) {
     channel_type: string
     body: string
     created_at: string
+    root_id: string
+    user_id: string
+    author_username: string
+    author_first_name: string
+    author_last_name: string
+    author_avatar_url: string
   }>(
     `SELECT m.id, m.channel_id, c.name AS channel_name, c.display_name AS channel_display, c.type AS channel_type,
-            m.body, m.created_at AS created_at
+            m.body, m.created_at AS created_at, COALESCE(m.root_id, '') AS root_id,
+            m.user_id,
+            u.username AS author_username,
+            u.first_name AS author_first_name,
+            u.last_name AS author_last_name,
+            u.avatar_url AS author_avatar_url
      FROM aaelink.messages m
      INNER JOIN aaelink.channels c ON c.id = m.channel_id AND c.workspace_id = $1::text
      INNER JOIN aaelink.workspace_members wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $2::text
-     WHERE ${rootFilter}
-       AND (c.type <> 'D' OR c.dm_user_a = $2::text OR c.dm_user_b = $2::text)
+     LEFT JOIN aaelink.users u ON u.id = m.user_id
+     WHERE (c.type <> 'D' OR c.dm_user_a = $2::text OR c.dm_user_b = $2::text)
        AND m.body ILIKE $3 ESCAPE '\\'
      ORDER BY m.created_at DESC
      LIMIT $4::int`,
@@ -56,14 +67,24 @@ export async function GET(req: Request) {
   )
 
   return NextResponse.json({
+    query: q,
+    count: rows.length,
     hits: rows.map(r => ({
       id: r.id,
       channel_id: r.channel_id,
       channel_name: r.channel_name,
       channel_display: r.channel_display,
       channel_type: r.channel_type,
+      root_id: r.root_id || null,
+      user_id: r.user_id,
+      author_username: r.author_username,
+      author_display_name: [r.author_first_name, r.author_last_name].filter(Boolean).join(' ') || r.author_username,
+      author_avatar_url: r.author_avatar_url,
       snippet: r.body.length > 180 ? `${r.body.slice(0, 177)}...` : r.body,
       created_at: Number(r.created_at)
     }))
   })
 }
+
+// ── Traced export ───────────────────────────────────────────────────
+export const GET = tracedRoute('GET', '/api/messages/search', _GET)

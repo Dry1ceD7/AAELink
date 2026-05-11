@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { getAdminSession } from '@/lib/adminAuth'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 type Row = {
   id: string
@@ -13,7 +14,7 @@ type Row = {
   email: string
 }
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -38,3 +39,6 @@ export async function GET() {
     }))
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/admin/support-emergency', _GET)

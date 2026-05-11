@@ -4,6 +4,7 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { startScheduledMessageProcessor } from '@/lib/scheduledMessageProcessor'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 // Start the scheduled message delivery processor on module load
 startScheduledMessageProcessor()
@@ -49,7 +50,7 @@ async function initialThreadReplyWatermark(
   return Number(rows[0]?.m || 0)
 }
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return new Response('database_not_configured', { status: 503 })
   const uid = await readSessionUserId()
@@ -255,3 +256,6 @@ export async function GET(req: Request) {
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/collab/events', _GET)

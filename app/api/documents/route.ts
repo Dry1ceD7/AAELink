@@ -5,13 +5,14 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { getBucket, getS3Client, putObjectBytes } from '@/lib/s3'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 function safeFilename(name: string) {
   const base = name.replace(/[/\\]/g, '').replace(/\.\./g, '').trim() || 'file'
   return base.slice(0, 200)
 }
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const pool = getPool()
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ documents })
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const s3 = getS3Client()
@@ -85,3 +86,7 @@ export async function POST(req: Request) {
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/documents', _GET)
+export const POST   = tracedRoute('POST', '/api/documents', _POST)

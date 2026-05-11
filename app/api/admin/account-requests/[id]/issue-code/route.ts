@@ -4,10 +4,11 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { getAdminSession } from '@/lib/adminAuth'
 import { hashPassword } from '@/lib/password'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const OTP_MS = 30 * 60 * 1000
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -33,3 +34,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   )
   return NextResponse.json({ code: plain, expires_at: exp })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/admin/account-requests/:id/issue-code', _POST)

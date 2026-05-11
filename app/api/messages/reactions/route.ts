@@ -3,8 +3,9 @@ import type { Pool } from 'pg'
 import { userCanReadChannel } from '@/lib/collab-access'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
-import { type ReactionSummary } from '@/lib/reactions'
+import { type ReactionSummary, isValidReactionKey } from '@/lib/reactions'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 async function summarizeForMessage(
   pool: Pool,
@@ -32,7 +33,7 @@ async function summarizeForMessage(
 }
 
 /** Toggle a quick reaction on a message (add/remove). */
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -41,8 +42,8 @@ export async function POST(req: Request) {
   const body = (await req.json()) as { message_id?: string; key?: string }
   const messageId = String(body.message_id || '').trim()
   const key = String(body.key || '').trim()
-  // Accept any non-empty reaction key (emoji or legacy key like "thumbs_up"), max 20 chars
-  if (!messageId || !key || key.length > 20) {
+  // Accept legacy keys (thumbs_up, heart, etc.) or native emoji, max 20 chars
+  if (!messageId || !key || !isValidReactionKey(key)) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
   }
 
@@ -86,3 +87,6 @@ export async function POST(req: Request) {
   const reactions = await summarizeForMessage(pool, uid, messageId)
   return NextResponse.json({ message_id: messageId, reactions })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/messages/reactions', _POST)

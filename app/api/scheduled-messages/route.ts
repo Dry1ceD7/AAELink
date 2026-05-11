@@ -3,6 +3,7 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Scheduled Messages API — "Send Later" (Slack-style).
@@ -12,7 +13,7 @@ import { randomUUID } from 'crypto'
  * DELETE /api/scheduled-messages?id=...      → cancel a scheduled message
  */
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
   }, { status: 201 })
 }
 
-export async function GET() {
+async function _GET() {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -83,7 +84,7 @@ export async function GET() {
   })
 }
 
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -105,3 +106,8 @@ export async function DELETE(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/scheduled-messages', _GET)
+export const POST   = tracedRoute('POST', '/api/scheduled-messages', _POST)
+export const DELETE = tracedRoute('DELETE', '/api/scheduled-messages', _DELETE)

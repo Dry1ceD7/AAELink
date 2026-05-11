@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const VALID_STATUSES = ['online', 'away', 'dnd', 'offline']
 
 /** GET /api/user-status — get the caller's presence status. */
-export async function GET() {
+async function _GET() {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -26,7 +27,7 @@ export async function GET() {
 }
 
 /** PATCH /api/user-status — update status.  Body: { status?, custom_text? } */
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -66,7 +67,7 @@ export async function PATCH(req: NextRequest) {
  * Body: { status_text, status_emoji, expires_at? }
  * expires_at is a Unix epoch ms timestamp; 0 or omitted = no expiry.
  */
-export async function PUT(req: NextRequest) {
+async function _PUT(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -104,4 +105,9 @@ export async function PUT(req: NextRequest) {
 
   return NextResponse.json({ status_text: statusText, status_emoji: statusEmoji, expires_at: expiresAt })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET   = tracedRoute('GET',   '/api/user-status', _GET)
+export const PATCH = tracedRoute('PATCH', '/api/user-status', _PATCH)
+export const PUT   = tracedRoute('PUT',   '/api/user-status', _PUT)
 

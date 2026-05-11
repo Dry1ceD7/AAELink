@@ -3,13 +3,14 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * GET  /api/marketplace/plugins?workspace_id=...  → List all published plugins
  * POST /api/marketplace/plugins                    → Publish a new plugin
  */
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -30,13 +31,13 @@ export async function GET(req: NextRequest) {
       [workspaceId]
     )
     return NextResponse.json({ plugins: rows })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[marketplace/plugins GET]', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -84,8 +85,12 @@ export async function POST(req: NextRequest) {
     )
 
     return NextResponse.json({ success: true, id })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[marketplace/plugins POST]', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/marketplace/plugins', _GET)
+export const POST   = tracedRoute('POST', '/api/marketplace/plugins', _POST)

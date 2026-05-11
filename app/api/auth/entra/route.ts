@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { randomUUID } from 'crypto'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const AUTHORITY = 'https://login.microsoftonline.com'
 const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const code = url.searchParams.get('code')
@@ -117,8 +118,11 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.redirect(new URL('/login?error=invalid_request', req.url))
-  } catch (error: any) {
-    console.error('Entra ID SSO Error:', error)
+  } catch (error: unknown) {
+    console.error('Entra ID SSO Error:', error instanceof Error ? error.message : error)
     return NextResponse.redirect(new URL('/login?error=sso_error', req.url))
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/auth/entra', _GET)

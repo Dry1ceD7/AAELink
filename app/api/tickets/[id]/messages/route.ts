@@ -6,6 +6,7 @@ import { notifyTicketReply } from '@/lib/notificationsServer'
 import { readSessionUserId } from '@/lib/session'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
 import { canViewTicket } from '@/lib/ticketAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -14,7 +15,7 @@ function authorLabel(row: { username: string; nickname: string; first_name: stri
   return row.username
 }
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const pool = getPool()
@@ -72,3 +73,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   return NextResponse.json({ message: { id: mid, ticket_id: ticketId, user_id: uid, body: bodyText, createdAt: now } })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/tickets/:id/messages', _POST)

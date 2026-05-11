@@ -5,6 +5,7 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { slugifySegment } from '@/lib/slug'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: string) {
   const { rows } = await pool.query<{ ok: number }>(
@@ -26,7 +27,7 @@ function peerDisplayName(row: {
   return row.username
 }
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -140,7 +141,7 @@ export async function GET(req: Request) {
   })
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -212,8 +213,8 @@ export async function POST(req: Request) {
            VALUES ($1, $2, $3, $4, 'D', $5, $6, $7)`,
           [id, workspace_id, name, display_name, now, dm_user_a, dm_user_b]
         )
-      } catch (e: any) {
-        if (e.code === '23505') {
+      } catch (e: unknown) {
+        if ((e as { code?: string })?.code === '23505') {
           const { rows: again } = await pool.query<{ id: string; name: string; display_name: string; type: string }>(
             `SELECT id, name, display_name, type FROM aaelink.channels WHERE workspace_id = $1 AND type = 'D' AND dm_user_a = $2 AND dm_user_b = $3`,
             [workspace_id, dm_user_a, dm_user_b]
@@ -258,9 +259,9 @@ export async function POST(req: Request) {
         }
         await pool.query('COMMIT')
         return NextResponse.json({ channel: { id, team_id: workspace_id, name, display_name, type: 'G' } })
-      } catch (e: any) {
+      } catch (e: unknown) {
         await pool.query('ROLLBACK')
-        if (e.code === '23505') {
+        if ((e as { code?: string })?.code === '23505') {
           const { rows: again } = await pool.query<{ id: string; name: string; display_name: string; type: string }>(
             `SELECT id, name, display_name, type FROM aaelink.channels WHERE workspace_id = $1 AND name = $2 AND type = 'G'`,
             [workspace_id, name]
@@ -313,7 +314,7 @@ export async function POST(req: Request) {
 }
 
 /** PATCH /api/channels — archive or unarchive a channel.  Body: { channel_id, action: 'archive' | 'unarchive' } */
-export async function PATCH(req: Request) {
+async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -322,7 +323,7 @@ export async function PATCH(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as {
     channel_id?: string
-    action?: 'archive' | 'unarchive'
+    action?: 'archive' | 'unarchive' | 'convert_to_private' | 'convert_to_public'
     purpose?: string
     header?: string
   }
@@ -351,7 +352,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  if (!action || (action !== 'archive' && action !== 'unarchive')) {
+  if (!action || !['archive', 'unarchive', 'convert_to_private', 'convert_to_public'].includes(action)) {
     return NextResponse.json({ error: 'valid_action_required' }, { status: 400 })
   }
 
@@ -364,7 +365,21 @@ export async function PATCH(req: Request) {
 
   // Don't allow archiving DM channels
   if (ch.type === 'D') {
-    return NextResponse.json({ error: 'cannot_archive_dm' }, { status: 400 })
+    return NextResponse.json({ error: 'cannot_modify_dm' }, { status: 400 })
+  }
+
+  // Protect default channels (#general) from being archived or converted to private
+  const { rows: defaultCheck } = await pool.query<{ is_default: boolean }>(
+    `SELECT COALESCE(is_default, FALSE) AS is_default FROM aaelink.channels WHERE id = $1`,
+    [channelId]
+  )
+  if (defaultCheck[0]?.is_default) {
+    if (action === 'archive') {
+      return NextResponse.json({ error: 'cannot_archive_default_channel' }, { status: 400 })
+    }
+    if (action === 'convert_to_private') {
+      return NextResponse.json({ error: 'cannot_convert_default_channel' }, { status: 400 })
+    }
   }
 
   if (action === 'archive') {
@@ -372,12 +387,116 @@ export async function PATCH(req: Request) {
       `UPDATE aaelink.channels SET archived_at = $1 WHERE id = $2`,
       [Date.now(), channelId]
     )
-  } else {
+  } else if (action === 'unarchive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = 0 WHERE id = $1`,
       [channelId]
     )
+  } else if (action === 'convert_to_private') {
+    if (ch.type !== 'O') {
+      return NextResponse.json({ error: 'channel_not_public' }, { status: 400 })
+    }
+    await pool.query(`UPDATE aaelink.channels SET type = 'P' WHERE id = $1`, [channelId])
+    // Log the conversion
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
+         VALUES ($1, $2, $3, 'channel.convert_to_private', $4, $5, $6)`,
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'O', to: 'P' }), Date.now()]
+      )
+    } catch { /* audit log is best-effort */ }
+  } else if (action === 'convert_to_public') {
+    if (ch.type !== 'P') {
+      return NextResponse.json({ error: 'channel_not_private' }, { status: 400 })
+    }
+    await pool.query(`UPDATE aaelink.channels SET type = 'O' WHERE id = $1`, [channelId])
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
+         VALUES ($1, $2, $3, 'channel.convert_to_public', $4, $5, $6)`,
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'P', to: 'O' }), Date.now()]
+      )
+    } catch { /* audit log is best-effort */ }
   }
 
   return NextResponse.json({ ok: true, action })
 }
+
+/** DELETE /api/channels — permanently delete a channel (admin/owner only). */
+async function _DELETE(req: Request) {
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  await ensureSchema()
+
+  let body: { channel_id?: string }
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'invalid_body' }, { status: 400 }) }
+
+  const channelId = String(body.channel_id || '').trim()
+  if (!channelId) return NextResponse.json({ error: 'channel_id_required' }, { status: 400 })
+
+  // Get channel info
+  const { rows } = await pool.query<{
+    workspace_id: string; name: string; type: string; is_default: boolean
+  }>(
+    `SELECT workspace_id, name, type, COALESCE(is_default, false) AS is_default FROM aaelink.channels WHERE id = $1`,
+    [channelId]
+  )
+  if (!rows[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+
+  const ch = rows[0]
+
+  // Protect default channels from deletion
+  if (ch.is_default) {
+    return NextResponse.json({ error: 'cannot_delete_default_channel' }, { status: 403 })
+  }
+
+  // Only workspace admin/owner can delete
+  const { rows: membership } = await pool.query<{ role: string }>(
+    `SELECT role FROM aaelink.workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+    [ch.workspace_id, uid]
+  )
+  if (!['owner', 'admin'].includes(membership[0]?.role || '')) {
+    return NextResponse.json({ error: 'forbidden_admin_only' }, { status: 403 })
+  }
+
+  // Cascade delete in a transaction
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    // Remove all dependent records
+    await client.query(`DELETE FROM aaelink.message_drafts WHERE channel_id = $1`, [channelId])
+    await client.query(`DELETE FROM aaelink.pinned_messages WHERE channel_id = $1`, [channelId])
+    await client.query(`DELETE FROM aaelink.starred_channels WHERE channel_id = $1`, [channelId])
+    await client.query(`DELETE FROM aaelink.message_reactions WHERE message_id IN (SELECT id FROM aaelink.messages WHERE channel_id = $1)`, [channelId])
+    await client.query(`DELETE FROM aaelink.messages WHERE channel_id = $1`, [channelId])
+    await client.query(`DELETE FROM aaelink.channel_members WHERE channel_id = $1`, [channelId])
+    await client.query(`DELETE FROM aaelink.channels WHERE id = $1`, [channelId])
+
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+
+  // Audit log
+  try {
+    await pool.query(
+      `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
+       VALUES ($1, $2, $3, 'channel.delete', $4, $5, $6)`,
+      [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ name: ch.name, type: ch.type }), Date.now()]
+    )
+  } catch { /* best-effort */ }
+
+  return NextResponse.json({ ok: true, deleted: channelId })
+}
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET',    '/api/channels', _GET)
+export const POST   = tracedRoute('POST',   '/api/channels', _POST)
+export const PATCH  = tracedRoute('PATCH',  '/api/channels', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/channels', _DELETE)

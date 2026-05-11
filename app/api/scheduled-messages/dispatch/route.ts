@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Scheduled Messages Dispatcher — POST /api/scheduled-messages/dispatch
@@ -14,7 +15,7 @@ import { ensureSchema } from '@/lib/migrate'
  *
  * Returns the count of dispatched messages.
  */
-export async function POST() {
+async function _POST() {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -65,7 +66,7 @@ export async function POST() {
       )
 
       dispatched++
-    } catch (err) {
+    } catch (err: unknown) {
       // If insertion fails (e.g. channel deleted), mark as failed
       console.error(`[scheduled-dispatch] Failed to send ${msg.id}:`, err)
       await pool.query(
@@ -77,3 +78,6 @@ export async function POST() {
 
   return NextResponse.json({ dispatched })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/scheduled-messages/dispatch', _POST)

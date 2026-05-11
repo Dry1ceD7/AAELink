@@ -3,13 +3,14 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { hashPassword } from '@/lib/password'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /** Self-service sign-up is only on when explicitly set to `1` (internal deployments usually leave it off). */
 function openRegistration(): boolean {
   return process.env.AAELINK_OPEN_REGISTRATION === '1'
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -56,3 +57,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'register_failed' }, { status: 400 })
   }
 }
+
+// ── Traced export ───────────────────────────────────────────────────
+export const POST = tracedRoute('POST', '/api/auth/register', _POST)

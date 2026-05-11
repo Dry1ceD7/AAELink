@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 import {
   SUPPORT_SESSION_COOKIE,
   clearSupportSessionCookie,
@@ -9,17 +10,21 @@ import {
 } from '@/lib/supportSession'
 
 /** Returns whether the current browser has a valid support (IT contact) verification. */
-export async function GET() {
+async function _GET() {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ verified: false as const })
   const v = await readSupportVerifiedUserId()
   return NextResponse.json({ verified: v === uid })
 }
 
-export async function DELETE() {
+async function _DELETE() {
   const sid = (await cookies()).get(SUPPORT_SESSION_COOKIE)?.value?.trim()
   if (sid) await revokeSupportContactSessionByCookieId(sid)
   const res = NextResponse.json({ ok: true })
   clearSupportSessionCookie(res)
   return res
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/support/session', _GET)
+export const DELETE = tracedRoute('DELETE', '/api/support/session', _DELETE)

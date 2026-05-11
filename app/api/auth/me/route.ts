@@ -3,15 +3,16 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
   const { rows } = await pool.query(
-    `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji FROM aaelink.users WHERE id = $1`,
+    `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji, pronouns, department FROM aaelink.users WHERE id = $1`,
     [uid]
   )
   const user = rows[0]
@@ -20,7 +21,7 @@ export async function GET() {
 }
 
 /** PUT /api/auth/me — update own profile fields. */
-export async function PUT(req: NextRequest) {
+async function _PUT(req: NextRequest) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -37,6 +38,8 @@ export async function PUT(req: NextRequest) {
     timezone?: string
     status_text?: string
     status_emoji?: string
+    pronouns?: string
+    department?: string
   }
 
   const firstName = typeof body.first_name === 'string' ? body.first_name.trim().slice(0, 128) : undefined
@@ -48,6 +51,8 @@ export async function PUT(req: NextRequest) {
   const timezone = typeof body.timezone === 'string' ? body.timezone.trim().slice(0, 64) : undefined
   const statusText = typeof body.status_text === 'string' ? body.status_text.trim().slice(0, 64) : undefined
   const statusEmoji = typeof body.status_emoji === 'string' ? body.status_emoji.trim().slice(0, 8) : undefined
+  const pronouns = typeof body.pronouns === 'string' ? body.pronouns.trim().slice(0, 32) : undefined
+  const department = typeof body.department === 'string' ? body.department.trim().slice(0, 128) : undefined
 
   const sets: string[] = []
   const vals: unknown[] = []
@@ -61,6 +66,8 @@ export async function PUT(req: NextRequest) {
   if (timezone !== undefined) { sets.push(`timezone = $${i++}`); vals.push(timezone || null) }
   if (statusText !== undefined) { sets.push(`status_text = $${i++}`); vals.push(statusText || null) }
   if (statusEmoji !== undefined) { sets.push(`status_emoji = $${i++}`); vals.push(statusEmoji || null) }
+  if (pronouns !== undefined) { sets.push(`pronouns = $${i++}`); vals.push(pronouns || null) }
+  if (department !== undefined) { sets.push(`department = $${i++}`); vals.push(department || null) }
 
   if (sets.length === 0) {
     return NextResponse.json({ error: 'no_fields' }, { status: 400 })
@@ -83,8 +90,12 @@ export async function PUT(req: NextRequest) {
   ])
 
   const { rows } = await pool.query(
-    `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji FROM aaelink.users WHERE id = $1`,
+    `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji, pronouns, department FROM aaelink.users WHERE id = $1`,
     [uid]
   )
   return NextResponse.json({ user: rows[0] })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/auth/me', _GET)
+export const PUT    = tracedRoute('PUT', '/api/auth/me', _PUT)

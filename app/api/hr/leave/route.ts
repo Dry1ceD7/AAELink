@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN aaelink.users a ON l.approved_by = a.id
       WHERE l.workspace_id = $1
     `
-    const params: any[] = [workspaceId]
+    const params: (string | null)[] = [workspaceId]
     
     if (userId) {
       params.push(userId)
@@ -38,12 +39,13 @@ export async function GET(req: NextRequest) {
 
     const { rows: leaves } = await pool.query(query, params)
     return NextResponse.json({ leaves })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'leave_query_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -70,7 +72,12 @@ export async function POST(req: NextRequest) {
     )
 
     return NextResponse.json({ success: true, id })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'leave_request_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/hr/leave', _GET)
+export const POST   = tracedRoute('POST', '/api/hr/leave', _POST)

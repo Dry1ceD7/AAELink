@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import fs from 'fs'
 import path from 'path'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
@@ -13,7 +14,7 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
  * POST /api/files/upload — upload a file attachment for a message.
  * Multipart form: file, channel_id, message_id (optional - can link after message creation)
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** GET /api/files/upload?message_id=... — get attachments for a message. */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -106,3 +107,7 @@ export async function GET(req: NextRequest) {
     }))
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/files/upload', _GET)
+export const POST   = tracedRoute('POST', '/api/files/upload', _POST)

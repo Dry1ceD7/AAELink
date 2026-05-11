@@ -6,6 +6,7 @@ import { hashPassword } from '@/lib/password'
 import { readSessionUserId } from '@/lib/session'
 import { sendContactOtpEmail, sendContactOtpSms, contactOtpDeliveryStatus } from '@/lib/sendContactOtp'
 import { supportOtpRateLimitHit } from '@/lib/supportOtpRateLimit'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const OTP_MS = 10 * 60 * 1000
 
@@ -22,7 +23,7 @@ function maskEmail(email: string) {
   return `${show}***@${d}`
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
@@ -96,3 +97,6 @@ export async function POST(req: Request) {
     destination_hint: channel === 'email' ? maskEmail(destination) : `${destination.slice(0, 4)}***`
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/support/request-otp', _POST)

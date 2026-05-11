@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 interface BookmarkRow {
   id: string
@@ -16,7 +17,7 @@ interface BookmarkRow {
 }
 
 /** GET /api/bookmarks?channel_id=... — list bookmarks for a channel. */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
 }
 
 /** POST /api/bookmarks — create a new bookmark.  Body: { channel_id, title, link_url, emoji? } */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** DELETE /api/bookmarks?id=... — remove a bookmark. */
-export async function DELETE(req: NextRequest) {
+async function _DELETE(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -103,3 +104,8 @@ export async function DELETE(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET',    '/api/bookmarks', _GET)
+export const POST   = tracedRoute('POST',   '/api/bookmarks', _POST)
+export const DELETE = tracedRoute('DELETE', '/api/bookmarks', _DELETE)

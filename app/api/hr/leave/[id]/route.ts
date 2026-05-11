@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -29,12 +30,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     )
 
     return NextResponse.json({ success: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'leave_update_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -48,7 +50,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Only allow deletion if pending (or allow HR admins)
     await pool.query(`DELETE FROM aaelink.leave_requests WHERE id = $1 AND user_id = $2 AND status = 'pending'`, [id, userId])
     return NextResponse.json({ success: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'leave_delete_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const PATCH  = tracedRoute('PATCH', '/api/hr/leave/:id', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/hr/leave/:id', _DELETE)

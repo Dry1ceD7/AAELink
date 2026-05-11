@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { contactOtpDeliveryStatus } from '@/lib/sendContactOtp'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   let it_online = false
   if (pool) {
@@ -24,3 +25,6 @@ export async function GET() {
     sms_otp_ready: delivery.sms_ready
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/support/status', _GET)

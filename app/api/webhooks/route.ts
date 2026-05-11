@@ -5,9 +5,10 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { isPlatformAdmin } from '@/lib/platformRole'
 import { writeAuditLog, extractIp } from '@/lib/auditLog'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /** List webhooks for a workspace. Query param: workspace_id */
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
 }
 
 /** Create a webhook (owner/admin only). */
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -107,7 +108,7 @@ export async function POST(req: Request) {
 }
 
 /** Delete a webhook (owner/admin only). Query param: id */
-export async function DELETE(req: Request) {
+async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -142,3 +143,53 @@ export async function DELETE(req: Request) {
 
   return NextResponse.json({ deleted: true })
 }
+
+/** Toggle webhook active state (owner/admin only). Body: { id, is_active } */
+async function _PATCH(req: Request) {
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  await ensureSchema()
+
+  const body = (await req.json()) as { id?: string; is_active?: boolean }
+  const webhookId = String(body.id ?? '').trim()
+  if (!webhookId) return NextResponse.json({ error: 'id_required' }, { status: 400 })
+  if (typeof body.is_active !== 'boolean') {
+    return NextResponse.json({ error: 'is_active_required' }, { status: 400 })
+  }
+
+  const { rows } = await pool.query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM aaelink.webhooks WHERE id = $1`,
+    [webhookId]
+  )
+  if (!rows[0]) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  const { rows: member } = await pool.query<{ role: string }>(
+    `SELECT role FROM aaelink.workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+    [rows[0].workspace_id, uid]
+  )
+  if (!member[0] || !['owner', 'admin'].includes(member[0].role)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  await pool.query(
+    `UPDATE aaelink.webhooks SET is_active = $1, updated_at = $2 WHERE id = $3`,
+    [body.is_active, Date.now(), webhookId]
+  )
+
+  writeAuditLog({
+    pool, workspaceId: rows[0].workspace_id, actorId: uid, actorRole: member[0].role,
+    action: body.is_active ? 'webhook.enable' : 'webhook.disable',
+    resourceKind: 'webhook', resourceId: webhookId,
+    ipAddress: extractIp(req)
+  })
+
+  return NextResponse.json({ id: webhookId, is_active: body.is_active })
+}
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/webhooks', _GET)
+export const POST   = tracedRoute('POST', '/api/webhooks', _POST)
+export const PATCH  = tracedRoute('PATCH', '/api/webhooks', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/webhooks', _DELETE)

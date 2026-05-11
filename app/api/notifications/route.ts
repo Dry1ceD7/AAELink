@@ -4,6 +4,7 @@ import { userCanReadChannel } from '@/lib/collab-access'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 import type { Pool } from 'pg'
 
 async function unreadCountForUser(pool: Pool, userId: string): Promise<number> {
@@ -14,7 +15,7 @@ async function unreadCountForUser(pool: Pool, userId: string): Promise<number> {
   return Number(rows[0]?.c) || 0
 }
 
-export async function GET() {
+async function _GET() {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -57,7 +58,7 @@ export async function GET() {
   return NextResponse.json({ notifications, unread_count })
 }
 
-export async function PATCH(req: Request) {
+async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -154,3 +155,7 @@ export async function PATCH(req: Request) {
   const unread_count = await unreadCountForUser(pool, uid)
   return NextResponse.json({ ok: true, unread_count })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET   = tracedRoute('GET',   '/api/notifications', _GET)
+export const PATCH = tracedRoute('PATCH', '/api/notifications', _PATCH)

@@ -4,11 +4,12 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import fs from 'fs'
 import path from 'path'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
 
 /** GET /api/files/[id]/download — download a file attachment. */
-export async function GET(
+async function _GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -44,3 +45,6 @@ export async function GET(
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/files/:id/download', _GET)

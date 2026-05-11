@@ -4,6 +4,7 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { userCanReadChannel } from '@/lib/collab-access'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const TYPING_TTL_MS = 8_000
 const STALE_PRUNE_MS = 120_000
@@ -22,7 +23,7 @@ async function assertThreadRoot(
 }
 
 /** List user ids typing in the channel main composer, or in a thread when `root_id` is set. */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
  * - Thread composer: `thread_root_id` = root message id.
  * - `stop: true` clears channel row, or thread row when `thread_root_id` is set.
  */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -127,3 +128,7 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/collab/typing', _GET)
+export const POST   = tracedRoute('POST', '/api/collab/typing', _POST)

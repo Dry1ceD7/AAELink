@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * GET /api/user-status/bulk?workspace_id=...
@@ -10,7 +11,7 @@ import { readSessionUserId } from '@/lib/session'
  * Used by the presence listener to merge manual status overrides with
  * timestamp-based presence computation.
  */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -37,3 +38,6 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ statuses })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/user-status/bulk', _GET)

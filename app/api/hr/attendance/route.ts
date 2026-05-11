@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
       JOIN aaelink.users u ON l.user_id = u.id
       WHERE l.workspace_id = $1
     `
-    const params: any[] = [workspaceId]
+    const params: (string | null)[] = [workspaceId]
     
     if (dateStr) {
       params.push(dateStr)
@@ -41,12 +42,13 @@ export async function GET(req: NextRequest) {
 
     const { rows: logs } = await pool.query(query, params)
     return NextResponse.json({ logs })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'attendance_query_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -103,7 +105,12 @@ export async function POST(req: NextRequest) {
     }
     
     return NextResponse.json({ error: 'invalid action' }, { status: 400 })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'attendance_action_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/hr/attendance', _GET)
+export const POST   = tracedRoute('POST', '/api/hr/attendance', _POST)

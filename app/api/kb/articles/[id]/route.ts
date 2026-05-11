@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -28,13 +29,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     pool.query(`UPDATE aaelink.kb_articles SET view_count = view_count + 1 WHERE id = $1`, [id]).catch(console.error)
 
     return NextResponse.json({ article: rows[0] })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error fetching KB article:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -72,13 +73,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       values
     )
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error updating KB article:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -92,8 +93,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { rowCount } = await pool.query(`DELETE FROM aaelink.kb_articles WHERE id = $1`, [id])
     if (rowCount === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error deleting KB article:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/kb/articles/:id', _GET)
+export const PATCH  = tracedRoute('PATCH', '/api/kb/articles/:id', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/kb/articles/:id', _DELETE)

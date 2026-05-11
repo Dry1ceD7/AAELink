@@ -4,8 +4,9 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { getBucket, getObjectBytes, getS3Client } from '@/lib/s3'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const s3 = getS3Client()
@@ -33,3 +34,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/documents/:id/download', _GET)

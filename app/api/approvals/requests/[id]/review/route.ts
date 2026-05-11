@@ -3,8 +3,9 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+async function _POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const requestId = params.id
 
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
     await client.query('COMMIT')
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK')
     console.error('Error processing approval review:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -167,3 +168,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     client.release()
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/approvals/requests/:id/review', _POST)

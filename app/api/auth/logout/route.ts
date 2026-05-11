@@ -3,13 +3,14 @@ import { cookies } from 'next/headers'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 import {
   SUPPORT_SESSION_COOKIE,
   clearSupportSessionCookie,
   revokeSupportContactSessionByCookieId
 } from '@/lib/supportSession'
 
-export async function POST() {
+async function _POST() {
   const pool = getPool()
   const jar = await cookies()
   const sid = jar.get(SESSION_COOKIE)?.value
@@ -33,3 +34,6 @@ export async function POST() {
   clearSupportSessionCookie(res)
   return res
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/auth/logout', _POST)

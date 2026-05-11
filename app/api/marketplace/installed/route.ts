@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * GET    /api/marketplace/installed?workspace_id=...   → List user's installed plugins
@@ -10,7 +11,7 @@ import { readSessionUserId } from '@/lib/session'
  * DELETE /api/marketplace/install?workspace_id=...&plugin_id=...  → Uninstall
  */
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -28,8 +29,11 @@ export async function GET(req: NextRequest) {
       [uid, workspaceId]
     )
     return NextResponse.json({ installed: rows })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[marketplace/installed GET]', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/marketplace/installed', _GET)

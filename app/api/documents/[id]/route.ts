@@ -4,8 +4,9 @@ import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { getS3Client, getBucket, deleteObject } from '@/lib/s3'
 import { isWorkspaceMember } from '@/lib/workspaceAccess'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function DELETE(
+async function _DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -40,7 +41,7 @@ export async function DELETE(
   // Delete from S3
   try {
     await deleteObject(s3, getBucket(), doc.bucket_key)
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[documents/delete] S3 delete error:', err)
     // Continue to delete the DB record even if S3 fails
   }
@@ -50,3 +51,6 @@ export async function DELETE(
 
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const DELETE = tracedRoute('DELETE', '/api/documents/:id', _DELETE)

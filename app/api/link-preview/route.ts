@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Link Preview (URL Unfurling) — GET /api/link-preview?url=...
@@ -12,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const TIMEOUT_MS = 5000
 const MAX_HTML_BYTES = 64_000
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const rawUrl = req.nextUrl.searchParams.get('url')?.trim()
   if (!rawUrl) return NextResponse.json({ error: 'url_required' }, { status: 400 })
 
@@ -109,3 +110,6 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&#x27;/g, "'")
     .replace(/&#x2F;/g, '/')
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/link-preview', _GET)

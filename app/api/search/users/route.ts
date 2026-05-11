@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-/** GET /api/search/users?q=... — search users by username/name. */
-export async function GET(req: NextRequest) {
+/**
+ * GET /api/search/users?q=...&workspace_id=...&limit=...
+ *
+ * Search users by username, name, email, department, or job title.
+ * Optional workspace_id scopes results to workspace members only.
+ * Returns enriched user objects including presence and role info.
+ */
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -12,20 +19,67 @@ export async function GET(req: NextRequest) {
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const q = req.nextUrl.searchParams.get('q')?.trim() || ''
+  const workspaceId = req.nextUrl.searchParams.get('workspace_id')?.trim() || ''
+  const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit')) || 20, 1), 50)
+
   if (!q || q.length < 1) {
-    return NextResponse.json({ users: [] })
+    return NextResponse.json({ users: [], query: q, count: 0 })
   }
 
   const pattern = `%${q}%`
-  const { rows } = await pool.query<{
-    id: string; username: string; first_name: string; last_name: string; email: string; avatar_url: string | null; job_title: string | null; phone: string | null; timezone: string | null; status_text: string | null; status_emoji: string | null;
-  }>(
-    `SELECT id, username, first_name, last_name, email, avatar_url, job_title, phone, timezone, status_text, status_emoji
-     FROM aaelink.users
-     WHERE username ILIKE $1 OR first_name ILIKE $1 OR last_name ILIKE $1 OR email ILIKE $1
-     ORDER BY username ASC LIMIT 20`,
-    [pattern]
-  )
 
-  return NextResponse.json({ users: rows })
+  let query: string
+  const params: (string | number)[] = [pattern]
+
+  if (workspaceId) {
+    // Scoped to workspace members
+    params.push(workspaceId)
+    params.push(limit)
+    query = `
+      SELECT u.id, u.username, u.first_name, u.last_name, u.email,
+             u.avatar_url, u.job_title, u.phone, u.timezone,
+             u.status_text, u.status_emoji, u.department,
+             u.platform_role, u.pronouns,
+             p.status AS presence_status
+      FROM aaelink.users u
+      JOIN aaelink.workspace_members wm ON wm.user_id = u.id AND wm.workspace_id = $2
+      LEFT JOIN aaelink.presence p ON p.user_id = u.id
+      WHERE (u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1
+             OR u.email ILIKE $1 OR u.department ILIKE $1 OR u.job_title ILIKE $1)
+      ORDER BY
+        CASE WHEN u.username ILIKE $1 THEN 0 ELSE 1 END,
+        u.username ASC
+      LIMIT $3
+    `
+  } else {
+    // Global search
+    params.push(limit)
+    query = `
+      SELECT u.id, u.username, u.first_name, u.last_name, u.email,
+             u.avatar_url, u.job_title, u.phone, u.timezone,
+             u.status_text, u.status_emoji, u.department,
+             u.platform_role, u.pronouns,
+             p.status AS presence_status
+      FROM aaelink.users u
+      LEFT JOIN aaelink.presence p ON p.user_id = u.id
+      WHERE (u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1
+             OR u.email ILIKE $1 OR u.department ILIKE $1 OR u.job_title ILIKE $1)
+      ORDER BY
+        CASE WHEN u.username ILIKE $1 THEN 0 ELSE 1 END,
+        u.username ASC
+      LIMIT $2
+    `
+  }
+
+  const { rows } = await pool.query(query, params)
+
+  return NextResponse.json({
+    users: rows,
+    query: q,
+    count: rows.length,
+    workspace_scoped: !!workspaceId
+  })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/search/users', _GET)

@@ -7,6 +7,7 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { notifyChannelMentions } from '@/lib/notificationsServer'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -50,7 +51,7 @@ async function deletionsSince(
   })
 }
 
-export async function GET(req: Request) {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -429,13 +430,13 @@ export async function GET(req: Request) {
   return NextResponse.json({ posts, older_available })
 }
 
-export async function POST(req: Request) {
+async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
-  const body = (await req.json()) as { channel_id?: string; message?: string; root_id?: string }
+  const body = (await req.json()) as { channel_id?: string; message?: string; root_id?: string; broadcast?: boolean }
   const channel_id = String(body.channel_id || '')
   const message = String(body.message || '').trim()
   const root_id = String(body.root_id || '').trim()
@@ -499,6 +500,16 @@ export async function POST(req: Request) {
     console.error('notifyChannelMentions', e)
   }
 
+  // ── Broadcast: also send as top-level message in the channel (Slack parity) ──
+  if (root_id && body.broadcast) {
+    const broadcastId = randomUUID()
+    await pool.query(
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+      [broadcastId, channel_id, uid, message, '', now + 1]
+    )
+  }
+
   const created = rowToPost({
     id,
     channel_id,
@@ -511,3 +522,7 @@ export async function POST(req: Request) {
   })
   return NextResponse.json({ ...created, reactions: created.reactions ?? [] })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET  = tracedRoute('GET',  '/api/messages', _GET)
+export const POST = tracedRoute('POST', '/api/messages', _POST)

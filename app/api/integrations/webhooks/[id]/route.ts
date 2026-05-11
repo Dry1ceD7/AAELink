@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { isPlatformAdmin } from '@/lib/platformRole'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -53,7 +54,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await pool.query(`DELETE FROM aaelink.incoming_webhooks WHERE id = $1`, [id])
     return NextResponse.json({ success: true })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'webhook_delete_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const DELETE = tracedRoute('DELETE', '/api/integrations/webhooks/:id', _DELETE)

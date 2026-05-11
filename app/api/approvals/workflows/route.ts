@@ -3,8 +3,9 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'Database not configured' }, { status: 503 })
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ workflows: rows })
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'Database not configured' }, { status: 503 })
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     await client.query('COMMIT')
     return NextResponse.json({ success: true, id: workflowId })
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK')
     console.error('Error creating workflow:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** PATCH /api/approvals/workflows — Deactivate or rename a workflow. Body: { workflow_id, is_active?, name? } */
-export async function PATCH(req: NextRequest) {
+async function _PATCH(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'Database not configured' }, { status: 503 })
@@ -155,3 +156,8 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ success: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/approvals/workflows', _GET)
+export const POST   = tracedRoute('POST', '/api/approvals/workflows', _POST)
+export const PATCH  = tracedRoute('PATCH', '/api/approvals/workflows', _PATCH)

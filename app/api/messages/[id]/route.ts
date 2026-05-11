@@ -4,11 +4,12 @@ import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 const MAX_BODY = 32_000
 
 /** Resolve any message in a thread to its root post for deep links (notifications, shared links). */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -89,7 +90,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   })
 }
 
-export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -157,7 +158,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 /** Owner-only delete. Root posts remove all thread replies in this channel. */
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -234,3 +235,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     client.release()
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/messages/:id', _GET)
+export const PATCH  = tracedRoute('PATCH', '/api/messages/:id', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/messages/:id', _DELETE)

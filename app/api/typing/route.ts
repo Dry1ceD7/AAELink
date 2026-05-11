@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * Typing Indicators API — ephemeral, in-memory (no DB persistence).
@@ -28,7 +29,7 @@ function pruneChannel(channelId: string): Map<string, number> {
 }
 
 /** POST — mark the caller as "typing" in a channel. */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** GET — return who is currently typing in a channel. */
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -63,3 +64,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ channel_id: channelId, typing: typingUserIds })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST = tracedRoute('POST', '/api/typing', _POST)
+export const GET  = tracedRoute('GET',  '/api/typing', _GET)

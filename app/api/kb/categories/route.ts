@@ -3,8 +3,9 @@ import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ categories: rows })
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -47,8 +48,12 @@ export async function POST(req: NextRequest) {
       [id, workspace_id, name, description || '', userId, now, now]
     )
     return NextResponse.json({ success: true, id })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error creating KB category:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/kb/categories', _GET)
+export const POST   = tracedRoute('POST', '/api/kb/categories', _POST)

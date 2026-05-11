@@ -3,11 +3,12 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /**
  * GET /api/approvals/requests/[id] — Get detailed request info including the review trail.
  */
-export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+async function _GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const requestId = params.id
 
@@ -67,7 +68,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       reviews,
       steps
     })
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('Error fetching approval request detail:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
@@ -76,7 +77,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 /**
  * DELETE /api/approvals/requests/[id] — Cancel a pending request (requester only).
  */
-export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+async function _DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const requestId = params.id
 
@@ -128,7 +129,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
 
     await client.query('COMMIT')
     return NextResponse.json({ success: true })
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK')
     console.error('Error canceling approval request:', err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -136,3 +137,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
     client.release()
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET    = tracedRoute('GET', '/api/approvals/requests/:id', _GET)
+export const DELETE = tracedRoute('DELETE', '/api/approvals/requests/:id', _DELETE)

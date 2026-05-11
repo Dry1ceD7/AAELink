@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
 import { randomUUID } from 'crypto'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 // Public receiver for Incoming Webhooks.
 // External systems (HR, Finance, Jira, etc.) POST to /api/webhooks/{secret_token}
-export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+async function _POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
 
@@ -77,7 +78,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     )
 
     return NextResponse.json({ success: true, message: 'ok' })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'webhook_receive_failed'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/webhooks/:token', _POST)

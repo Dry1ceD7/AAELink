@@ -3,9 +3,10 @@ import { userCanReadChannel } from '@/lib/collab-access'
 import { getPool } from '@/lib/db'
 import { ensureSchema } from '@/lib/migrate'
 import { readSessionUserId } from '@/lib/session'
+import { tracedRoute } from '@/lib/tracedRoute'
 
 /** Advance read cursor for a channel (root messages only; uses max with server value). */
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -46,3 +47,6 @@ export async function POST(req: NextRequest) {
   }
   return NextResponse.json({ ok: true })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const POST   = tracedRoute('POST', '/api/collab/read-state', _POST)
