@@ -15337,6 +15337,248 @@ a, button, input, select, textarea, [role="button"] {
   color: var(--fg);
 }
 
+/* ── Batch 3 — Final Comprehensive Dark Overrides ──────────────────── */
+
+/* Ticket mail list panel (left pane in mail view) */
+[data-theme="dark"] .ticket-mail-list {
+  background: var(--mm-bg-deep, #17191d);
+  border-right-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .ticket-mail-row {
+  border-bottom-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .ticket-mail-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+[data-theme="dark"] .ticket-mail-row--active {
+  background: var(--mm-bg-secondary, #222529);
+}
+[data-theme="dark"] .ticket-mail-columns {
+  background: var(--mm-main-bg, #1a1d21);
+}
+
+/* Ticket controls (status/priority/assignee selects in detail) */
+[data-theme="dark"] .ticket-controls select {
+  background: var(--mm-bg-secondary, #222529);
+  color: var(--fg);
+  border-color: var(--mm-border-subtle);
+}
+
+/* Ticket compose popup */
+[data-theme="dark"] .ticket-compose-pop {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .ticket-compose-pop-head {
+  border-bottom-color: var(--mm-border-subtle);
+}
+
+/* Ticket internal note styling */
+[data-theme="dark"] .ticket-mail-msg--internal {
+  background: rgba(255, 200, 50, 0.08);
+}
+
+/* Ticket mail message borders */
+[data-theme="dark"] .ticket-mail-msg {
+  border-bottom-color: var(--mm-border-subtle);
+}
+
+/* Ticket link button */
+[data-theme="dark"] .ticket-mail-link-btn {
+  background: transparent;
+  color: var(--mm-muted);
+}
+[data-theme="dark"] .ticket-mail-link-btn:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Ticket icon button */
+[data-theme="dark"] .ticket-mail-icon-btn {
+  background: transparent;
+  color: var(--mm-muted);
+  border-color: var(--mm-border-subtle);
+}
+
+/* Ticket canned-reply buttons */
+[data-theme="dark"] .ticket-canned-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* Header search bar focus state */
+[data-theme="dark"] .mm-header-search-wrap:focus-within {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* App shell menu button */
+[data-theme="dark"] .app-shell .app-shell-menu-btn {
+  background: var(--mm-bg-secondary, #222529);
+  color: var(--fg);
+}
+
+/* Date divider text (sits between messages) */
+[data-theme="dark"] .app-shell .date-divider-text {
+  background: var(--mm-main-bg, #1a1d21);
+  color: var(--mm-muted);
+}
+
+/* Thread cards */
+[data-theme="dark"] .app-shell .thread-card {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* Ghost button inside slack cards */
+[data-theme="dark"] .slack-card .ghost-button {
+  background: transparent;
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .slack-card .ghost-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Message action bar (hover toolbar on messages) */
+[data-theme="dark"] .app-shell .message-actions-bar {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Reaction picker popup */
+[data-theme="dark"] .app-shell .reaction-picker {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  box-shadow: var(--mm-shadow-popover);
+}
+
+/* @mention autocomplete popup */
+[data-theme="dark"] .app-shell .mention-popup {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  box-shadow: var(--mm-shadow-popover);
+  color: var(--fg);
+}
+
+/* Module back button */
+[data-theme="dark"] .module-back {
+  background: transparent;
+  color: var(--fg);
+}
+
+/* Notification popover & rows */
+[data-theme="dark"] .mm-notif-popover {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .mm-notif-row {
+  background: transparent;
+  border-bottom-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .mm-notif-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* RHS header & tabs */
+[data-theme="dark"] .mm-rhs-head {
+  background: var(--mm-main-bg, #1a1d21);
+  border-bottom-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .mm-rhs-tabs {
+  background: var(--mm-main-bg, #1a1d21);
+}
+
+/* Search panel */
+[data-theme="dark"] .mm-search-panel {
+  background: var(--mm-main-bg, #1a1d21);
+  color: var(--fg);
+}
+
+/* Command palette */
+[data-theme="dark"] .mm-cmd-panel {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* Ghost buttons */
+[data-theme="dark"] .ghost-button {
+  background: transparent;
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .ghost-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+[data-theme="dark"] .ghost-button.light {
+  background: transparent;
+}
+
+/* Slack button secondary */
+[data-theme="dark"] .slack-button.secondary {
+  background: transparent;
+  border-color: var(--mm-border-subtle);
+  color: var(--aae-link);
+}
+
+/* Doc table */
+[data-theme="dark"] .doc-table {
+  background: var(--mm-main-bg, #1a1d21);
+  border-color: var(--mm-border-subtle);
+}
+[data-theme="dark"] .doc-table th {
+  background: var(--mm-bg-secondary, #222529);
+  border-bottom-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+[data-theme="dark"] .doc-table td {
+  border-bottom-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* File preview chrome */
+[data-theme="dark"] .file-preview-chrome {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+}
+
+/* Custom status popup */
+[data-theme="dark"] .custom-status-popup {
+  background: var(--mm-bg-secondary, #222529);
+  border-color: var(--mm-border-subtle);
+  color: var(--fg);
+}
+
+/* Auth modal & workspace row */
+[data-theme="dark"] .aae-auth-modal {
+  background: var(--mm-bg-secondary, #222529);
+  color: var(--fg);
+}
+[data-theme="dark"] .aae-ws-row {
+  background: var(--mm-main-bg, #1a1d21);
+}
+
+/* Modal panel */
+[data-theme="dark"] .app-shell .modal-panel {
+  background: var(--mm-bg-secondary, #222529);
+  color: var(--fg);
+}
+
+/* Signature pad canvas (intentionally white for visibility) */
+/* [data-theme="dark"] .sigpad-canvas-wrap — stays white for ink contrast */
+
+/* Priority medium */
+[data-theme="dark"] .priority-medium {
+  background: rgba(255, 200, 50, 0.12);
+  color: #ffc832;
+}
+
 /* ─────────────────────────────────────────────────────────────────── */
 /*  AAE — Phase A UI components (Blueprint Part 3)                     */
 /* ─────────────────────────────────────────────────────────────────── */
