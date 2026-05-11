@@ -72,9 +72,9 @@ export function NewMessageModal({ open, onClose, users, meId, onStartChat }: New
         </div>
         <div className="mm-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '300px' }}>
           {selectedUsers.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem', background: 'var(--c-bg-tertiary)', borderRadius: '6px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem', background: 'var(--c-bg-tertiary)', borderRadius: '8px' }}>
               {selectedUsers.map(u => (
-                <span key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--c-bg-secondary)', padding: '2px 8px', borderRadius: '12px', fontSize: '13px' }}>
+                <span key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--c-bg-secondary)', padding: '2px 8px', borderRadius: '8px', fontSize: '13px' }}>
                   {getDisplayName(u)}
                   <button type="button" onClick={() => handleToggle(u.id)} style={{ background: 'none', border: 'none', color: 'var(--c-text-secondary)', cursor: 'pointer', padding: 0, display: 'flex' }}>
                     <X size={12} />
@@ -97,7 +97,7 @@ export function NewMessageModal({ open, onClose, users, meId, onStartChat }: New
             />
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--c-border)', borderRadius: '6px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--c-border)', borderRadius: '8px' }}>
             {filtered.length === 0 ? (
               <p style={{ padding: '1rem', textAlign: 'center', color: 'var(--c-text-secondary)' }}>No matches found.</p>
             ) : (

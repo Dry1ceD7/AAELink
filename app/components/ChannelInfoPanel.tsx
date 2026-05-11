@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Hash, Pin, X, Pencil, Users, Info, UserPlus, Archive, Trash2, BellOff, Bell, LogOut } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Hash, Pin, X, Pencil, Users, Info, UserPlus, Archive, Trash2, BellOff, Bell, LogOut, Search, Lock, Unlock } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { MessageRichText } from '@/lib/messageRich'
 import { isChannelMuted, toggleMuteChannel } from '@/lib/channelMute'
@@ -58,6 +58,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteMsg, setInviteMsg] = useState('')
   const [muted, setMuted] = useState(false)
+  const [memberSearch, setMemberSearch] = useState('')
 
   useEffect(() => {
     setMuted(isChannelMuted(channelId))
@@ -206,8 +207,8 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
             <div className="channel-info-field" style={{ marginTop: 12 }}>
               <button type="button" className="ghost-button"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center' }}
-                onClick={() => {
-                  const next = toggleMuteChannel(channelId)
+                onClick={async () => {
+                  const next = await toggleMuteChannel(channelId)
                   setMuted(next)
                   onMuteToggled?.(next)
                 }}>
@@ -253,6 +254,31 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
                   }
                 }}>
                 <Archive size={14} /> Archive channel
+              </button>
+            </div>
+          )}
+          {/* Convert channel type (Public ↔ Private) */}
+          {(info.type === 'O' || info.type === 'P') && (
+            <div className="channel-info-field" style={{ marginTop: 6 }}>
+              <button type="button" className="ghost-button"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center' }}
+                onClick={async () => {
+                  const targetType = info.type === 'O' ? 'private' : 'public'
+                  const warn = info.type === 'O'
+                    ? 'Making this channel private will restrict access to invited members only. This cannot be easily undone.'
+                    : 'Making this channel public will allow anyone in the workspace to join and view its history.'
+                  if (!confirm(`Convert #${info.display_name} to a ${targetType} channel?\n\n${warn}`)) return
+                  const action = info.type === 'O' ? 'convert_to_private' : 'convert_to_public'
+                  const res = await apiFetch('/api/channels', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channel_id: channelId, action })
+                  })
+                  if (res.ok) {
+                    void load()
+                  }
+                }}>
+                {info.type === 'O' ? <><Lock size={14} /> Convert to private channel</> : <><Unlock size={14} /> Convert to public channel</>}
               </button>
             </div>
           )}
@@ -346,14 +372,37 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
           )}
 
           {/* Member list */}
-          {members.length === 0 ? (
-            <div className="module-empty">
-              <Users size={32} strokeWidth={1.5} />
-              <h3>No members</h3>
-            </div>
-          ) : (
+          {(() => {
+            const filtered = memberSearch.trim()
+              ? members.filter(m => {
+                  const q = memberSearch.toLowerCase()
+                  const full = `${m.first_name || ''} ${m.last_name || ''}`.trim().toLowerCase()
+                  return m.username.toLowerCase().includes(q) || full.includes(q)
+                })
+              : members
+
+            return (
+              <>
+                {/* Member search */}
+                <div className="mm-forward-search" style={{ marginBottom: 8 }}>
+                  <Search size={14} />
+                  <input
+                    type="search"
+                    placeholder={`Search ${members.length} member${members.length !== 1 ? 's' : ''}…`}
+                    value={memberSearch}
+                    onChange={e => setMemberSearch(e.target.value)}
+                    style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13 }}
+                  />
+                </div>
+
+                {filtered.length === 0 ? (
+                  <div className="module-empty">
+                    <Users size={32} strokeWidth={1.5} />
+                    <h3>{memberSearch.trim() ? 'No matching members' : 'No members'}</h3>
+                  </div>
+                ) : (
             <div className="channel-members-list">
-              {members.map(m => (
+              {filtered.map(m => (
                 <div key={m.user_id} className="channel-member-row">
                   <div className="channel-member-avatar"
                     style={m.avatar_url ? {
@@ -399,7 +448,10 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
                 </div>
               ))}
             </div>
-          )}
+                )}
+              </>
+            )
+          })()}
         </div>
       )}
     </aside>

@@ -8,7 +8,7 @@ import { Composer, type ComposerHandle } from '@/app/components/chat/Composer'
 import { TypingIndicator, useTypingEmitter } from '@/app/components/chat/TypingIndicator'
 import type { ReactionSummary } from '@/lib/reactions'
 import type { SlashMeUser } from '@/lib/composerSlash'
-import { Bell, BellRing } from 'lucide-react'
+import { Bell, BellRing, Hash } from 'lucide-react'
 
 interface ThreadPanelProps {
   rootPost: ChatPost
@@ -38,6 +38,7 @@ export function ThreadPanel({
   const composerRef = useRef<ComposerHandle>(null)
 
   const { onDraftChange: emitTyping } = useTypingEmitter(rootPost.channel_id, rootPost.id)
+  const [broadcastToChannel, setBroadcastToChannel] = useState(false)
 
   // ── Bump since watermark ───────────────────────────────────────────────
   const bumpSince = useCallback((list: ChatPost[]) => {
@@ -142,7 +143,8 @@ export function ThreadPanel({
         body: JSON.stringify({
           channel_id: rootPost.channel_id,
           message,
-          root_id: rootPost.id
+          root_id: rootPost.id,
+          broadcast: broadcastToChannel || undefined
         })
       })
       if (res.ok) {
@@ -360,6 +362,22 @@ export function ThreadPanel({
         threadRootId={rootPost.id}
         placeholder="Reply…"
       />
+
+      {/* ── "Also send to #channel" toggle (Slack parity) ───── */}
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 16px 8px', fontSize: 12,
+        color: 'var(--mm-muted)', cursor: 'pointer', userSelect: 'none',
+      }}>
+        <input
+          type="checkbox"
+          checked={broadcastToChannel}
+          onChange={e => setBroadcastToChannel(e.target.checked)}
+          style={{ accentColor: 'var(--mm-link)', width: 14, height: 14 }}
+        />
+        <Hash size={11} style={{ opacity: 0.5 }} />
+        Also send to #{channelTitle}
+      </label>
 
       {/* ── Delete confirmation modal ───────────────────── */}
       {pendingDeleteMsg && (

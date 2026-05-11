@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, Eye, EyeOff, KeyRound, Loader2, Shield, User, Download, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react'
+import { AlertCircle, BellOff, Eye, EyeOff, KeyRound, Loader2, Shield, User, Download, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/apiClient'
 import { EmergencyContactPanel } from '@/app/components/EmergencyContactPanel'
@@ -233,8 +233,9 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
     setUpdateError('')
     try {
       // Try desktop IPC first (electron-updater), fallback to web API
-      const w = typeof window !== 'undefined' ? window as unknown as Record<string, unknown> : null
-      const desktop = w?.aaelinkDesktop as { checkForUpdate?: () => Promise<unknown> } | undefined
+      const desktop = typeof window !== 'undefined'
+        ? (window as Window & { aaelinkDesktop?: { checkForUpdate?: () => Promise<unknown> } }).aaelinkDesktop
+        : undefined
       if (desktop && typeof desktop.checkForUpdate === 'function') {
         await desktop.checkForUpdate()
       }
@@ -709,7 +710,7 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
                 )}
                 {getDndSchedule().enabled && (
                   <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--mm-muted)' }}>
-                    🔕 Notifications paused daily {formatSchedule(getDndSchedule())}
+                    <BellOff size={12} aria-hidden style={{ verticalAlign: -1, marginRight: 4 }} />Notifications paused daily {formatSchedule(getDndSchedule())}
                   </p>
                 )}
               </div>

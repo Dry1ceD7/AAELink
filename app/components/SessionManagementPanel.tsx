@@ -10,6 +10,7 @@ interface SessionRow {
   ip_address: string
   created_at: number
   expires_at: number
+  last_active_at: number
   is_current: boolean
 }
 
@@ -22,6 +23,16 @@ function parseDevice(ua: string): { icon: 'desktop' | 'mobile' | 'web'; label: s
   if (/safari/i.test(lower) && !/chrome/i.test(lower)) return { icon: 'web', label: 'Safari' }
   if (/edg/i.test(lower)) return { icon: 'web', label: 'Edge' }
   return { icon: 'web', label: 'Web Browser' }
+}
+
+function relativeTime(ts: number): string {
+  if (!ts) return 'Never'
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'Just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function parseOS(ua: string): string {
@@ -129,9 +140,7 @@ export function SessionManagementPanel() {
                 <div style={{ fontSize: 11, color: 'var(--mm-muted)', marginTop: 2 }}>
                   {s.ip_address || 'Unknown IP'}
                   {' · '}
-                  Logged in {s.created_at ? new Date(s.created_at).toLocaleDateString(undefined, {
-                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                  }) : 'Unknown'}
+                  Last active {relativeTime(s.last_active_at || s.created_at)}
                   {' · '}
                   Expires {new Date(s.expires_at).toLocaleDateString(undefined, {
                     month: 'short', day: 'numeric'

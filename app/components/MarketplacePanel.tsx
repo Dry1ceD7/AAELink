@@ -62,7 +62,7 @@ export const MarketplacePanel = memo(function MarketplacePanel({ workspaceId }: 
   const [pubSlug, setPubSlug] = useState('')
   const [pubDesc, setPubDesc] = useState('')
   const [pubVersion, setPubVersion] = useState('1.0.0')
-  const [pubEmoji, setPubEmoji] = useState('🧩')
+  const [pubEmoji, setPubEmoji] = useState('⬡')
   const [pubBg, setPubBg] = useState('#5865f2')
   const [pubCat, setPubCat] = useState<string>('other')
   const [pubErr, setPubErr] = useState('')
@@ -149,7 +149,7 @@ export const MarketplacePanel = memo(function MarketplacePanel({ workspaceId }: 
           slug: pubSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
           description: pubDesc.trim(),
           version: pubVersion.trim() || '1.0.0',
-          icon_emoji: pubEmoji || '🧩',
+          icon_emoji: pubEmoji || '⬡',
           icon_bg: pubBg || '#5865f2',
           category: pubCat || 'other'
         })
@@ -299,7 +299,7 @@ export const MarketplacePanel = memo(function MarketplacePanel({ workspaceId }: 
                   <div key={p.id} className="marketplace-card">
                     <div className="marketplace-card-header">
                       <div className="marketplace-card-icon" style={{ background: p.icon_bg || '#5865f2' }}>
-                        {p.icon_emoji || '🧩'}
+                        {p.icon_emoji || '⬡'}
                       </div>
                       <div>
                         <div className="marketplace-card-title">{p.name}</div>

@@ -131,8 +131,8 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         const data = await res.json()
         setAttendance(data.logs || [])
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'data_load_failed')
     } finally {
       setLoading(false)
     }
@@ -158,7 +158,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       if (!res.ok) throw new Error('Failed to create event')
       setShowEventForm(false)
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'event_create_failed') }
   }
 
   const handleDeleteEvent = async (id: string) => {
@@ -170,7 +170,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         throw new Error(json.error || 'Failed to delete event')
       }
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'event_delete_failed') }
   }
 
   const handleCreateLeave = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -190,7 +190,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       if (!res.ok) throw new Error('Failed to submit leave request')
       setShowLeaveForm(false)
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'leave_submit_failed') }
   }
 
   const handleLeaveAction = async (id: string, status: 'approved' | 'rejected') => {
@@ -202,7 +202,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       })
       if (!res.ok) throw new Error('Failed to update leave request')
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'leave_action_failed') }
   }
 
   const handleAttendance = async (action: 'in' | 'out') => {
@@ -214,7 +214,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       })
       if (!res.ok) throw new Error('Failed to update attendance')
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'attendance_failed') }
   }
 
   const filteredAttendance = useMemo(() => {
@@ -287,7 +287,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {events.length === 0 ? <p className="muted">No upcoming events.</p> : events.map(e => (
-                <div key={e.id} className="admin-table" style={{ padding: 12, borderRadius: 6, borderLeft: '4px solid var(--mm-link-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div key={e.id} className="admin-table" style={{ padding: 12, borderRadius: 8, borderLeft: '4px solid var(--mm-link-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h4 style={{ margin: '0 0 4px 0' }}>{e.title}</h4>
                     <div style={{ fontSize: 13, color: 'var(--mm-muted)' }}>
@@ -353,12 +353,12 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {leaves.length === 0 ? <p className="muted">No leave requests.</p> : leaves.map(l => (
-                <div key={l.id} className="admin-table" style={{ padding: 12, borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={l.id} className="admin-table" style={{ padding: 12, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <h4 style={{ margin: '0 0 4px 0', textTransform: 'capitalize' }}>
                       {l.leave_type} Leave
                       <span style={{
-                        marginLeft: 8, fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                        marginLeft: 8, fontSize: 11, padding: '2px 6px', borderRadius: 8,
                         background: l.status === 'approved' ? '#e6f4ea' : l.status === 'rejected' ? '#fce8e6' : 'var(--mm-sidebar-hover)',
                         color: l.status === 'approved' ? '#137333' : l.status === 'rejected' ? '#c5221f' : 'var(--mm-text)'
                       }}>

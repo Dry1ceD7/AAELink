@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronUp, Clock, Filter, Link2, Lock, Mail, MessageSquare, Plus, RefreshCw, Search, Tag, User, X, Zap } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, Columns3, Filter, LayoutList, Link2, Lock, Mail, MessageSquare, Plus, RefreshCw, Search, Tag, User, X, Zap } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { TicketKanbanBoard } from './TicketKanbanBoard'
+import { TicketListView } from './TicketListView'
+import { TicketDetailModal } from './TicketDetailModal'
+import { type TicketStatus } from '@/lib/slaEngine'
 
 export interface Ticket {
   id: string
@@ -18,9 +22,15 @@ export interface Ticket {
   assigneeId?: string
   tags?: string[]
   sla_breach_at?: number
+  /** SLA due-at from API (snake_case variant) */
+  sla_due_at?: number
+  /** SLA due-at from API (camelCase variant) */
+  slaDueAt?: number
   first_response_at?: number
   departmentCode?: string
   departmentName?: string
+  /** Ticket category (general, it, hr, finance, etc.) */
+  category?: string
   /** Present on API payloads when cross-checking workspace scope. */
   workspace_id?: string
 }
@@ -127,6 +137,11 @@ export function TicketsPanel({
   const [threadLoadError, setThreadLoadError] = useState('')
   const [composeDiscardConfirmOpen, setComposeDiscardConfirmOpen] = useState(false)
   const [itStaff, setItStaff] = useState<URow[]>([])
+  const [viewMode, setViewMode] = useState<'mail' | 'kanban' | 'list'>(() => {
+    if (typeof window === 'undefined') return 'mail'
+    try { const v = localStorage.getItem('aaelink-ticket-view'); return (v === 'mail' || v === 'kanban' || v === 'list') ? v : 'mail' } catch { return 'mail' }
+  })
+  const [detailModalId, setDetailModalId] = useState<string | null>(null)
 
   const workspaceIdRef = useRef(workspaceId)
   const detailBusyRef = useRef(false)
@@ -396,7 +411,7 @@ export function TicketsPanel({
       const res = await apiFetch('/api/admin/users')
       if (!res.ok) return
       const data = (await res.json()) as { users?: URow[] }
-      const staff = (data.users ?? []).filter((u: any) =>
+      const staff = (data.users ?? []).filter((u: URow & { platform_role?: string }) =>
         ['super_admin', 'it_admin', 'it_support', 'it_employee'].includes(u.platform_role || '')
       )
       setItStaff(staff)
@@ -801,6 +816,41 @@ export function TicketsPanel({
               </div>
             </div>
             <div className="ticket-mail-toolbar-actions">
+              <div className="ticket-view-toggle" role="radiogroup" aria-label="View mode">
+                <button
+                  type="button"
+                  className={`ticket-view-toggle-btn${viewMode === 'mail' ? ' ticket-view-toggle-btn--active' : ''}`}
+                  onClick={() => { setViewMode('mail'); try { localStorage.setItem('aaelink-ticket-view', 'mail') } catch {} }}
+                  title="Mail view"
+                  aria-label="Mail view"
+                  role="radio"
+                  aria-checked={viewMode === 'mail'}
+                >
+                  <Mail size={16} strokeWidth={2} />
+                </button>
+                <button
+                  type="button"
+                  className={`ticket-view-toggle-btn${viewMode === 'kanban' ? ' ticket-view-toggle-btn--active' : ''}`}
+                  onClick={() => { setViewMode('kanban'); try { localStorage.setItem('aaelink-ticket-view', 'kanban') } catch {} }}
+                  title="Kanban board"
+                  aria-label="Kanban board"
+                  role="radio"
+                  aria-checked={viewMode === 'kanban'}
+                >
+                  <Columns3 size={16} strokeWidth={2} />
+                </button>
+                <button
+                  type="button"
+                  className={`ticket-view-toggle-btn${viewMode === 'list' ? ' ticket-view-toggle-btn--active' : ''}`}
+                  onClick={() => { setViewMode('list'); try { localStorage.setItem('aaelink-ticket-view', 'list') } catch {} }}
+                  title="List view"
+                  aria-label="List view"
+                  role="radio"
+                  aria-checked={viewMode === 'list'}
+                >
+                  <LayoutList size={16} strokeWidth={2} />
+                </button>
+              </div>
               <button
                 type="button"
                 className="ticket-mail-icon-btn"
@@ -893,6 +943,49 @@ export function TicketsPanel({
             </label>
           </div>
 
+          {/* ── Kanban View ── */}
+          {viewMode === 'kanban' && (
+            <TicketKanbanBoard
+              tickets={visibleTickets}
+              viewerIsIt={viewerIsIt}
+              onSelect={id => { setDetailModalId(id); onTicketOpen?.(id) }}
+              onStatusChange={(id, status) => void updateTicket(id, { status: status as Ticket['status'] })}
+              userMap={userMap}
+            />
+          )}
+
+          {/* ── List View ── */}
+          {viewMode === 'list' && (
+            <TicketListView
+              tickets={visibleTickets}
+              viewerIsIt={viewerIsIt}
+              onSelect={id => { setDetailModalId(id); onTicketOpen?.(id) }}
+              userMap={userMap}
+            />
+          )}
+
+          {/* ── Detail Modal (Kanban/List mode) ── */}
+          {detailModalId && viewMode !== 'mail' && (() => {
+            const tk = tickets.find(t => t.id === detailModalId)
+            if (!tk) return null
+            return (
+              <TicketDetailModal
+                ticket={tk}
+                workspaceId={workspaceId}
+                viewerIsIt={viewerIsIt}
+                onClose={() => setDetailModalId(null)}
+                onUpdate={updated => {
+                  setTickets(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
+                }}
+                userMap={userMap}
+                resolveUsers={resolveUsers}
+                itStaff={itStaff}
+              />
+            )
+          })()}
+
+          {/* ── Mail View (original) ── */}
+          {viewMode === 'mail' && (
           <div className="ticket-mail-columns">
             <div className="ticket-mail-list" role="list">
               {tickets.length === 0 ? (
@@ -1030,7 +1123,7 @@ export function TicketsPanel({
                             disabled={detailBusy}
                             onChange={e => {
                               const val = e.target.value || null
-                              void updateTicket(selected.id, { assigneeId: val ?? undefined } as any)
+                              void updateTicket(selected.id, { assigneeId: val ?? undefined })
                             }}
                           >
                             <option value="">Unassigned</option>
@@ -1175,6 +1268,7 @@ export function TicketsPanel({
               )}
             </div>
           </div>
+          )/* end viewMode === 'mail' */}
 
           {composeDiscardConfirmOpen && typeof document !== 'undefined'
             ? createPortal(

@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Copy, Plus, Trash2, Link2, Webhook } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Copy, Plus, Trash2, Link2, Webhook, Send, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 
 interface WebhookRow {
@@ -39,6 +39,11 @@ export function WebhookManagementPanel({ workspaceId }: { workspaceId: string })
   const [fCallback, setFCallback] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ id: string; ok: boolean; status: number; duration_ms: number; error?: string } | null>(null)
+  const [expandedDeliveryId, setExpandedDeliveryId] = useState<string | null>(null)
+  const [deliveries, setDeliveries] = useState<{ id: string; event: string; status_code: number; error: string; duration_ms: number; created_at: number }[]>([])
+  const [deliveriesLoading, setDeliveriesLoading] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -102,11 +107,59 @@ export function WebhookManagementPanel({ workspaceId }: { workspaceId: string })
     void load()
   }
 
+  async function toggleWebhook(id: string, active: boolean) {
+    // Optimistically update
+    setWebhooks(prev => prev.map(w => w.id === id ? { ...w, is_active: active } : w))
+    const res = await apiFetch(`/api/webhooks`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, is_active: active })
+    })
+    if (!res.ok) {
+      // Revert on failure
+      setWebhooks(prev => prev.map(w => w.id === id ? { ...w, is_active: !active } : w))
+    }
+  }
+
   function copyToken(id: string, token: string) {
     navigator.clipboard.writeText(token).catch(() => {})
     setCopiedId(id)
     if (copiedTimer.current) clearTimeout(copiedTimer.current)
     copiedTimer.current = setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  async function testWebhook(id: string) {
+    setTestingId(id)
+    setTestResult(null)
+    const res = await apiFetch('/api/webhooks/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhook_id: id })
+    })
+    setTestingId(null)
+    if (res.ok) {
+      const data = await res.json() as { ok: boolean; status: number; duration_ms: number; error?: string }
+      setTestResult({ id, ...data })
+      setTimeout(() => setTestResult(null), 8000)
+    } else {
+      setTestResult({ id, ok: false, status: 0, duration_ms: 0, error: 'Request failed' })
+      setTimeout(() => setTestResult(null), 8000)
+    }
+  }
+
+  async function loadDeliveries(webhookId: string) {
+    if (expandedDeliveryId === webhookId) {
+      setExpandedDeliveryId(null)
+      return
+    }
+    setExpandedDeliveryId(webhookId)
+    setDeliveriesLoading(true)
+    const res = await apiFetch(`/api/webhooks/deliveries?webhook_id=${encodeURIComponent(webhookId)}`)
+    setDeliveriesLoading(false)
+    if (res.ok) {
+      const data = await res.json() as { deliveries: typeof deliveries }
+      setDeliveries(data.deliveries || [])
+    }
   }
 
   if (!workspaceId) return <p className="mm-editor-hint">Select a workspace first.</p>
@@ -195,7 +248,8 @@ export function WebhookManagementPanel({ workspaceId }: { workspaceId: string })
             </td></tr>
           ) : (
             webhooks.map(w => (
-              <tr key={w.id}>
+              <React.Fragment key={w.id}>
+              <tr>
                 <td>
                   <strong style={{ fontSize: 13 }}>{w.display_name || 'Untitled'}</strong>
                   {w.description && <br />}
@@ -203,7 +257,7 @@ export function WebhookManagementPanel({ workspaceId }: { workspaceId: string })
                 </td>
                 <td>
                   <span className={`ticket-badge--${w.kind === 'incoming' ? 'open' : 'in_progress'}`}
-                    style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
+                    style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600 }}>
                     {w.kind === 'incoming' ? '↓ Incoming' : '↑ Outgoing'}
                   </span>
                 </td>
@@ -222,33 +276,105 @@ export function WebhookManagementPanel({ workspaceId }: { workspaceId: string })
                   </div>
                 </td>
                 <td>
-                  <span style={{
-                    fontSize: 11, fontWeight: 600,
-                    color: w.is_active ? 'var(--mm-online)' : 'var(--mm-muted)'
-                  }}>
-                    {w.is_active ? '● Active' : '○ Inactive'}
-                  </span>
+                  <button
+                    type="button"
+                    className="webhook-toggle"
+                    data-active={w.is_active ? 'true' : 'false'}
+                    title={w.is_active ? 'Click to deactivate' : 'Click to activate'}
+                    onClick={() => void toggleWebhook(w.id, !w.is_active)}
+                    aria-label={w.is_active ? 'Deactivate webhook' : 'Activate webhook'}
+                  />
                 </td>
                 <td>
-                  {confirmDeleteId === w.id ? (
-                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      <button type="button" className="slack-button" style={{ fontSize: 11, padding: '2px 8px', background: '#d24b4e', color: '#fff' }}
-                        onClick={() => void deleteWebhook(w.id)}>
-                        Confirm
-                      </button>
-                      <button type="button" className="mm-icon-btn" style={{ fontSize: 11 }}
-                        onClick={() => setConfirmDeleteId(null)}>
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button type="button" className="mm-icon-btn" title="Delete webhook"
-                      onClick={() => setConfirmDeleteId(w.id)} style={{ color: '#d24b4e' }}>
-                      <Trash2 size={14} />
-                    </button>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {confirmDeleteId === w.id ? (
+                      <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <button type="button" className="slack-button" style={{ fontSize: 11, padding: '2px 8px', background: '#d24b4e', color: '#fff' }}
+                          onClick={() => void deleteWebhook(w.id)}>
+                          Confirm
+                        </button>
+                        <button type="button" className="mm-icon-btn" style={{ fontSize: 11 }}
+                          onClick={() => setConfirmDeleteId(null)}>
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <>
+                        {w.kind === 'outgoing' && (
+                          <button type="button" className="mm-icon-btn" title="Test delivery"
+                            disabled={testingId === w.id}
+                            onClick={() => void testWebhook(w.id)}
+                            style={{ color: 'var(--mm-link)' }}>
+                            {testingId === w.id ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                          </button>
+                        )}
+                        <button type="button" className="mm-icon-btn" title="Delivery log"
+                          onClick={() => void loadDeliveries(w.id)}
+                          style={{ color: 'var(--mm-muted)' }}>
+                          {expandedDeliveryId === w.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                        <button type="button" className="mm-icon-btn" title="Delete webhook"
+                          onClick={() => setConfirmDeleteId(w.id)} style={{ color: '#d24b4e' }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {testResult && testResult.id === w.id && (
+                    <div style={{
+                      marginTop: 4, fontSize: 11, padding: '3px 8px', borderRadius: 8,
+                      background: testResult.ok ? 'rgba(61, 184, 135, 0.1)' : 'rgba(210, 75, 78, 0.1)',
+                      color: testResult.ok ? 'var(--mm-online)' : '#d24b4e'
+                    }}>
+                      {testResult.ok
+                        ? `✓ ${testResult.status} OK — ${testResult.duration_ms}ms`
+                        : `✗ ${testResult.error || `HTTP ${testResult.status}`}`
+                      }
+                    </div>
                   )}
                 </td>
               </tr>
+              {expandedDeliveryId === w.id && (
+                <tr key={`${w.id}-deliveries`}>
+                  <td colSpan={6} style={{ padding: '6px 14px', background: 'var(--mm-bg-subtle)' }}>
+                    {deliveriesLoading ? (
+                      <div style={{ fontSize: 12, color: 'var(--mm-muted)' }}><Loader2 size={12} className="spin" /> Loading…</div>
+                    ) : deliveries.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--mm-muted)' }}>No delivery attempts recorded.</div>
+                    ) : (
+                      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--mm-border-subtle)' }}>
+                            <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Event</th>
+                            <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Status</th>
+                            <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Duration</th>
+                            <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Time</th>
+                            <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Error</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {deliveries.slice(0, 10).map(d => (
+                            <tr key={d.id} style={{ borderBottom: '1px solid var(--mm-border-subtle)' }}>
+                              <td style={{ padding: '2px 6px' }}>{d.event}</td>
+                              <td style={{ padding: '2px 6px', color: d.status_code >= 200 && d.status_code < 400 ? 'var(--mm-online)' : '#d24b4e' }}>
+                                {d.status_code || '—'}
+                              </td>
+                              <td style={{ padding: '2px 6px' }}>{d.duration_ms}ms</td>
+                              <td style={{ padding: '2px 6px', color: 'var(--mm-muted)' }}>
+                                {new Date(d.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td style={{ padding: '2px 6px', color: '#d24b4e', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {d.error || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
             ))
           )}
         </tbody>

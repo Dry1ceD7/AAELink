@@ -28,7 +28,7 @@ export function WorkflowManagementPanel() {
   const [selectedWorkspace, setSelectedWorkspace] = useState('')
   const [users, setUsers] = useState<UserRow[]>([])
   
-  const [workflows, setWorkflows] = useState<any[]>([])
+  const [workflows, setWorkflows] = useState<{ id: string; name: string; description?: string; steps: { id: string; approver_user_id?: string; approver_role?: string }[] }[]>([])
   
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
@@ -175,15 +175,15 @@ export function WorkflowManagementPanel() {
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
             {workflows.map(wf => (
-              <div key={wf.id} style={{ border: '1px solid var(--mm-border-subtle)', padding: 12, borderRadius: 6, background: 'var(--mm-channel-bg)' }}>
+              <div key={wf.id} style={{ border: '1px solid var(--mm-border-subtle)', padding: 12, borderRadius: 8, background: 'var(--mm-channel-bg)' }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{wf.name}</div>
                 {wf.description && <div style={{ fontSize: 13, color: 'var(--doc-muted)', marginTop: 4 }}>{wf.description}</div>}
                 
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--doc-muted)' }}>STEPS:</span>
-                  {wf.steps && wf.steps.map((step: any, idx: number) => (
+                  {wf.steps && wf.steps.map((step: { id: string; approver_user_id?: string; approver_role?: string }, idx: number) => (
                     <div key={step.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ background: 'var(--mm-button-bg)', color: 'var(--mm-button-color)', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>
+                      <div style={{ background: 'var(--mm-button-bg)', color: 'var(--mm-button-color)', padding: '2px 8px', borderRadius: 8, fontSize: 12 }}>
                         {idx + 1}. {step.approver_user_id ? `User: ${users.find(u => u.id === step.approver_user_id)?.username || step.approver_user_id}` : `Role: ${step.approver_role}`}
                       </div>
                       {idx < wf.steps.length - 1 && <span style={{ color: 'var(--doc-muted)' }}>→</span>}

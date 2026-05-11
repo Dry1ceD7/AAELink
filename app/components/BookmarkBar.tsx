@@ -25,7 +25,7 @@ export function BookmarkBar({ channelId, channelType }: Props) {
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
-  const [emoji, setEmoji] = useState('🔗')
+  const [emoji, setEmoji] = useState('⚓')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -56,7 +56,7 @@ export function BookmarkBar({ channelId, channelType }: Props) {
         channel_id: channelId,
         title: title.trim(),
         link_url: url.trim(),
-        emoji: emoji || '🔗'
+        emoji: emoji || '⚓'
       })
     })
     setSaving(false)
@@ -67,7 +67,7 @@ export function BookmarkBar({ channelId, channelType }: Props) {
     }
     setTitle('')
     setUrl('')
-    setEmoji('🔗')
+    setEmoji('⚓')
     setShowForm(false)
     void load()
   }

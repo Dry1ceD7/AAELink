@@ -26,8 +26,8 @@ export function SsoSettingsPanel() {
         const data = await res.json()
         setConfig(data.config || { tenant_id: '', client_id: '', client_secret: '', is_enabled: false })
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'sso_load_failed')
     } finally {
       setLoading(false)
     }
@@ -57,8 +57,8 @@ export function SsoSettingsPanel() {
       if (!res.ok) throw new Error('Failed to save SSO settings')
       setSuccess('Settings saved successfully.')
       await loadData()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'sso_save_failed')
     } finally {
       setSaving(false)
     }
@@ -76,7 +76,7 @@ export function SsoSettingsPanel() {
       </p>
 
       {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
-      {success && <div style={{ color: 'green', marginBottom: 16, padding: '12px', background: 'rgba(0,255,0,0.1)', borderRadius: 4 }}>{success}</div>}
+      {success && <div style={{ color: 'green', marginBottom: 16, padding: '12px', background: 'rgba(0,255,0,0.1)', borderRadius: 8 }}>{success}</div>}
 
       {loading ? <p>Loading...</p> : (
         <form onSubmit={handleSave} className="admin-table" style={{ padding: 24, borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -106,12 +106,12 @@ export function SsoSettingsPanel() {
             <div style={{ fontSize: 12, color: 'var(--mm-muted)', marginTop: 4 }}>Found in App Registrations &gt; Certificates & secrets</div>
           </div>
 
-          <div style={{ background: 'var(--mm-sidebar-hover)', padding: 12, borderRadius: 4, marginTop: 12 }}>
+          <div style={{ background: 'var(--mm-sidebar-hover)', padding: 12, borderRadius: 8, marginTop: 12 }}>
             <h5 style={{ margin: '0 0 8px 0' }}>Redirect URI Configuration</h5>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--mm-muted)' }}>
               Add the following URL to your App Registration's Authentication platform settings (Web):
             </p>
-            <code style={{ display: 'block', marginTop: 8, padding: 8, background: 'var(--mm-main-bg)', borderRadius: 4, fontSize: 12, wordBreak: 'break-all' }}>
+            <code style={{ display: 'block', marginTop: 8, padding: 8, background: 'var(--mm-main-bg)', borderRadius: 8, fontSize: 12, wordBreak: 'break-all' }}>
               {typeof window !== 'undefined' ? `${window.location.origin}/api/auth/entra` : '/api/auth/entra'}
             </code>
           </div>

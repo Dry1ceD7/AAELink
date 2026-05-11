@@ -15,13 +15,22 @@ import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 
+/** Type-safe accessor for tiptap-markdown storage */
+interface MarkdownStorage {
+  markdown: { getMarkdown: () => string }
+}
+function getEditorMarkdown(editor: ReturnType<typeof useEditor>): string {
+  if (!editor) return ''
+  return (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
+}
+
 import { apiFetch } from '@/lib/apiClient'
 import { executeSlashCommand } from '@/lib/slashCommands'
 import { expandComposerSlash, type SlashMeUser } from '@/lib/composerSlash'
 import { getDraft, saveDraft, clearDraft } from '@/lib/messageDrafts'
 import { SendLaterMenu, SendLaterTrigger } from './SendLaterMenu'
 import {
-  Bold, Italic, Strikethrough, Link2, Code, List, Quote, Paperclip, SendHorizontal, X, Smile
+  Bold, Italic, Strikethrough, Link2, Code, List, ListOrdered, FileCode, Quote, Paperclip, SendHorizontal, X, Smile, Mic, Video
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -62,6 +71,10 @@ interface ComposerProps {
   onCancelEdit?: () => void
   /** Initial text for the composer (e.g. when editing). */
   initialContent?: string
+  /** Called when the user wants to record an audio clip. */
+  onRecordAudio?: () => void
+  /** Called when the user wants to record a video clip. */
+  onRecordVideo?: () => void
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -90,7 +103,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     placeholder,
     editMode,
     onCancelEdit,
-    initialContent
+    initialContent,
+    onRecordAudio,
+    onRecordVideo
   },
   ref
 ) {
@@ -134,7 +149,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     content: initialContent || '',
     onUpdate: ({ editor }) => {
       // Notify parent + auto-save draft
-      const md = (editor.storage as any).markdown.getMarkdown()
+      const md = getEditorMarkdown(editor)
       // Debounced auto-save via requestIdleCallback or setTimeout
       if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
       draftSaveTimer.current = setTimeout(() => {
@@ -371,7 +386,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           const data = JSON.parse(xhr.responseText) as { document?: { id?: string; filename?: string } }
           if (data.document?.id && editor) {
             const docUrl = `/api/documents/${data.document.id}/download`
-            const insert = `[📎 ${data.document.filename || file.name}](${docUrl})`
+            const insert = `[${data.document.filename || file.name}](${docUrl})`
             editor.chain().focus().insertContent(insert).run()
           }
         } catch { /* ignore */ }
@@ -457,7 +472,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       const data = (await uploadRes.json()) as { document?: { id?: string; filename?: string } }
       if (data.document?.id && editor) {
         const docUrl = `/api/documents/${data.document.id}`
-        const insert = `[📎 ${data.document.filename || fileName}](${docUrl})`
+        const insert = `[${data.document.filename || fileName}](${docUrl})`
         editor.chain().focus().insertContent(insert).run()
       }
     }
@@ -478,7 +493,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // ── Send handler (expand slash commands first) ──────────────────────────
   const handleSend = useCallback(() => {
     if (!editor) return
-    const md = (editor.storage as any).markdown.getMarkdown()
+    const md = getEditorMarkdown(editor)
     const trimmed = md.trim()
     if (!trimmed) return
 
@@ -813,14 +828,56 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <button type="button" title="Bullet list" onClick={() => editor?.chain().focus().toggleBulletList().run()}>
               <List size={16} />
             </button>
+            <button type="button" title="Numbered list" onClick={() => editor?.chain().focus().toggleOrderedList().run()}>
+              <ListOrdered size={16} />
+            </button>
             <button type="button" title="Block quote" onClick={() => editor?.chain().focus().toggleBlockquote().run()}>
               <Quote size={16} />
+            </button>
+            <button type="button" title="Code block" onClick={() => editor?.chain().focus().toggleCodeBlock().run()}>
+              <FileCode size={16} />
             </button>
             <button type="button" title="Attach file" onClick={() => void handleAttach()}>
               <Paperclip size={16} />
             </button>
+            {onRecordAudio && (
+              <button type="button" title="Record audio clip" onClick={onRecordAudio}>
+                <Mic size={16} />
+              </button>
+            )}
+            {onRecordVideo && (
+              <button type="button" title="Record video clip" onClick={onRecordVideo}>
+                <Video size={16} />
+              </button>
+            )}
           </div>
           <div className="toolbar-spacer" />
+          {(() => {
+            const charCount = editor?.storage?.characterCount?.characters?.() ?? editor?.getText()?.length ?? 0
+            const MAX_CHARS = 4000
+            const showCounter = charCount > MAX_CHARS * 0.95
+            const isOver = charCount > MAX_CHARS
+            if (!showCounter) return null
+            return (
+              <span
+                className="composer-char-counter"
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontVariantNumeric: 'tabular-nums',
+                  padding: '2px 6px',
+                  borderRadius: 8,
+                  marginRight: 6,
+                  color: isOver ? '#fff' : charCount > MAX_CHARS * 0.98 ? 'var(--mm-danger, #d24b4e)' : 'var(--mm-muted)',
+                  background: isOver ? 'var(--mm-danger, #d24b4e)' : 'transparent',
+                  transition: 'color 0.2s, background 0.2s'
+                }}
+                title={isOver ? `Message exceeds ${MAX_CHARS} character limit` : `${MAX_CHARS - charCount} characters remaining`}
+              >
+                {charCount.toLocaleString()}/{MAX_CHARS.toLocaleString()}
+              </span>
+            )
+          })()}
           {editMode ? (
             <>
               <button
@@ -861,7 +918,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   onClose={() => setSendLaterOpen(false)}
                   onSchedule={async (sendAt) => {
                     if (!editor) return
-                    const md = (editor.storage as any).markdown.getMarkdown().trim()
+                    const md = getEditorMarkdown(editor).trim()
                     if (!md) return
                     await apiFetch('/api/scheduled-messages', {
                       method: 'POST',

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/apiClient'
-import { Webhook, AppWindow, Plus, Trash2, Copy, Check } from 'lucide-react'
+import { Webhook, AppWindow, Plus, Trash2, Copy, Check, Lock } from 'lucide-react'
 
 type Tab = 'webhooks' | 'apps'
 
@@ -72,8 +72,8 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         const res = await apiFetch(`/api/integrations/apps?workspace_id=${workspaceId}`)
         if (res.ok) setApps((await res.json()).apps || [])
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'load_failed')
     } finally {
       setLoading(false)
     }
@@ -100,7 +100,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
       }
       setShowWebhookForm(false)
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'webhook_create_failed') }
   }
 
   const handleDeleteWebhook = async (id: string) => {
@@ -112,7 +112,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         throw new Error(json.error || 'Failed to delete webhook')
       }
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'webhook_delete_failed') }
   }
 
   const handleCreateApp = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -134,7 +134,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
       }
       setShowAppForm(false)
       loadData()
-    } catch (err: any) { alert(err.message) }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'app_register_failed') }
   }
 
   const buildWebhookUrl = (token: string): string => {
@@ -194,7 +194,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
                     <label className="admin-label">Post to Channel</label>
                     <select name="channel_id" className="slack-input" required>
                       {channels.filter(c => c.type === 'O' || c.type === 'P').map(c => (
-                        <option key={c.id} value={c.id}>{c.type === 'O' ? '#' : '🔒'} {c.name}</option>
+                        <option key={c.id} value={c.id}>{c.type === 'O' ? '# ' : '⁍ '}{c.name}</option>
                       ))}
                     </select>
                   </div>
@@ -215,7 +215,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {webhooks.length === 0 ? <p className="muted">No webhooks configured.</p> : webhooks.map(w => (
-                <div key={w.id} className="admin-table" style={{ padding: 16, borderRadius: 6 }}>
+                <div key={w.id} className="admin-table" style={{ padding: 16, borderRadius: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 12 }}>
                     <div>
                       <h4 style={{ margin: '0 0 4px 0' }}>{w.name}</h4>
@@ -233,7 +233,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <div style={{ background: 'var(--mm-sidebar-hover)', padding: '8px 12px', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ background: 'var(--mm-sidebar-hover)', padding: '8px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <code style={{ fontSize: 12, wordBreak: 'break-all', fontFamily: 'monospace' }}>
                       {buildWebhookUrl(w.secret_token)}
                     </code>
@@ -273,12 +273,12 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16 }}>
               {apps.length === 0 ? <p className="muted">No apps registered.</p> : apps.map(a => (
-                <div key={a.id} className="admin-table" style={{ padding: 16, borderRadius: 6, display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div key={a.id} className="admin-table" style={{ padding: 16, borderRadius: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
                   {a.icon_url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={a.icon_url} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                    <img src={a.icon_url} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} />
                   ) : (
-                    <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--mm-sidebar-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--mm-sidebar-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <AppWindow size={20} color="var(--mm-muted)" />
                     </div>
                   )}

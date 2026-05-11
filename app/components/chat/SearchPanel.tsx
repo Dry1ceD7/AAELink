@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, X } from 'lucide-react'
+import { Search, X, MessageCircle } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 
 interface SearchHit {
@@ -118,7 +118,7 @@ export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelP
           {hits.map(hit => (
             <button key={hit.id} type="button" className="mm-search-hit" onClick={() => handlePick(hit)}>
               <span className="mm-search-hit-channel">
-                {hit.channel_type === 'D' ? '💬' : '#'} {hit.channel_display || hit.channel_name}
+                {hit.channel_type === 'D' ? <MessageCircle size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : '#'} {hit.channel_display || hit.channel_name}
               </span>
               <span className="mm-search-hit-snippet">{hit.snippet}</span>
               <span className="mm-search-hit-time">

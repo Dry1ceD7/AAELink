@@ -67,7 +67,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
-      borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+      borderRadius: 8, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
       background: c.bg, color: c.fg, letterSpacing: '0.3px'
     }}>
       {c.icon} {c.label}
@@ -230,7 +230,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
             background: activeTab === tab ? 'var(--mm-primary)' : 'transparent',
             color: activeTab === tab ? 'var(--mm-primary-text)' : 'var(--fg)',
             border: activeTab === tab ? 'none' : '1px solid var(--mm-border)',
-            padding: '7px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer',
+            padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 6, fontSize: 13,
             transition: 'all 0.15s ease'
           }}>
@@ -241,7 +241,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
         <div style={{ flex: 1 }} />
         <button onClick={() => { setShowCreate(v => !v); if (!showCreate) void loadWorkflows() }} style={{
           background: 'var(--mm-online)', color: '#fff', border: 'none',
-          padding: '7px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer',
+          padding: '7px 14px', borderRadius: 8, fontWeight: 600, cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 6, fontSize: 13
         }}>
           <Plus size={15} /> New Request
@@ -346,7 +346,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
           <div className="mm-modal" role="dialog" aria-modal="true"
             onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <h2 style={{ margin: '0 0 8px', fontSize: 17 }}>
-              {reviewDecision === 'approved' ? '✅ Approve' : '❌ Reject'} Request
+              {reviewDecision === 'approved' ? <><CheckCircle2 size={16} style={{color:'var(--mm-online)'}}/> Approve</> : <><XCircle size={16} style={{color:'#d24b4e'}}/> Reject</>} Request
             </h2>
             <p style={{ fontSize: 14, color: 'var(--mm-muted)', margin: '0 0 16px' }}>
               <strong>{reviewTarget.title}</strong> — {reviewTarget.workflow_name}
@@ -406,13 +406,13 @@ function RequestCard({ req, mode, onApprove, onReject, onCancel, busy,
           {mode === 'review' && req.status === 'pending' && (
             <>
               <button disabled={busy} onClick={onReject} style={{
-                padding: '5px 10px', borderRadius: 6, border: '1px solid #d24b4e',
+                padding: '5px 10px', borderRadius: 8, border: '1px solid #d24b4e',
                 background: 'transparent', color: '#d24b4e', fontWeight: 600, fontSize: 12,
                 cursor: busy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4,
                 opacity: busy ? 0.5 : 1
               }}><X size={13} /> Reject</button>
               <button disabled={busy} onClick={onApprove} style={{
-                padding: '5px 10px', borderRadius: 6, border: 'none',
+                padding: '5px 10px', borderRadius: 8, border: 'none',
                 background: 'var(--mm-online)', color: '#fff', fontWeight: 600, fontSize: 12,
                 cursor: busy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4,
                 opacity: busy ? 0.5 : 1
@@ -422,7 +422,7 @@ function RequestCard({ req, mode, onApprove, onReject, onCancel, busy,
           {mode === 'mine' && <StatusBadge status={req.status} />}
           {mode === 'mine' && req.status === 'pending' && (
             <button disabled={busy} onClick={onCancel} title="Cancel request" style={{
-              padding: '4px 8px', borderRadius: 5, border: '1px solid var(--mm-border)',
+              padding: '4px 8px', borderRadius: 8, border: '1px solid var(--mm-border)',
               background: 'transparent', color: 'var(--mm-muted)', cursor: 'pointer', fontSize: 11,
               display: 'flex', alignItems: 'center', gap: 4
             }}><Ban size={12} /> Cancel</button>
@@ -471,7 +471,7 @@ function RequestCard({ req, mode, onApprove, onReject, onCancel, busy,
                       else if (isCurrent) { bg = 'rgba(245,171,0,0.15)'; fg = '#f5ab00' }
                       return (
                         <React.Fragment key={s.step_order}>
-                          <div style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: bg, color: fg, border: isCurrent ? `1px solid ${fg}` : '1px solid transparent' }}>
+                          <div style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: bg, color: fg, border: isCurrent ? `1px solid ${fg}` : '1px solid transparent' }}>
                             {s.step_order}. {s.approver_username ? `@${s.approver_username}` : s.approver_role}
                             {reviewed && ` — ${reviewed.decision}`}
                           </div>

@@ -10,6 +10,14 @@ interface UpdateStatus {
   error?: string
 }
 
+/** Electron desktop bridge methods used by UpdateBanner */
+interface UpdateDesktopBridge {
+  subscribeUpdateStatus?: (cb: (data: UpdateStatus) => void) => (() => void)
+  getUpdateStatus?: () => Promise<UpdateStatus>
+  checkForUpdate?: () => Promise<void>
+  installUpdate?: () => void
+}
+
 /**
  * Desktop Update Banner — displays at the top of the workspace when a new
  * version is available, downloading, or ready to install.
@@ -24,7 +32,7 @@ export function UpdateBanner() {
 
   useEffect(() => {
     // Only run in desktop shell
-    const bridge = (window as any).aaelinkDesktop
+    const bridge: UpdateDesktopBridge | undefined = window.aaelinkDesktop as unknown as UpdateDesktopBridge | undefined
     if (!bridge) return
 
     let unsubscribe: (() => void) | undefined
@@ -53,14 +61,14 @@ export function UpdateBanner() {
   }, [])
 
   const checkNow = useCallback(async () => {
-    const bridge = (window as any).aaelinkDesktop
+    const bridge: UpdateDesktopBridge | undefined = window.aaelinkDesktop as unknown as UpdateDesktopBridge | undefined
     if (bridge?.checkForUpdate) {
       await bridge.checkForUpdate()
     }
   }, [])
 
   const installNow = useCallback(() => {
-    const bridge = (window as any).aaelinkDesktop
+    const bridge: UpdateDesktopBridge | undefined = window.aaelinkDesktop as unknown as UpdateDesktopBridge | undefined
     if (bridge?.installUpdate) {
       bridge.installUpdate()
     }

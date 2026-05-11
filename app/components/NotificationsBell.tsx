@@ -15,6 +15,16 @@ import { showSystemNotificationIfAllowed } from '@/lib/nativeNotify'
 import { connectNotificationStream } from '@/lib/notificationStream'
 import type { ApiNotification } from '@/lib/notificationTypes'
 
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'just now'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`
+  if (diff < 172800_000) return 'yesterday'
+  if (diff < 604800_000) return `${Math.floor(diff / 86400_000)}d ago`
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 export function NotificationsBell({ enabled }: { enabled: boolean }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -34,6 +44,7 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
   const enabledRef = useRef(enabled)
   const loadRunningRef = useRef(false)
   const loadAgainRef = useRef(false)
+  const [filter, setFilter] = useState<'all' | 'unread' | 'mentions'>('all')
   enabledRef.current = enabled
 
   const refreshPrefs = useCallback(async () => {
@@ -367,7 +378,7 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
           maxHeight: `calc(100vh - ${popoverFixed.top + 16}px)`
         }}
       >
-        <div className="mm-notif-popover-head">
+      <div className="mm-notif-popover-head">
           <span>Notifications</span>
           {unread > 0 ? (
             <button type="button" className="mm-notif-markall" disabled={busy} onClick={() => void markAllRead()}>
@@ -375,11 +386,20 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
             </button>
           ) : null}
         </div>
+        <div className="mm-notif-filter-tabs">
+          <button type="button" className={`mm-notif-filter-tab${filter === 'all' ? ' mm-notif-filter-tab--active' : ''}`} onClick={() => setFilter('all')}>All</button>
+          <button type="button" className={`mm-notif-filter-tab${filter === 'unread' ? ' mm-notif-filter-tab--active' : ''}`} onClick={() => setFilter('unread')}>Unread{unread > 0 ? ` (${unread})` : ''}</button>
+          <button type="button" className={`mm-notif-filter-tab${filter === 'mentions' ? ' mm-notif-filter-tab--active' : ''}`} onClick={() => setFilter('mentions')}>Mentions</button>
+        </div>
         <div className="mm-notif-list">
-          {items.length === 0 ? (
-            <p className="mm-notif-empty">No notifications yet.</p>
-          ) : (
-            items.map(n => {
+          {(() => {
+            let filtered = items
+            if (filter === 'unread') filtered = items.filter(n => (n.read_at ?? 0) === 0)
+            if (filter === 'mentions') filtered = items.filter(n => n.kind === 'mention' || n.kind === 'dm' || (n.title && n.title.toLowerCase().includes('mention')))
+            if (filtered.length === 0) {
+              return <p className="mm-notif-empty">{filter === 'all' ? 'No notifications yet.' : `No ${filter} notifications.`}</p>
+            }
+            return filtered.map(n => {
               const isUnread = (n.read_at ?? 0) === 0
               return (
                 <button
@@ -391,12 +411,12 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
                   <span className="mm-notif-row-title">{n.title}</span>
                   <span className="mm-notif-row-body">{n.body}</span>
                   <span className="mm-notif-row-meta">
-                    {new Date(n.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {relativeTime(n.created_at)}
                   </span>
                 </button>
               )
             })
-          )}
+          })()}
         </div>
       </div>
     ) : null

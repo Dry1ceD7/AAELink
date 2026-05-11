@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Smile, MessageSquare, Forward, Pencil, Trash2, Bookmark, BookmarkCheck, Pin, Link2, MoreVertical, Copy, Clock, EyeOff } from 'lucide-react'
+import { Smile, MessageSquare, Forward, Pencil, Trash2, Bookmark, BookmarkCheck, Pin, Link2, MoreVertical, Copy, Clock, EyeOff, Ticket } from 'lucide-react'
 import { MessageRichText } from '@/lib/messageRich'
 import { type ReactionSummary } from '@/lib/reactions'
 import { apiFetch } from '@/lib/apiClient'
@@ -9,6 +9,7 @@ import type { ChatPost } from '@/lib/realtime'
 import { EmojiPicker } from './EmojiPicker'
 import { FileAttachmentCards } from './FileAttachmentCards'
 import { LinkPreview, extractPreviewUrl } from './LinkPreview'
+import { formatUserTime } from '@/lib/userPreferences'
 
 // ── Reaction icons (Lucide-mapped, no heavy emoji deps) ────────────────────
 const REACTION_ICON: Record<string, string> = {
@@ -52,6 +53,7 @@ interface ChatMessageProps {
   onPinMessage?: (post: ChatPost) => void
   onAvatarClick?: (userId: string) => void
   onMentionClick?: (username: string) => void
+  onConvertToTicket?: (post: ChatPost) => void
   onReactionsUpdated: (messageId: string, reactions: ReactionSummary[]) => void
   compact?: boolean
 }
@@ -122,6 +124,7 @@ function MessageActions({
   onDeleteMessage,
   onForwardMessage,
   onPinMessage,
+  onConvertToTicket,
   toggleReaction
 }: {
   post: ChatPost,
@@ -134,6 +137,7 @@ function MessageActions({
   onDeleteMessage: (p: ChatPost) => void,
   onForwardMessage?: (p: ChatPost) => void,
   onPinMessage?: (p: ChatPost) => void,
+  onConvertToTicket?: (p: ChatPost) => void,
   toggleReaction: (k: string) => void
 }) {
   const [saved, setSaved] = useState(false)
@@ -268,6 +272,58 @@ function MessageActions({
               }}>
                 <Clock size={14} /> Remind me in 4h
               </button>
+              <button type="button" role="menuitem" onClick={() => {
+                // Tomorrow at 9am local time
+                const tomorrow = new Date()
+                tomorrow.setDate(tomorrow.getDate() + 1)
+                tomorrow.setHours(9, 0, 0, 0)
+                void apiFetch('/api/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    body: post.message.replace(/<[^>]+>/g, '').slice(0, 200),
+                    message_id: post.id,
+                    channel_id: post.channel_id,
+                    fire_at: tomorrow.getTime()
+                  })
+                })
+                setMoreOpen(false)
+              }}>
+                <Clock size={14} /> Tomorrow at 9am
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                // Next Monday at 9am local time
+                const now = new Date()
+                const dayOfWeek = now.getDay()
+                const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek)
+                const nextMon = new Date()
+                nextMon.setDate(nextMon.getDate() + daysUntilMonday)
+                nextMon.setHours(9, 0, 0, 0)
+                void apiFetch('/api/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    body: post.message.replace(/<[^>]+>/g, '').slice(0, 200),
+                    message_id: post.id,
+                    channel_id: post.channel_id,
+                    fire_at: nextMon.getTime()
+                  })
+                })
+                setMoreOpen(false)
+              }}>
+                <Clock size={14} /> Next Monday at 9am
+              </button>
+              {onConvertToTicket && (
+                <>
+                  <div style={{ height: 1, background: 'var(--mm-border-subtle)', margin: '4px 0' }} />
+                  <button type="button" role="menuitem" onClick={() => {
+                    onConvertToTicket(post)
+                    setMoreOpen(false)
+                  }}>
+                    <Ticket size={14} /> Convert to ticket
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
@@ -315,6 +371,7 @@ export const ChatMessage = memo(function ChatMessage({
   onPinMessage,
   onAvatarClick,
   onMentionClick,
+  onConvertToTicket,
   onReactionsUpdated,
   compact
 }: ChatMessageProps) {
@@ -336,10 +393,7 @@ export const ChatMessage = memo(function ChatMessage({
   const initial = (u?.username || label).slice(0, 1).toUpperCase()
   const time = post.pending
     ? 'Sending…'
-    : new Date(post.create_at).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+    : formatUserTime(new Date(post.create_at))
   const fullDate = post.pending ? '' : new Date(post.create_at).toLocaleString([], {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -470,6 +524,7 @@ export const ChatMessage = memo(function ChatMessage({
           onDeleteMessage={onDeleteMessage}
           onForwardMessage={onForwardMessage}
           onPinMessage={onPinMessage}
+          onConvertToTicket={onConvertToTicket}
           toggleReaction={toggleReaction}
         />
       ) : null}

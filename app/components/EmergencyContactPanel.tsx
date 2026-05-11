@@ -161,7 +161,7 @@ export function EmergencyContactPanel() {
         style={{
           margin: '0 0 12px',
           padding: '8px 10px',
-          borderRadius: 6,
+          borderRadius: 8,
           background: status.it_online ? 'rgba(0, 135, 90, 0.08)' : 'rgba(0,0,0,0.06)',
           fontSize: 14
         }}
