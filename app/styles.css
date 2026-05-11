@@ -15708,3 +15708,64 @@ a, button, input, select, textarea, [role="button"] {
     animation: none !important;
   }
 }
+
+/* ── Generic a11y tab bar — used by TabList primitive ──────────────── */
+.aae-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--mm-border-color);
+  padding: 16px 24px 0;
+  gap: 24px;
+}
+.aae-tab-bar [role="tab"] {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--mm-muted);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.aae-tab-bar [role="tab"]:focus-visible {
+  outline: 2px solid var(--mm-link-color);
+  outline-offset: 2px;
+}
+.aae-tab-bar [role="tab"][aria-selected="true"] {
+  color: var(--mm-link-color);
+  border-bottom-color: var(--mm-link-color);
+}
+.aae-tab-bar [role="tab"][aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.aae-tab-bar--marketplace {
+  padding: 0;
+  margin-bottom: 20px;
+}
+.aae-tab-bar--marketplace [role="tab"] {
+  padding: 10px 18px;
+}
+.aae-tab-bar--marketplace [role="tab"][aria-selected="true"] {
+  color: var(--aae-cyan, #00c2e8);
+  border-bottom-color: var(--aae-cyan, #00c2e8);
+}
+
+/* ── Global reduced-motion fallback (audit §16.8) ──────────────────────
+   Anything with a `transition` or `animation` shorter than ~10ms here is
+   effectively neutralized for users that prefer reduced motion. Specific
+   surfaces above already disable; this is the catch-all safety net. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

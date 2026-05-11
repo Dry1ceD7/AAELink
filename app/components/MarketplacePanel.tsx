@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, Download, Star, CheckCircle, Puzzle, ExternalLink, Loader2, Package, Share2, Trash2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { TabList } from '@/app/components/a11y'
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Types                                                                     */
@@ -173,30 +174,28 @@ export const MarketplacePanel = memo(function MarketplacePanel({ workspaceId }: 
 
   return (
     <div style={{ padding: '20px 24px' }}>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--mm-border-subtle, #e0e0e0)', marginBottom: 20 }}>
-        {([
-          { id: 'browse' as const, label: 'Browse', icon: <Package size={14} /> },
-          { id: 'installed' as const, label: 'Installed', icon: <CheckCircle size={14} /> },
-          { id: 'publish' as const, label: 'Publish Plugin', icon: <Share2 size={14} /> }
-        ]).map(t => (
-          <button key={t.id} type="button"
-            onClick={() => setTab(t.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '10px 18px', border: 'none', background: 'none',
-              font: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 700 : 500,
-              color: tab === t.id ? 'var(--aae-cyan, #00c2e8)' : 'var(--mm-muted, #616061)',
-              borderBottom: tab === t.id ? '2px solid var(--aae-cyan, #00c2e8)' : '2px solid transparent',
-              cursor: 'pointer', transition: 'color 0.12s ease, border-color 0.12s ease',
-              marginBottom: -1
-            }}
-          >
-            {t.icon} {t.label}
-            {t.id === 'installed' && <span style={{ background: 'rgba(0,194,232,0.15)', color: 'var(--aae-cyan)', borderRadius: 8, padding: '1px 6px', fontSize: 11, fontWeight: 600, marginLeft: 2 }}>{Object.keys(installed).length}</span>}
-          </button>
-        ))}
-      </div>
+      <TabList
+        tabs={[
+          { id: 'browse', label: <><Package size={14} /> Browse</> },
+          {
+            id: 'installed',
+            label: (
+              <>
+                <CheckCircle size={14} /> Installed
+                <span style={{ background: 'rgba(0,194,232,0.15)', color: 'var(--aae-cyan)', borderRadius: 8, padding: '1px 6px', fontSize: 11, fontWeight: 600, marginLeft: 2 }}>
+                  {Object.keys(installed).length}
+                </span>
+              </>
+            ),
+          },
+          { id: 'publish', label: <><Share2 size={14} /> Publish Plugin</> },
+        ]}
+        value={tab}
+        onChange={id => setTab(id as 'browse' | 'installed' | 'publish')}
+        ariaLabel="Marketplace sections"
+        idPrefix="marketplace"
+        className="aae-tab-bar aae-tab-bar--marketplace"
+      />
 
       {tab === 'publish' ? (
         /* ── Publish form ────────────────────────────────────── */

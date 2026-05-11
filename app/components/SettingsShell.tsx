@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AlertCircle, BellOff, Eye, EyeOff, KeyRound, Loader2, Shield, User, Download, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/apiClient'
 import { EmergencyContactPanel } from '@/app/components/EmergencyContactPanel'
 import { SessionManagementPanel } from '@/app/components/SessionManagementPanel'
+import { TabList } from '@/app/components/a11y'
 import { persistUiDensity, readUiDensity, type UiDensity } from '@/lib/uiDensity'
 import { readThemePreference, persistThemePreference, type ThemePreference } from '@/lib/theme'
 import { getNotifSoundPref, setNotifSoundPref, getNotifVolume, setNotifVolume, playNotificationSound, type NotifSoundPref } from '@/lib/notificationSound'
@@ -102,7 +103,6 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
   const [updateLoading, setUpdateLoading] = useState(false)
   const [updateError, setUpdateError] = useState('')
   const [updateChecked, setUpdateChecked] = useState(false)
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const load = useCallback(() => {
     setErr('')
@@ -169,10 +169,8 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
 
   /** Keep the active settings tab visible when the left rail scrolls (short drawer / zoomed UI). */
   useEffect(() => {
-    const i = SETTINGS_TABS.findIndex(t => t.id === tab)
-    if (i < 0) return
-    const id = window.requestAnimationFrame(() => {
-      const btn = tabRefs.current[i]
+    const rafId = window.requestAnimationFrame(() => {
+      const btn = document.getElementById(`mm-settings-tab-${tab}`)
       if (!btn) return
       const reduce =
         typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -182,7 +180,7 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
         behavior: reduce ? 'auto' : 'smooth'
       })
     })
-    return () => window.cancelAnimationFrame(id)
+    return () => window.cancelAnimationFrame(rafId)
   }, [tab])
 
   async function savePrefs(next: {
@@ -273,50 +271,17 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
 
   const isDrawer = variant === 'drawer'
 
-  function onTabKeyNav(e: React.KeyboardEvent, index: number) {
-    const n = SETTINGS_TABS.length
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-      e.preventDefault()
-      const next = (index + 1) % n
-      setTab(SETTINGS_TABS[next].id)
-      tabRefs.current[next]?.focus()
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-      e.preventDefault()
-      const next = (index - 1 + n) % n
-      setTab(SETTINGS_TABS[next].id)
-      tabRefs.current[next]?.focus()
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      setTab(SETTINGS_TABS[0].id)
-      tabRefs.current[0]?.focus()
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      setTab(SETTINGS_TABS[n - 1].id)
-      tabRefs.current[n - 1]?.focus()
-    }
-  }
-
   const tabNav = (
-    <nav role="tablist" aria-label="Settings sections" className="mm-settings-rail mm-settings-nav">
-      {SETTINGS_TABS.map((t, i) => (
-        <button
-          key={t.id}
-          ref={el => {
-            tabRefs.current[i] = el
-          }}
-          type="button"
-          role="tab"
-          aria-selected={tab === t.id}
-          aria-controls="mm-settings-tabpanel"
-          id={`mm-settings-tab-${t.id}`}
-          className={`mm-settings-nav-item${tab === t.id ? ' mm-settings-nav-item--active' : ''}`}
-          onClick={() => setTab(t.id)}
-          onKeyDown={e => onTabKeyNav(e, i)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </nav>
+    <TabList
+      tabs={SETTINGS_TABS}
+      value={tab}
+      onChange={id => setTab(id as SettingsTab)}
+      ariaLabel="Settings sections"
+      orientation="vertical"
+      idPrefix="mm-settings"
+      className="mm-settings-rail mm-settings-nav"
+      tabClassName={active => `mm-settings-nav-item${active ? ' mm-settings-nav-item--active' : ''}`}
+    />
   )
 
   const body = (
@@ -1036,7 +1001,7 @@ export function SettingsShell({ variant, onClose }: SettingsShellProps) {
 
   const tabPanel = (
     <div
-      id="mm-settings-tabpanel"
+      id={`mm-settings-panel-${tab}`}
       role="tabpanel"
       aria-labelledby={`mm-settings-tab-${tab}`}
       className="mm-settings-content"

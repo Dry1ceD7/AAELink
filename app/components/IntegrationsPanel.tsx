@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { Webhook, AppWindow, Plus, Trash2, Copy, Check, Lock } from 'lucide-react'
+import { TabList } from '@/app/components/a11y'
 
 type Tab = 'webhooks' | 'apps'
 
@@ -153,22 +154,17 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--mm-border-color)', padding: '16px 24px 0', gap: 24 }}>
-        <button
-          className={`tab-button ${activeTab === 'webhooks' ? 'active' : ''}`}
-          onClick={() => setActiveTab('webhooks')}
-          style={{ padding: '8px 0', borderBottom: activeTab === 'webhooks' ? '2px solid var(--mm-link-color)' : '2px solid transparent', color: activeTab === 'webhooks' ? 'var(--mm-link-color)' : 'var(--mm-muted)', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer', fontWeight: 600 }}
-        >
-          <Webhook size={16} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} /> Incoming Webhooks
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'apps' ? 'active' : ''}`}
-          onClick={() => setActiveTab('apps')}
-          style={{ padding: '8px 0', borderBottom: activeTab === 'apps' ? '2px solid var(--mm-link-color)' : '2px solid transparent', color: activeTab === 'apps' ? 'var(--mm-link-color)' : 'var(--mm-muted)', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer', fontWeight: 600 }}
-        >
-          <AppWindow size={16} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} /> Connected Apps
-        </button>
-      </div>
+      <TabList
+        tabs={[
+          { id: 'webhooks', label: <><Webhook size={16} /> Incoming Webhooks</> },
+          { id: 'apps', label: <><AppWindow size={16} /> Connected Apps</> },
+        ]}
+        value={activeTab}
+        onChange={id => setActiveTab(id as Tab)}
+        ariaLabel="Integrations sections"
+        idPrefix="integrations"
+        className="aae-tab-bar"
+      />
 
       <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
         {error && <p className="form-error">{error}</p>}
