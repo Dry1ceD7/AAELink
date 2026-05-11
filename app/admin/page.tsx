@@ -1,15 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Download, Search, BarChart3 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { isPlatformAdmin, isSuperAdmin } from '@/lib/platformRole'
-import { AuditLogPanel } from '@/app/components/admin/AuditLogPanel'
+import AuditLogPanel from '@/app/components/admin/AuditLogPanel'
 import { WebhookManagementPanel } from '@/app/components/admin/WebhookManagementPanel'
 import { WorkflowManagementPanel } from '@/app/components/admin/WorkflowManagementPanel'
+import { DepartmentManagementPanel } from '@/app/components/admin/DepartmentManagementPanel'
+import { OAuthAppsPanel } from '@/app/components/admin/OAuthAppsPanel'
+import { MigrationPanel } from '@/app/components/admin/MigrationPanel'
+import { FunctionsPanel } from '@/app/components/admin/FunctionsPanel'
+import { ObservabilityPanel } from '@/app/components/admin/ObservabilityPanel'
 
 type Me = { platform_role?: string }
 
@@ -69,6 +74,8 @@ export default function AdminPage() {
   const [editRole, setEditRole] = useState('')
   const [editBusy, setEditBusy] = useState(false)
   const [editMsg, setEditMsg] = useState('')
+  const [userSearch, setUserSearch] = useState('')
+  const [stats, setStats] = useState<{ user_count: number; active_today: number; channel_count: number; message_count: number; messages_today: number; session_count: number } | null>(null)
   const issuedPanelRef = useRef<HTMLDivElement>(null)
   const issuedCopyRef = useRef<HTMLButtonElement>(null)
   const priorFocusBeforeIssuedRef = useRef<HTMLElement | null>(null)
@@ -117,6 +124,14 @@ export default function AdminPage() {
       const ej = (await rEmerg.json()) as { messages?: EmergencyQueueRow[] }
       setEmergencyRows(ej.messages ?? [])
     }
+    // Load stats
+    try {
+      const rStats = await apiFetch('/api/admin/stats')
+      if (rStats.ok) {
+        const sj = await rStats.json() as { stats?: typeof stats }
+        if (sj.stats) setStats(sj.stats)
+      }
+    } catch { /* non-critical */ }
   }, [router])
 
   useEffect(() => {
@@ -509,10 +524,49 @@ export default function AdminPage() {
             )}
           </section>
 
+          {/* ── Platform Stats ──────────────────────────────────── */}
+          {stats && (
+            <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <BarChart3 size={16} style={{ color: 'var(--aae-accent, var(--aae-link))' }} />
+                <h2 className="mm-auth-section-title" style={{ margin: 0 }}>Platform Overview</h2>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                {[
+                  { label: 'Total Users', value: stats.user_count },
+                  { label: 'Active Today', value: stats.active_today },
+                  { label: 'Channels', value: stats.channel_count },
+                  { label: 'Messages', value: stats.message_count.toLocaleString() },
+                  { label: 'Messages Today', value: stats.messages_today },
+                  { label: 'Active Sessions', value: stats.session_count },
+                ].map(s => (
+                  <div key={s.label} style={{ padding: '14px 16px', borderRadius: 8, background: 'var(--mm-bg-secondary, #f8f9fa)', textAlign: 'center' }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--aae-accent, var(--aae-link))' }}>{s.value}</div>
+                    <div style={{ fontSize: 11, color: 'var(--mm-muted)', marginTop: 2 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
-            <h2 className="mm-auth-section-title">
-              Recent accounts
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <h2 className="mm-auth-section-title" style={{ margin: 0 }}>
+                Recent accounts
+              </h2>
+              <span style={{ fontSize: 11, color: 'var(--mm-muted)' }}>({users.length})</span>
+              <span style={{ flex: 1 }} />
+              <div className="mm-forward-search" style={{ width: 180, flex: 'none' }}>
+                <Search size={12} />
+                <input type="search" placeholder="Filter users…" value={userSearch}
+                  onChange={e => setUserSearch(e.target.value)}
+                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 12 }} />
+              </div>
+              <a href="/api/admin/users/export" download className="ghost-button"
+                style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
+                <Download size={12} /> CSV
+              </a>
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
@@ -525,7 +579,13 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.slice(0, 40).map(u => (
+                  {users.filter(u => {
+                  if (!userSearch.trim()) return true
+                  const q = userSearch.toLowerCase()
+                  return u.username.toLowerCase().includes(q)
+                    || u.email.toLowerCase().includes(q)
+                    || `${u.first_name} ${u.last_name}`.toLowerCase().includes(q)
+                }).slice(0, 40).map(u => (
                     <tr key={u.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                       <td style={{ padding: '6px' }}>@{u.username}</td>
                       <td style={{ padding: '6px' }}>{[u.first_name, u.last_name].filter(Boolean).join(' ') || '—'}</td>
@@ -552,7 +612,9 @@ export default function AdminPage() {
             </div>
           </section>
 
-          <DepartmentManagement />
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <DepartmentManagementPanel />
+          </section>
 
           {/* ── Audit Log ─────────────────────────────────────── */}
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
@@ -569,6 +631,28 @@ export default function AdminPage() {
           {/* ── Webhook Management ────────────────────────────── */}
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
             <WebhookManagementPanel workspaceId="" />
+          </section>
+
+          {/* ── OAuth Apps ────────────────────────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <OAuthAppsPanel />
+          </section>
+
+          {/* ── Custom Functions ──────────────────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <FunctionsPanel />
+          </section>
+
+          {/* ── Platform Migration ────────────────────────────── */}
+          {superUser && (
+            <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+              <MigrationPanel />
+            </section>
+          )}
+
+          {/* ── Observability & Tracing ────────────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <ObservabilityPanel />
           </section>
           </div>
         </div>
@@ -685,95 +769,5 @@ export default function AdminPage() {
           )
         : null}
     </>
-  )
-}
-
-function DepartmentManagement() {
-  const [depts, setDepts] = useState<{ id: string; name: string; code: string; member_count: number }[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [msg, setMsg] = useState('')
-
-  const load = useCallback(async () => {
-    const res = await apiFetch('/api/admin/departments')
-    if (!res.ok) return
-    const data = (await res.json()) as { departments?: { id: string; name: string; code: string; member_count: number }[] }
-    setDepts(data.departments ?? [])
-    setLoaded(true)
-  }, [])
-
-  useEffect(() => { void load() }, [load])
-
-  async function createDept(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newName.trim() || creating) return
-    setCreating(true)
-    setMsg('')
-    const res = await apiFetch('/api/admin/departments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName.trim() })
-    })
-    setCreating(false)
-    if (res.status === 409) {
-      setMsg('A department with that name already exists.')
-      return
-    }
-    if (!res.ok) {
-      setMsg('Could not create the department.')
-      return
-    }
-    setNewName('')
-    setMsg('Department created.')
-    void load()
-  }
-
-  if (!loaded) return null
-
-  return (
-    <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
-      <h2 className="mm-auth-section-title">
-        Departments
-      </h2>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--mm-border-subtle)' }}>
-              <th style={{ padding: '6px' }}>Name</th>
-              <th style={{ padding: '6px' }}>Code</th>
-              <th style={{ padding: '6px' }}>Members</th>
-            </tr>
-          </thead>
-          <tbody>
-            {depts.map(d => (
-              <tr key={d.id} style={{ borderBottom: '1px solid var(--mm-border-subtle)' }}>
-                <td style={{ padding: '6px', fontWeight: 500 }}>{d.name}</td>
-                <td style={{ padding: '6px', fontFamily: 'monospace', fontSize: 12 }}>{d.code}</td>
-                <td style={{ padding: '6px' }}>{d.member_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <form onSubmit={createDept} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div>
-          <label className="field-label" htmlFor="new-dept-name">New department</label>
-          <input
-            id="new-dept-name"
-            type="text"
-            className="field-input"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            placeholder="e.g. Marketing"
-            style={{ minWidth: 200 }}
-          />
-        </div>
-        <button type="submit" className="slack-button" disabled={creating || !newName.trim()}>
-          {creating ? 'Creating…' : 'Create'}
-        </button>
-      </form>
-      {msg && <p style={{ marginTop: 8, fontSize: 13, color: msg.includes('created') ? 'var(--mm-online)' : '#d24b4e' }}>{msg}</p>}
-    </section>
   )
 }

@@ -99,7 +99,7 @@ export default function AdminLoading() {
           Loading admin
         </h1>
         <p style={{ margin: '0 0 12px' }}>
-          <span className="mm-home-loading-shimmer" style={{ display: 'inline-block', width: 112, height: 18, borderRadius: 6 }} />
+          <span className="mm-home-loading-shimmer" style={{ display: 'inline-block', width: 112, height: 18, borderRadius: 8 }} />
         </p>
         <div className="slack-card mm-auth-form" style={{ padding: '28px 28px' }}>
           <span className="mm-home-loading-shimmer" style={{ display: 'block', width: 'min(280px, 70%)', height: 28, marginBottom: 10 }} />

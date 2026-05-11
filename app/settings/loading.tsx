@@ -14,12 +14,12 @@ export default function SettingsLoading() {
         </h1>
         <div className="slack-card mm-settings-page-card">
           <p className="mm-settings-page-back">
-            <span className="mm-home-loading-shimmer" style={{ display: 'inline-block', width: 112, height: 18, borderRadius: 6 }} />
+            <span className="mm-home-loading-shimmer" style={{ display: 'inline-block', width: 112, height: 18, borderRadius: 8 }} />
           </p>
           <div className="mm-settings-page-split">
             <nav className="mm-settings-rail mm-settings-nav" aria-hidden>
               {[72, 110, 100, 52].map((w, i) => (
-                <span key={i} className="mm-home-loading-shimmer" style={{ width: '100%', height: 36, borderRadius: 4 }} />
+                <span key={i} className="mm-home-loading-shimmer" style={{ width: '100%', height: 36, borderRadius: 8 }} />
               ))}
             </nav>
             <div className="mm-settings-content">
@@ -49,8 +49,8 @@ export default function SettingsLoading() {
                 </div>
               ))}
               <div style={{ marginTop: 'auto', paddingTop: 18, borderTop: '1px solid var(--mm-sidebar-border)', display: 'flex', gap: 10 }}>
-                <span className="mm-home-loading-shimmer" style={{ width: 108, height: 40, borderRadius: 4 }} />
-                <span className="mm-home-loading-shimmer" style={{ width: 88, height: 40, borderRadius: 4 }} />
+                <span className="mm-home-loading-shimmer" style={{ width: 108, height: 40, borderRadius: 8 }} />
+                <span className="mm-home-loading-shimmer" style={{ width: 88, height: 40, borderRadius: 8 }} />
               </div>
             </div>
           </div>

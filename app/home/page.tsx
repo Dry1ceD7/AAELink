@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Menu, Search, Hash, Lock, MessageCircle, ChevronDown, ChevronUp, Plus, MessageSquare, Bookmark, FileText, Settings, ShieldAlert, AlignLeft, Users, LogOut, UserPlus, Paintbrush, CircleDot, Info, Pin, Star, BellOff, Keyboard, CheckSquare, Book, Calendar, Puzzle, X, Package, SmilePlus, Copy, Check, Link2, GripVertical, PenLine, Paperclip } from 'lucide-react'
+import { Menu, Search, Hash, Lock, ChevronDown, Plus, MessageSquare, Bookmark, Settings, Users, Info, Pin, Star, BellOff, Keyboard, Book, Package, PenLine, Paperclip, Zap, Key, Bell, Activity, PackageOpen } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
 import { isPlatformAdmin } from '@/lib/platformRole'
 import { notifyDesktopChatMessage } from '@/lib/desktopNotify'
@@ -18,6 +18,7 @@ import { usePresenceHeartbeat } from '@/app/components/chat/usePresenceHeartbeat
 import { usePresenceListener } from '@/app/components/chat/usePresenceListener'
 import { useReadState } from '@/app/components/chat/useReadState'
 import { useVirtualTimeline } from '@/app/components/chat/useVirtualTimeline'
+import { DateSeparator, JumpToDate } from '@/app/components/chat/DateSeparator'
 import { NotificationsBell } from '@/app/components/NotificationsBell'
 import { CommandPalette, type CommandPaletteItem } from '@/app/components/CommandPalette'
 import { NewMessageModal } from '@/app/components/NewMessageModal'
@@ -25,20 +26,12 @@ import { SearchPanel } from '@/app/components/chat/SearchPanel'
 import type { ReactionSummary } from '@/lib/reactions'
 import type { SlashMeUser } from '@/lib/composerSlash'
 import { enqueueMessage, startOutboxFlushListener } from '@/lib/outboxQueue'
-import { TicketsPanel } from '@/app/components/TicketsPanel'
-import { DocumentsPanel } from '@/app/components/DocumentsPanel'
-import { ApprovalsPanel } from '@/app/components/ApprovalsPanel'
-import { KnowledgeBasePanel } from '@/app/components/KnowledgeBasePanel'
-import { CalendarPanel } from '@/app/components/CalendarPanel'
-import { IntegrationsPanel } from '@/app/components/IntegrationsPanel'
-import { SsoSettingsPanel } from '@/app/components/SsoSettingsPanel'
-import { ThreadsListPanel } from '@/app/components/ThreadsListPanel'
-import { SavedItemsPanel } from '@/app/components/SavedItemsPanel'
 import { ChannelInfoPanel } from '@/app/components/ChannelInfoPanel'
 import { BookmarkBar } from '@/app/components/BookmarkBar'
 import { ChannelTopicInline } from '@/app/components/chat/ChannelTopicInline'
 import { PinnedMessagesPanel } from '@/app/components/PinnedMessagesPanel'
 import { UpdateBanner } from '@/app/components/UpdateBanner'
+import { NotificationPermissionBanner } from '@/app/components/NotificationPermissionBanner'
 import { ChannelNotifPrefsModal } from '@/app/components/ChannelNotifPrefsModal'
 import { UserProfileCard } from '@/app/components/UserProfileCard'
 import { KeyboardShortcutsModal } from '@/app/components/KeyboardShortcutsModal'
@@ -47,14 +40,30 @@ import { readStarredChannels, toggleStarChannel } from '@/lib/channelStars'
 import { getChannelIdsWithDrafts } from '@/lib/messageDrafts'
 import { GlobalSearchModal } from '@/app/components/GlobalSearchModal'
 import { QuickSwitcher } from '@/app/components/QuickSwitcher'
-import { SettingsShell } from '@/app/components/SettingsShell'
-import { MarketplacePanel } from '@/app/components/MarketplacePanel'
+import { PreferencesModal } from '@/app/components/PreferencesModal'
 import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
 import { ChannelBrowseModal } from '@/app/components/ChannelBrowseModal'
-import { CustomEmojiPanel } from '@/app/components/CustomEmojiPanel'
+import CustomEmojiPanel from '@/app/components/CustomEmojiPanel'
 import { MessageSkeleton } from '@/app/components/chat/MessageSkeleton'
 import { useAutoAway } from '@/lib/useAutoAway'
+import { useStatusExpiry } from '@/lib/useStatusExpiry'
 import { isDndActive } from '@/lib/dndSchedule'
+import { evaluateNotification } from '@/lib/notificationSchedule'
+import AudioVideoClipRecorder from '@/app/components/AudioVideoClipRecorder'
+import { ModuleRenderer } from './ModuleRenderer'
+import { MORE_MODULE_KEYS } from './sidebarNav'
+import { InviteModal } from './InviteModal'
+import { CustomStatusPopup } from './CustomStatusPopup'
+import { SidebarCustomizer } from './SidebarCustomizer'
+import { CreateChannelModal } from './CreateChannelModal'
+import { SettingsDrawer } from './SettingsDrawer'
+import { WorkspaceDropdown } from './WorkspaceDropdown'
+import { UserFooter } from './UserFooter'
+import { ConfirmDialog } from './ConfirmDialog'
+import { MemberListPanel } from './MemberListPanel'
+import { ChatHeader } from './ChatHeader'
+import { MessageTimeline } from './MessageTimeline'
+import { ChannelSidebar } from './ChannelSidebar'
 
 interface Channel {
   id: string
@@ -82,37 +91,7 @@ function channelLabelForNotify(ch: Channel | null) {
   return `#${ch.display_name || ch.name}`
 }
 
-function SidebarSection({ id, title, children, onAdd }: { id: string, title: string, children: React.ReactNode, onAdd?: () => void }) {
-  const [open, setOpen] = useState(true)
-  
-  useEffect(() => {
-    const val = localStorage.getItem(`sidebar_section_${id}`)
-    if (val !== null) setOpen(val === 'true')
-  }, [id])
-
-  const handleToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
-    const next = e.currentTarget.open
-    setOpen(next)
-    localStorage.setItem(`sidebar_section_${id}`, String(next))
-  }
-
-  return (
-    <details className="channel-section" open={open} onToggle={handleToggle}>
-      <summary className="channel-section-head">
-        <div className="section-title-wrap">
-          <ChevronDown size={14} className="section-chevron" style={{ transform: open ? 'none' : 'rotate(-90deg)' }} />
-          <p>{title}</p>
-        </div>
-        {onAdd && (
-          <button type="button" className="channel-add" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdd(); }}>
-            <Plus size={16} />
-          </button>
-        )}
-      </summary>
-      {open && children}
-    </details>
-  )
-}
+/* SidebarSection is now in ChannelSidebar.tsx */
 
 function HomeChat() {
   const router = useRouter()
@@ -131,12 +110,6 @@ function HomeChat() {
   const [userMap, setUserMap] = useState<Record<string, AppUser>>({})
   const [teamMembers, setTeamMembers] = useState<AppUser[]>([])
   const [newChannelOpen, setNewChannelOpen] = useState(false)
-  const [newChannelDisplay, setNewChannelDisplay] = useState('')
-  const [newChannelSlug, setNewChannelSlug] = useState('')
-  const [newChannelPurpose, setNewChannelPurpose] = useState('')
-  const [newChannelPrivate, setNewChannelPrivate] = useState(false)
-  const [channelBusy, setChannelBusy] = useState(false)
-  const [channelFormError, setChannelFormError] = useState('')
   const [channelsOpen, setChannelsOpen] = useState(false)
   const [threadRoot, setThreadRoot] = useState<ChatPost | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -144,7 +117,7 @@ function HomeChat() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [memberListOpen, setMemberListOpen] = useState(false)
   const [wsMenuOpen, setWsMenuOpen] = useState(false)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
+
   const [pendingDeleteMsg, setPendingDeleteMsg] = useState<ChatPost | null>(null)
   const [channelInfoOpen, setChannelInfoOpen] = useState(false)
   const [profileUserId, setProfileUserId] = useState<string | null>(null)
@@ -158,27 +131,30 @@ function HomeChat() {
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
   const [draftIds, setDraftIds] = useState<Set<string>>(new Set())
   const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false)
+  const [preferencesModalOpen, setPreferencesModalOpen] = useState(false)
   const [customStatusOpen, setCustomStatusOpen] = useState(false)
   const [channelNotifPrefsOpen, setChannelNotifPrefsOpen] = useState(false)
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false)
-  const [customStatusEmoji, setCustomStatusEmoji] = useState('')
-  const [customStatusText, setCustomStatusText] = useState('')
+
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
-  const [inviteCopied, setInviteCopied] = useState(false)
+
   const [sidebarCustomizerOpen, setSidebarCustomizerOpen] = useState(false)
   const [showJumpBottom, setShowJumpBottom] = useState(false)
   const [newMsgCount, setNewMsgCount] = useState(0)
   const [pageDragOver, setPageDragOver] = useState(false)
   const pageDragCounter = useRef(0)
   const [unreadSepId, setUnreadSepId] = useState<string | null>(null)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [clipRecorder, setClipRecorder] = useState<{ mode: 'audio' | 'video' } | null>(null)
   const [sidebarSections, setSidebarSections] = useState([
-    { key: 'starred', label: 'Starred', icon: '⭐', enabled: true },
-    { key: 'channels', label: 'Channels', icon: '#', enabled: true },
-    { key: 'direct', label: 'Direct Messages', icon: '💬', enabled: true },
-    { key: 'modules', label: 'Modules', icon: '📦', enabled: true },
-    { key: 'people', label: 'People', icon: '👥', enabled: true }
+    { key: 'starred', label: 'Starred', iconKey: 'star', enabled: true },
+    { key: 'channels', label: 'Channels', iconKey: 'hash', enabled: true },
+    { key: 'direct', label: 'Direct Messages', iconKey: 'message_square', enabled: true },
+    { key: 'enterprise', label: 'Enterprise', iconKey: 'package', enabled: true },
+    { key: 'administration', label: 'Administration', iconKey: 'shield', enabled: true },
+    { key: 'people', label: 'People', iconKey: 'users', enabled: true }
   ])
   const sinceMsRef = useRef(0)
   const meRef = useRef<AppUser | null>(null)
@@ -189,6 +165,7 @@ function HomeChat() {
   // ── Presence heartbeat & listener ───────────────────────────────────────
   usePresenceHeartbeat()
   useAutoAway()
+  useStatusExpiry(!!me)
   const { getStatus } = usePresenceListener(activeTeamId)
   const [channelBrowseOpen, setChannelBrowseOpen] = useState(false)
   const [emojiPanelOpen, setEmojiPanelOpen] = useState(false)
@@ -464,7 +441,8 @@ function HomeChat() {
           workspaceId: wsId,
           focusMessageId: last.id
         })
-        if (!isDndActive()) playNotificationSound()
+        const notifDecision = evaluateNotification(undefined, isDndActive())
+        if (notifDecision.soundAllowed) playNotificationSound()
         // Set unread separator if the user is scrolled away
         const el = timelineRef.current
         if (el) {
@@ -659,34 +637,10 @@ function HomeChat() {
     }
   }
 
-  async function createChannel() {
-    setChannelFormError('')
-    const display_name = newChannelDisplay.trim()
-    if (!display_name || !activeTeamId) { setChannelFormError('Enter a channel name.'); return }
-    setChannelBusy(true)
-    const res = await apiFetch('/api/channels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        workspace_id: activeTeamId, 
-        display_name, 
-        name: newChannelSlug.trim() || undefined,
-        purpose: newChannelPurpose.trim() || undefined,
-        type: newChannelPrivate ? 'P' : 'O'
-      })
-    })
-    setChannelBusy(false)
-    if (!res.ok) { setChannelFormError('Could not create channel.'); return }
-    const data = (await res.json()) as { channel?: Channel }
-    setNewChannelOpen(false); setNewChannelDisplay(''); setNewChannelSlug(''); setNewChannelPurpose(''); setNewChannelPrivate(false)
-    loadChannels()
-    if (data?.channel?.id) setChannel(data.channel)
-  }
-
   // ── Create DM or Group DM ───────────────────────────────────────────────
   const startChat = useCallback(async (peerIds: string[]) => {
     if (!activeTeamId || peerIds.length === 0) return
-    const body: Record<string, any> = { workspace_id: activeTeamId, type: 'D' }
+    const body: { workspace_id: string; type: string; peer_user_id?: string; peer_user_ids?: string[] } = { workspace_id: activeTeamId, type: 'D' }
     if (peerIds.length === 1) {
       body.peer_user_id = peerIds[0]
     } else {
@@ -728,7 +682,8 @@ function HomeChat() {
     list.push(
       { id: 'nav-tickets', group: 'Modules', label: 'Tickets', icon: 'tickets', run: () => router.push('/tickets') },
       { id: 'nav-documents', group: 'Modules', label: 'Documents', icon: 'documents', run: () => router.push('/documents') },
-      { id: 'nav-settings', group: 'Account', label: 'Settings', icon: 'settings', run: () => setSettingsDrawerOpen(true) },
+
+      { id: 'nav-settings', group: 'Account', label: 'Settings', icon: 'settings', run: () => setPreferencesModalOpen(true) },
       { id: 'nav-marketplace', group: 'Modules', label: 'Plugin Marketplace', icon: 'marketplace', run: () => router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=marketplace`) },
       { id: 'nav-workspaces', group: 'Account', label: 'All Workspaces', icon: 'workspaces', run: () => router.push('/workspaces') }
     )
@@ -744,8 +699,8 @@ function HomeChat() {
     setDraftIds(new Set(getChannelIdsWithDrafts()))
   }, [])
 
-  const handleToggleStar = useCallback((channelId: string) => {
-    toggleStarChannel(channelId)
+  const handleToggleStar = useCallback(async (channelId: string) => {
+    await toggleStarChannel(channelId)
     setStarredIds(readStarredChannels())
   }, [])
 
@@ -776,6 +731,11 @@ function HomeChat() {
         e.preventDefault()
         setChannelsOpen(v => !v)
       }
+      // Cmd/Ctrl + , → open Preferences (Slack standard)
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault()
+        setPreferencesModalOpen(v => !v)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -803,15 +763,15 @@ function HomeChat() {
     return () => window.removeEventListener('keydown', onKey)
   }, [channelsOpen])
 
-  // ── Escape: close workspace/user menus ────────────────────────────────
+  // ── Escape: close workspace menu ──────────────────────────────────────
   useEffect(() => {
-    if (!wsMenuOpen && !userMenuOpen) return
+    if (!wsMenuOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setWsMenuOpen(false); setUserMenuOpen(false) }
+      if (e.key === 'Escape') setWsMenuOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [wsMenuOpen, userMenuOpen])
+  }, [wsMenuOpen])
 
   // ── Cmd+K Quick Switcher ───────────────────────────────────────────────
   useEffect(() => {
@@ -857,527 +817,78 @@ function HomeChat() {
           </button>
 
           {/* ── Workspace dropdown menu ────────────────────────── */}
-          {wsMenuOpen && (
-            <>
-              <div className="ws-menu-backdrop" onClick={() => setWsMenuOpen(false)} />
-              <div className="ws-dropdown" role="menu" aria-label="Workspace options">
-                <div className="ws-dropdown-header">
-                  <div className="ws-dropdown-avatar">{(activeTeam?.display_name || 'W').slice(0, 1).toUpperCase()}</div>
-                  <div>
-                    <strong className="ws-dropdown-name">{activeTeam?.display_name || 'Workspace'}</strong>
-                    <span className="ws-dropdown-url">{activeTeam?.name || ''}.aaelink.app</span>
-                  </div>
-                </div>
-                <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item" onClick={async () => {
-                  setWsMenuOpen(false)
-                  setInviteBusy(true)
-                  setInviteUrl('')
-                  setInviteCopied(false)
-                  setInviteModalOpen(true)
-                  try {
-                    const res = await apiFetch('/api/workspaces/invite', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ workspace_id: activeTeamId })
-                    })
-                    if (res.ok) {
-                      const data = await res.json() as { invite_url: string }
-                      setInviteUrl(`${window.location.origin}${data.invite_url}`)
-                    }
-                  } catch { /* ignore */ }
-                  setInviteBusy(false)
-                }}>
-                  <UserPlus size={16} /> Invite people to {activeTeam?.display_name || 'workspace'}
-                </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setSettingsDrawerOpen(true) }}>
-                  <Settings size={16} /> Preferences
-                </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setSidebarCustomizerOpen(true) }}>
-                  <Paintbrush size={16} /> Customize sidebar
-                </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setShortcutsOpen(true) }}>
-                  <Keyboard size={16} /> Keyboard shortcuts
-                </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setWsMenuOpen(false); setEmojiPanelOpen(true) }}>
-                  <SmilePlus size={16} /> Custom emoji
-                </button>
-                <div className="ws-dropdown-divider" />
-                <Link href="/workspaces" className="ws-dropdown-item" onClick={() => setWsMenuOpen(false)}>
-                  <Plus size={16} /> Create or join a workspace
-                </Link>
-                {me && isPlatformAdmin(me.platform_role) ? (
-                  <Link href="/admin" className="ws-dropdown-item" onClick={() => setWsMenuOpen(false)}>
-                    <ShieldAlert size={16} /> Administration
-                  </Link>
-                ) : null}
-                <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item ws-dropdown-item--danger"
-                  onClick={async () => { setWsMenuOpen(false); await apiFetch('/api/auth/logout', { method: 'POST' }); router.replace('/login') }}>
-                  <LogOut size={16} /> Sign out of {activeTeam?.display_name || 'workspace'}
-                </button>
-              </div>
-            </>
-          )}
+          <WorkspaceDropdown
+            open={wsMenuOpen}
+            onClose={() => setWsMenuOpen(false)}
+            workspaceId={activeTeamId}
+            workspaceName={activeTeam?.display_name || ''}
+            workspaceSlug={activeTeam?.name || ''}
+            me={me}
+            onInvite={(url, busy) => { setInviteUrl(url); setInviteBusy(busy); if (busy) setInviteModalOpen(true) }}
+            onOpenPreferences={() => setPreferencesModalOpen(true)}
+            onOpenSidebarCustomizer={() => setSidebarCustomizerOpen(true)}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onOpenEmojiPanel={() => setEmojiPanelOpen(true)}
+          />
         </header>
 
-        <div className="sidebar-search">
-          <div className="sidebar-search-wrap">
-            <Search size={14} className="sidebar-search-icon" />
-            <input
-              type="text"
-              className="sidebar-search-input"
-              placeholder="Find channels... ⌘K"
-              readOnly
-              onClick={() => setCmdPaletteOpen(true)}
-            />
-          </div>
-        </div>
-
-        <div className="sidebar-scrollable">
-          <section className="channel-section top-nav-section">
-            <button className={`channel${activeModule === 'threads' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=threads`) }}><MessageSquare size={16} className="channel-icon" /> Threads</button>
-            <button className={`channel${activeModule === 'saved' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=saved`) }}><Bookmark size={16} className="channel-icon" /> Saved items</button>
-          </section>
-
-          {/* ── Starred Channels ──────────────────────────────────── */}
-          {channels.filter(c => starredIds.has(c.id)).length > 0 && (
-            <SidebarSection id="starred" title="Starred">
-              {channels.filter(c => starredIds.has(c.id)).map(item => (
-                <button type="button"
-                  className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
-                  key={`star-${item.id}`}
-                  onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
-                  <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
-                  <span className="channel-name">{item.display_name || item.name}</span>
-                  {(item.unread_count ?? 0) > 0 ? (
-                    <span className="channel-unread">{item.unread_count}</span>
-                  ) : null}
-                </button>
-              ))}
-            </SidebarSection>
-          )}
-
-          <SidebarSection id="channels" title="Channels" onAdd={() => setNewChannelOpen(true)}>
-            {channels.filter(c => c.type !== 'D').map(item => (
-              <button type="button"
-                className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
-                key={item.id}
-                title={item.purpose ? `${item.display_name || item.name}\n${item.purpose}` : (item.display_name || item.name)}
-                onContextMenu={(e) => { e.preventDefault(); handleToggleStar(item.id) }}
-                onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
-                {starredIds.has(item.id)
-                  ? <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
-                  : item.type === 'P' ? <Lock size={15} className="channel-icon" /> : <Hash size={15} className="channel-icon" />}
-                <span className="channel-name">{item.display_name || item.name}</span>
-                {(item.unread_count ?? 0) > 0 ? (
-                  <span className="channel-unread">{item.unread_count}</span>
-                ) : draftIds.has(item.id) ? (
-                  <PenLine size={12} className="channel-draft-icon" />
-                ) : null}
-              </button>
-            ))}
-          </SidebarSection>
-
-          {/* Browse channels link */}
-          <button
-            type="button"
-            className="channel channel--browse"
-            onClick={() => setChannelBrowseOpen(true)}
-            style={{ fontSize: 12, color: 'var(--mm-sidebar-text)', opacity: 0.8, paddingLeft: 20, gap: 6 }}
-          >
-            <Search size={13} className="channel-icon" />
-            <span className="channel-name">Browse channels</span>
-          </button>
-
-          <SidebarSection id="dms" title="Direct messages" onAdd={() => setNewMessageOpen(true)}>
-            {channels.filter(c => c.type === 'D' || c.type === 'G').map(item => {
-              if (item.type === 'G') {
-                return (
-                  <button type="button"
-                    className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
-                    key={item.id}
-                    onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', background: 'var(--c-bg-tertiary)', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
-                      {item.display_name.split(',').length + 1}
-                    </div>
-                    <span className="channel-name" style={{ marginLeft: '6px' }}>{item.display_name}</span>
-                    {(item.unread_count ?? 0) > 0 ? (
-                      <span className="channel-unread">{item.unread_count}</span>
-                    ) : null}
-                  </button>
-                )
-              }
-              const peerId = item.name.split('__').find(id => id !== me?.id) || ''
-              const status = getStatus(peerId)
-              return (
-                <button type="button"
-                  className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
-                  key={item.id}
-                  onClick={() => { setChannel(item); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}>
-                  <span className={`presence presence--${status}`} aria-hidden="true" />
-                  <span className="channel-name">{item.dm_peer_display || item.display_name || item.name}</span>
-                  {(item.unread_count ?? 0) > 0 ? (
-                    <span className="channel-unread">{item.unread_count}</span>
-                  ) : null}
-                </button>
-              )
-            })}
-          </SidebarSection>
-
-          <SidebarSection id="modules" title="Modules">
-            <button className={`channel${activeModule === 'tickets' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=tickets`) }}><AlignLeft size={15} className="channel-icon"/> <span className="channel-name">Tickets</span></button>
-            <button className={`channel${activeModule === 'documents' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=documents`) }}><FileText size={15} className="channel-icon"/> <span className="channel-name">Documents</span></button>
-            <button className={`channel${activeModule === 'approvals' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=approvals`) }}><CheckSquare size={15} className="channel-icon"/> <span className="channel-name">Approvals</span></button>
-            <button className={`channel${activeModule === 'knowledge' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=knowledge`) }}><Book size={15} className="channel-icon"/> <span className="channel-name">Knowledge Base</span></button>
-            <button className={`channel${activeModule === 'calendar' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=calendar`) }}><Calendar size={15} className="channel-icon"/> <span className="channel-name">HR & Calendar</span></button>
-            {me && isPlatformAdmin(me.platform_role) && <button className={`channel${activeModule === 'integrations' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=integrations`) }}><Puzzle size={15} className="channel-icon"/> <span className="channel-name">Integrations</span></button>}
-            {me && isPlatformAdmin(me.platform_role) && <button className={`channel${activeModule === 'sso' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=sso`) }}><ShieldAlert size={15} className="channel-icon"/> <span className="channel-name">SSO Settings</span></button>}
-            <button className={`channel${activeModule === 'marketplace' ? ' active' : ''}`} onClick={() => { setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=marketplace`) }}><Package size={15} className="channel-icon"/> <span className="channel-name">Marketplace</span></button>
-          </SidebarSection>
-
-          <SidebarSection id="people" title="People">
-            {dmPreview.length === 0 ? (
-              <p className="channel-empty">No other members in this workspace yet.</p>
-            ) : (
-              dmPreview.map(u => {
-                const status = getStatus(u.id)
-                return (
-                  <button type="button" className="channel dm dm-clickable" key={u.id}
-                    onClick={() => void openDm(u.id)}>
-                    <span className={`presence presence--${status}`} aria-hidden="true" />
-                    <span className="channel-name">{displayName(u)}</span>
-                  </button>
-                )
-              })
-            )}
-          </SidebarSection>
-        </div>
+        <ChannelSidebar
+          channels={channels}
+          channel={channel}
+          activeModule={activeModule}
+          activeTeamId={activeTeamId}
+          starredIds={starredIds}
+          draftIds={draftIds}
+          me={me}
+          teamMembers={teamMembers}
+          dmPreview={dmPreview}
+          getStatus={getStatus}
+          onSelectChannel={(ch) => { setChannel(ch); setChannelsOpen(false); router.push(`/home?team=${encodeURIComponent(activeTeamId)}`) }}
+          onNavigateModule={(mod) => { setChannelsOpen(false); setMoreMenuOpen(() => false); router.push(mod === 'home' ? `/home?team=${encodeURIComponent(activeTeamId)}` : `/home?team=${encodeURIComponent(activeTeamId)}&module=${mod}`) }}
+          onToggleStar={handleToggleStar}
+          onNewChannel={() => setNewChannelOpen(true)}
+          onNewMessage={() => setNewMessageOpen(true)}
+          onBrowseChannels={() => setChannelBrowseOpen(true)}
+          onOpenDm={(uid) => void openDm(uid)}
+          onCmdPalette={() => setCmdPaletteOpen(true)}
+          moreMenuOpen={moreMenuOpen}
+          setMoreMenuOpen={setMoreMenuOpen}
+        />
 
         {/* ── User profile footer (Slack-style) ────────────────── */}
-        <footer className="sidebar-user-footer" style={{ position: 'relative' }}>
-          <button type="button" className="sidebar-user-btn" onClick={() => setUserMenuOpen(o => !o)}
-            aria-haspopup="true" aria-expanded={userMenuOpen}>
-            <div className="sidebar-user-avatar">
-              {(me?.username || me?.first_name || 'U').slice(0, 1).toUpperCase()}
-              <span className={`sidebar-user-presence presence--${getStatus(me?.id || '')}`} />
-            </div>
-            <div className="sidebar-user-info">
-              <strong>{me ? displayName(me) : 'Loading...'}</strong>
-              <span className="sidebar-user-status">
-                {getStatus(me?.id || '') === 'dnd'
-                  ? <><BellOff size={10} /> Do Not Disturb</>
-                  : <><CircleDot size={10} /> Active</>}
-              </span>
-            </div>
-            <ChevronUp size={16} className="sidebar-user-chevron" />
-          </button>
-
-          {/* ── User popover menu ──────────────────────────────── */}
-          {userMenuOpen && (
-            <>
-              <div className="ws-menu-backdrop" onClick={() => setUserMenuOpen(false)} />
-              <div className="user-dropdown" role="menu" aria-label="User menu">
-                <div className="ws-dropdown-header">
-                  <div className="ws-dropdown-avatar">{(me?.username || 'U').slice(0, 1).toUpperCase()}</div>
-                  <div>
-                    <strong className="ws-dropdown-name">{me ? displayName(me) : 'User'}</strong>
-                    <span className="ws-dropdown-url">@{me?.username || ''}</span>
-                  </div>
-                </div>
-                <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item" onClick={() => { setUserMenuOpen(false); setSettingsDrawerOpen(true) }}>
-                  <Settings size={16} /> Profile &amp; preferences
-                </button>
-                <button type="button" className="ws-dropdown-item" onClick={() => { setUserMenuOpen(false); setCustomStatusOpen(true) }}>
-                  <SmilePlus size={16} /> Set a custom status
-                </button>
-                {me && isPlatformAdmin(me.platform_role) ? (
-                  <Link href="/admin" className="ws-dropdown-item" onClick={() => setUserMenuOpen(false)}>
-                    <ShieldAlert size={16} /> Administration
-                  </Link>
-                ) : null}
-                <div className="ws-dropdown-divider" />
-                <div className="ws-dropdown-status-section" style={{ padding: '6px 12px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--mm-muted)', letterSpacing: '0.5px' }}>Set status</span>
-                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                    {([
-                      { key: 'online', label: 'Online', color: 'var(--mm-online)' },
-                      { key: 'away', label: 'Away', color: 'var(--mm-away)' },
-                      { key: 'dnd', label: 'DND', color: '#d24b4e' },
-                      { key: 'offline', label: 'Offline', color: 'var(--mm-offline)' }
-                    ] as const).map(s => (
-                      <button key={s.key} type="button"
-                        style={{
-                          flex: 1, padding: '5px 0', border: '1px solid var(--mm-border-subtle)',
-                          borderRadius: 6, background: 'transparent', cursor: 'pointer',
-                          fontSize: 11, fontWeight: 500, color: 'var(--fg)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                          transition: 'background 0.15s'
-                        }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(128,128,128,0.1)' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-                        onClick={async () => {
-                          await apiFetch('/api/user-status', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: s.key })
-                          })
-                          setUserMenuOpen(false)
-                        }}
-                      >
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="ws-dropdown-divider" />
-                <button type="button" className="ws-dropdown-item ws-dropdown-item--danger"
-                  onClick={async () => { setUserMenuOpen(false); await apiFetch('/api/auth/logout', { method: 'POST' }); router.replace('/login') }}>
-                  <LogOut size={16} /> Sign out
-                </button>
-              </div>
-            </>
-          )}
-        </footer>
+        <UserFooter
+          me={me}
+          presenceStatus={getStatus(me?.id || '')}
+          displayName={me ? displayName(me) : 'Loading...'}
+          onOpenPreferences={() => setPreferencesModalOpen(true)}
+          onOpenCustomStatus={() => setCustomStatusOpen(true)}
+        />
       </aside>
 
       {/* ── Main pane ───────────────────────────────────────────── */}
-      {activeModule === 'tickets' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Tickets</h1>
-              <p>Manage and track support requests</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <TicketsPanel workspaceId={activeTeamId} onBlockingOverlayChange={() => {}} />
-          </div>
-        </section>
-      ) : activeModule === 'documents' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Documents</h1>
-              <p>Shared files and policies</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <DocumentsPanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'approvals' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Approvals</h1>
-              <p>Manage pending workflows and requests</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <ApprovalsPanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'knowledge' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Knowledge Base</h1>
-              <p>Company wiki and documentation</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <KnowledgeBasePanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'calendar' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>HR & Calendar</h1>
-              <p>Schedule events, manage leaves, and track attendance</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <CalendarPanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'integrations' && me && isPlatformAdmin(me.platform_role) ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Integrations</h1>
-              <p>Connect external tools, webhooks, and apps</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <IntegrationsPanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'sso' && me && isPlatformAdmin(me.platform_role) ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>SSO Settings</h1>
-              <p>Configure Single Sign-On and Identity Providers</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
-            <SsoSettingsPanel />
-          </div>
-        </section>
-      ) : activeModule === 'marketplace' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-                aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Plugin Marketplace</h1>
-              <p>Browse, install, and publish workspace plugins</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
-            <MarketplacePanel workspaceId={activeTeamId} />
-          </div>
-        </section>
-      ) : activeModule === 'threads' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Threads</h1>
-              <p>Keep track of conversations</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <ThreadsListPanel workspaceId={activeTeamId} onOpenThread={(chId, rootId) => {
-            // Navigate to the channel and open the thread
-            const ch = channels.find(c => c.id === chId)
-            if (ch) {
-              router.push(`/home?team=${encodeURIComponent(activeTeamId)}&channel=${encodeURIComponent(ch.name)}&thread=${encodeURIComponent(rootId)}`)
-            }
-          }} />
-        </section>
-      ) : activeModule === 'saved' ? (
-        <section className="chat-pane" style={{ background: 'var(--mm-main-bg)' }}>
-          <header className="chat-header">
-            <div className="chat-header-nav">
-              <button type="button" className="app-shell-menu-btn"
-                onClick={() => setChannelsOpen(o => !o)}>
-                <Menu size={20} strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1>Saved items</h1>
-              <p>Your saved messages and files</p>
-            </div>
-            <div className="chat-header-nav">
-              <NotificationsBell enabled={Boolean(me)} />
-            </div>
-          </header>
-          <SavedItemsPanel onOpenMessage={(chId, msgId) => {
+      {activeModule ? (
+        <ModuleRenderer
+          activeModule={activeModule}
+          activeTeamId={activeTeamId}
+          channelTitle={channelTitle}
+          channelsOpen={channelsOpen}
+          setChannelsOpen={setChannelsOpen}
+          me={me}
+          channels={channels}
+          openDm={openDm}
+          navigateHome={() => router.push(`/home?team=${encodeURIComponent(activeTeamId)}`)}
+          navigateToChannel={(chId, msgId) => {
             const ch = channels.find(c => c.id === chId)
             if (ch) {
               const qs = `team=${encodeURIComponent(activeTeamId)}&channel=${encodeURIComponent(ch.name)}${msgId ? `&focus_msg=${encodeURIComponent(msgId)}` : ''}`
               router.push(`/home?${qs}`)
             }
-          }} />
-        </section>
+          }}
+          navigateToThread={(chId, rootId) => {
+            const ch = channels.find(c => c.id === chId)
+            if (ch) router.push(`/home?team=${encodeURIComponent(activeTeamId)}&channel=${encodeURIComponent(ch.name)}&thread=${encodeURIComponent(rootId)}`)
+          }}
+        />
       ) : (
         <>
         <section className="chat-pane"
@@ -1410,83 +921,64 @@ function HomeChat() {
           </div>
         )}
         <UpdateBanner />
-        <header className="chat-header">
-          <div className="chat-header-nav">
-            <button type="button" className="app-shell-menu-btn"
-              aria-expanded={channelsOpen} aria-controls="app-shell-channel-list"
-              aria-label={channelsOpen ? 'Close channels list' : 'Open channels list'}
-              onClick={() => setChannelsOpen(o => !o)}>
-              <Menu size={20} strokeWidth={2} aria-hidden />
-            </button>
-          </div>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-              {channel?.type === 'P' ? <Lock size={22} style={{marginRight: 8, color: 'var(--mm-muted)'}} /> : channel?.type === 'D' ? null : <Hash size={22} style={{marginRight: 8, color: 'var(--mm-muted)'}} />}
-              <h1 style={{ margin: 0, fontSize: 18 }}>{channelTitle}</h1>
-              {channel && channel.type !== 'D' && (
-                <ChannelHeaderDropdown
-                  channelId={channel.id}
-                  channelName={channel.display_name || channel.name}
-                  channelType={channel.type || 'O'}
-                  isStarred={starredIds.has(channel.id)}
-                  onToggleStar={() => handleToggleStar(channel.id)}
-                  onLeaveChannel={() => {
-                    setLeaveConfirmChannelId(channel.id)
-                  }}
-                  onInviteToChannel={() => setInviteModalOpen(true)}
-                />
-              )}
-            </div>
-            {channel && channel.type !== 'D' && (
-              <ChannelTopicInline
-                channelId={channel.id}
-                topic={channel.purpose || ''}
-                onSaved={(newTopic) => {
-                  setChannels(prev => prev.map(c => c.id === channel.id ? { ...c, purpose: newTopic } : c))
-                }}
-              />
-            )}
-          </div>
-          <div className="chat-header-nav">
-            <button type="button" className="mm-icon-btn" title="Search messages"
-              aria-label="Search messages" onClick={() => setSearchOpen(true)}>
-              <Search size={18} aria-hidden />
-            </button>
-            <button type="button" className={`mm-icon-btn${channelInfoOpen ? ' mm-icon-btn--active' : ''}`} title="Channel details"
-              aria-label="Channel details" aria-pressed={channelInfoOpen}
-              onClick={() => setChannelInfoOpen(o => !o)}>
-              <Info size={18} aria-hidden />
-            </button>
-            <button type="button" className={`mm-icon-btn${pinnedPanelOpen ? ' mm-icon-btn--active' : ''}`} title="Pinned messages"
-              aria-label="Pinned messages" aria-pressed={pinnedPanelOpen}
-              onClick={() => setPinnedPanelOpen(o => !o)}>
-              <Pin size={16} aria-hidden />
-            </button>
-            <NotificationsBell enabled={Boolean(me)} />
-            {channel && channel.type !== 'D' && (
-              <button type="button" className="mm-icon-btn" title="Notification preferences"
-                aria-label="Notification preferences"
-                onClick={() => setChannelNotifPrefsOpen(true)}>
-                <BellOff size={16} aria-hidden />
-              </button>
-            )}
-            <button type="button" className={`mm-icon-btn${memberListOpen ? ' mm-icon-btn--active' : ''}`} title="Members"
-              aria-label="Channel members" aria-pressed={memberListOpen}
-              onClick={() => setMemberListOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 13, fontWeight: 600 }}>
-              <Users size={16} aria-hidden />
-              <span style={{ opacity: 0.7 }}>{teamMembers.length || ''}</span>
-            </button>
-            <span className={`status-pill${streamUp ? ' online' : ''}`}>
-              {streamUp ? 'Live' : 'Connecting'}
-            </span>
-          </div>
-        </header>
+        <NotificationPermissionBanner />
+        <ChatHeader
+          channel={channel}
+          channelTitle={channelTitle}
+          channelsOpen={channelsOpen}
+          setChannelsOpen={setChannelsOpen}
+          starredIds={starredIds}
+          onToggleStar={handleToggleStar}
+          onLeaveChannel={(chId) => setLeaveConfirmChannelId(chId)}
+          onInviteToChannel={() => setInviteModalOpen(true)}
+          onTopicSaved={(chId, newTopic) => setChannels(prev => prev.map(c => c.id === chId ? { ...c, purpose: newTopic } : c))}
+          searchOpen={searchOpen}
+          onSearchOpen={() => setSearchOpen(true)}
+          channelInfoOpen={channelInfoOpen}
+          onToggleChannelInfo={() => setChannelInfoOpen(o => !o)}
+          pinnedPanelOpen={pinnedPanelOpen}
+          onTogglePinnedPanel={() => setPinnedPanelOpen(o => !o)}
+          memberListOpen={memberListOpen}
+          onToggleMemberList={() => setMemberListOpen(o => !o)}
+          memberCount={teamMembers.length}
+          streamUp={streamUp}
+          meExists={Boolean(me)}
+          onOpenChannelNotifPrefs={() => setChannelNotifPrefsOpen(true)}
+        />
 
         {/* ── Bookmark bar (Slack-style channel bookmarks) ──── */}
         {channel && <BookmarkBar channelId={channel.id} channelType={channel.type} />}
 
-        <div className="message-timeline" ref={timelineRef}>
+        <div className="message-timeline aae-timeline" ref={timelineRef} style={{ position: 'relative' }}>
+          {/* Phase A — Jump-to-date pill (Blueprint Part 3.2). Shows the
+              currently-visible day; clicking opens a native date picker that
+              scrolls the timeline to the chosen day. */}
+          {posts.length > 0 && (
+            <JumpToDate
+              currentLabel={(() => {
+                const top = visiblePosts[0]
+                if (!top) return ''
+                const d = new Date(top.create_at)
+                const now = new Date()
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+                const diff = today.getTime() - msgDay.getTime()
+                if (diff === 0) return 'Today'
+                if (diff === 86400000) return 'Yesterday'
+                return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+              })()}
+              onPickDate={(yyyyMmDd) => {
+                // Find the first message on or after the picked date and scroll to it.
+                const target = new Date(`${yyyyMmDd}T00:00:00`).getTime()
+                const post = posts.find((p) => p.create_at >= target)
+                if (!post) return
+                const el = timelineRef.current?.querySelector(`[data-message-id="${CSS.escape(post.id)}"]`)
+                if (el && 'scrollIntoView' in el) {
+                  ;(el as HTMLElement).scrollIntoView({ block: 'start', behavior: 'smooth' })
+                }
+              }}
+            />
+          )}
           {olderAvailable ? (
             <div style={{ padding: '8px 0', textAlign: 'center' }}>
               <button type="button" className="ghost-button" disabled={olderLoading}
@@ -1502,7 +994,7 @@ function HomeChat() {
 
           {!postsLoading && posts.length === 0 && (
             <div className="channel-intro-block" style={{ padding: '40px 20px', marginTop: 'auto' }}>
-              <div style={{ width: '72px', height: '72px', background: 'var(--mm-sidebar-bg)', color: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
+              <div style={{ width: '72px', height: '72px', background: 'var(--mm-sidebar-bg)', color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
                 {channel?.type === 'D' ? <Users size={36} /> : channel?.type === 'P' ? <Lock size={36} /> : <Hash size={36} />}
               </div>
               <h2 style={{ margin: '0 0 10px 0', fontSize: '24px', fontWeight: 'bold' }}>
@@ -1535,20 +1027,18 @@ function HomeChat() {
                   </div>
                 )}
                 {showDateDivider && (
-                  <div className="date-divider">
-                    <span className="date-divider-text">
-                      {(() => {
-                        const d = new Date(post.create_at)
-                        const now = new Date()
-                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-                        const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-                        const diff = today.getTime() - msgDay.getTime()
-                        if (diff === 0) return 'Today'
-                        if (diff === 86400000) return 'Yesterday'
-                        return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
-                      })()}
-                    </span>
-                  </div>
+                  <DateSeparator
+                    label={(() => {
+                      const d = new Date(post.create_at)
+                      const now = new Date()
+                      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                      const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+                      const diff = today.getTime() - msgDay.getTime()
+                      if (diff === 0) return 'Today'
+                      if (diff === 86400000) return 'Yesterday'
+                      return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+                    })()}
+                  />
                 )}
                 {editingId === post.id ? (
                   <div className={`message message--editing${isCompact && !showDateDivider ? ' message--compact' : ''}`}>
@@ -1581,6 +1071,27 @@ function HomeChat() {
                       const found = Object.values(userMap).find(u => u.username === username)
                       if (found) setProfileUserId(found.id)
                     }}
+                    onConvertToTicket={async (p) => {
+                      try {
+                        const res = await apiFetch('/api/tickets/from-message', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            message_id: p.id,
+                            channel_id: p.channel_id,
+                            workspace_id: activeTeamId,
+                            title: p.message.replace(/<[^>]+>/g, '').slice(0, 120) || 'Chat message ticket',
+                            description: p.message,
+                          })
+                        })
+                        if (res.ok) {
+                          const data = await res.json() as { ticket?: { id: string } }
+                          if (data.ticket?.id) {
+                            router.push(`/home?team=${encodeURIComponent(activeTeamId)}&module=tickets&ticket=${encodeURIComponent(data.ticket.id)}`)
+                          }
+                        }
+                      } catch { /* silently fail */ }
+                    }}
                     onReactionsUpdated={onReactionsUpdated} 
                   />
                 )}
@@ -1609,42 +1120,20 @@ function HomeChat() {
           channelType={channel?.type} me={me as SlashMeUser | null}
           workspaceId={activeTeamId}
           teamMembers={teamMembers} onSend={msg => void handleSend(msg)}
-          onDraftChange={emitTyping} />
+          onDraftChange={emitTyping}
+          onRecordAudio={() => setClipRecorder({ mode: 'audio' })}
+          onRecordVideo={() => setClipRecorder({ mode: 'video' })} />
       </section>
 
       {/* ── Member list panel (right sidebar) ─────────────────── */}
-      {memberListOpen && (
-        <aside className="member-list-panel">
-          <header className="member-list-header">
-            <h2>Members</h2>
-            <button type="button" className="mm-icon-btn" onClick={() => setMemberListOpen(false)} aria-label="Close member list">
-              <span aria-hidden>✕</span>
-            </button>
-          </header>
-          <div className="member-list-body">
-            {teamMembers.length === 0 ? (
-              <p className="member-list-empty">No members to display.</p>
-            ) : (
-              teamMembers.map(u => {
-                const status = getStatus(u.id)
-                const name = displayName(u)
-                return (
-                  <button key={u.id} type="button" className="member-list-item" onClick={() => { void openDm(u.id); setMemberListOpen(false) }}>
-                    <div className="member-list-avatar">
-                      {(u.username || name).slice(0, 1).toUpperCase()}
-                      <span className={`member-list-presence presence--${status}`} />
-                    </div>
-                    <div className="member-list-info">
-                      <strong>{name}</strong>
-                      <span>@{u.username}</span>
-                    </div>
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </aside>
-      )}
+      <MemberListPanel
+        open={memberListOpen}
+        members={teamMembers}
+        getStatus={getStatus}
+        displayName={displayName}
+        onOpenDm={(uid) => void openDm(uid)}
+        onClose={() => setMemberListOpen(false)}
+      />
 
       {/* ── Channel Info panel (right sidebar) ─────────────────── */}
       {channelInfoOpen && channel && me && (
@@ -1712,86 +1201,49 @@ function HomeChat() {
       />
 
       {/* ── Custom emoji panel ─────────────────────────────────── */}
-      <CustomEmojiPanel
-        open={emojiPanelOpen}
-        onClose={() => setEmojiPanelOpen(false)}
-        workspaceId={activeTeamId}
-      />
+      {emojiPanelOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2500, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center' }} onClick={() => setEmojiPanelOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 600, maxHeight: '80vh', borderRadius: 16, overflow: 'hidden' }}>
+            <CustomEmojiPanel onClose={() => setEmojiPanelOpen(false)} />
+          </div>
+        </div>
+      )}
 
       {/* ── Leave channel confirmation ─────────────────────────── */}
-      {leaveConfirmChannelId && (
-        <div className="mm-modal-overlay" role="presentation" onClick={() => setLeaveConfirmChannelId(null)}>
-          <div className="mm-modal" role="alertdialog" aria-modal="true" onClick={e => e.stopPropagation()}>
-            <h2>Leave channel?</h2>
-            <p className="mm-editor-hint" style={{ marginTop: 8 }}>
-              Are you sure you want to leave <strong>{channels.find(c => c.id === leaveConfirmChannelId)?.display_name || 'this channel'}</strong>? You can rejoin it later from the channel browser.
-            </p>
-            <div className="mm-modal-actions">
-              <button type="button" className="ghost-button" onClick={() => setLeaveConfirmChannelId(null)}>Cancel</button>
-              <button type="button" className="slack-button" style={{ background: '#D24B4E' }}
-                onClick={async () => {
-                  const chId = leaveConfirmChannelId
-                  setLeaveConfirmChannelId(null)
-                  await apiFetch(`/api/channel-members?channel_id=${encodeURIComponent(chId)}&user_id=me`, { method: 'DELETE' })
-                  setChannels(prev => prev.filter(c => c.id !== chId))
-                  if (channel?.id === chId) setChannel(null)
-                }}>Leave Channel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!leaveConfirmChannelId}
+        title="Leave channel?"
+        message={<>Are you sure you want to leave <strong>{channels.find(c => c.id === leaveConfirmChannelId)?.display_name || 'this channel'}</strong>? You can rejoin it later from the channel browser.</>}
+        confirmLabel="Leave Channel"
+        danger
+        onCancel={() => setLeaveConfirmChannelId(null)}
+        onConfirm={async () => {
+          const chId = leaveConfirmChannelId!
+          setLeaveConfirmChannelId(null)
+          await apiFetch(`/api/channel-members?channel_id=${encodeURIComponent(chId)}&user_id=me`, { method: 'DELETE' })
+          setChannels(prev => prev.filter(c => c.id !== chId))
+          if (channel?.id === chId) setChannel(null)
+        }}
+      />
 
       {/* ── Create channel modal ────────────────────────────────── */}
-      {newChannelOpen ? (
-        <div className="modal-overlay" role="presentation" onClick={() => !channelBusy && setNewChannelOpen(false)}>
-          <div className="modal-panel slack-card" role="dialog" aria-modal="true"
-            aria-labelledby="new-channel-title" onClick={e => e.stopPropagation()}>
-            <h2 id="new-channel-title" style={{ marginTop: 0 }}>Create channel</h2>
-            <label className="field-label">Display name
-              <input className="slack-input" value={newChannelDisplay}
-                onChange={e => setNewChannelDisplay(e.target.value)} placeholder="e.g. Engineering" />
-            </label>
-            <label className="field-label" style={{ marginTop: 12 }}>URL name (optional)
-              <input className="slack-input" value={newChannelSlug}
-                onChange={e => setNewChannelSlug(e.target.value)} placeholder="Auto from display name if empty" />
-            </label>
-            <label className="field-label" style={{ marginTop: 12 }}>Purpose (optional)
-              <textarea className="slack-input" value={newChannelPurpose}
-                onChange={e => setNewChannelPurpose(e.target.value)}
-                placeholder="What is this channel about?"
-                rows={2}
-                style={{ resize: 'vertical', minHeight: 48, fontFamily: 'inherit' }} />
-            </label>
-            <label className="field-label" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={newChannelPrivate} onChange={e => setNewChannelPrivate(e.target.checked)} />
-              <span>Make private (invite only)</span>
-            </label>
-            {channelFormError ? <p className="form-error">{channelFormError}</p> : null}
-            <div className="modal-actions">
-              <button type="button" className="ghost-button" onClick={() => !channelBusy && setNewChannelOpen(false)}>Cancel</button>
-              <button type="button" className="slack-button" disabled={channelBusy}
-                onClick={() => void createChannel()}>{channelBusy ? 'Creating…' : 'Create'}</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <CreateChannelModal
+        open={newChannelOpen}
+        workspaceId={activeTeamId}
+        onClose={() => setNewChannelOpen(false)}
+        onCreated={(ch) => { loadChannels(); setChannel(ch as Channel) }}
+      />
 
       {/* ── Delete message confirmation modal ───────────────────── */}
-      {pendingDeleteMsg && (
-        <div className="mm-modal-overlay" role="presentation" onClick={() => setPendingDeleteMsg(null)}>
-          <div className="mm-modal" role="alertdialog" aria-modal="true" onClick={e => e.stopPropagation()}>
-            <h2>Delete message?</h2>
-            <p className="mm-editor-hint" style={{ marginTop: 8 }}>
-              Are you sure you want to delete this message? This action cannot be undone.
-            </p>
-            <div className="mm-modal-actions">
-              <button type="button" className="ghost-button" onClick={() => setPendingDeleteMsg(null)}>Cancel</button>
-              <button type="button" className="slack-button" style={{ background: '#D24B4E' }}
-                onClick={() => void performDeleteMsg()}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!pendingDeleteMsg}
+        title="Delete message?"
+        message="Are you sure you want to delete this message? This action cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setPendingDeleteMsg(null)}
+        onConfirm={() => void performDeleteMsg()}
+      />
 
       {/* ── Forward message modal ──────────────────────────────── */}
       <ForwardMessageModal
@@ -1851,23 +1303,11 @@ function HomeChat() {
       )}
 
       {/* ── Settings Drawer (Slack-style fullscreen overlay) ── */}
-      {settingsDrawerOpen && (
-        <>
-          <div className="settings-drawer-backdrop" onClick={() => setSettingsDrawerOpen(false)} />
-          <div className="settings-drawer" role="dialog" aria-modal="true" aria-label="Settings"
-            onKeyDown={e => { if (e.key === 'Escape') setSettingsDrawerOpen(false) }}>
-            <div className="settings-drawer-header">
-              <h2>Preferences</h2>
-              <button type="button" className="settings-drawer-close"
-                onClick={() => setSettingsDrawerOpen(false)} aria-label="Close settings">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="settings-drawer-body">
-              <SettingsShell variant="drawer" onClose={() => setSettingsDrawerOpen(false)} />
-            </div>
-          </div>
-        </>
+      <SettingsDrawer open={settingsDrawerOpen} onClose={() => setSettingsDrawerOpen(false)} />
+
+      {/* ── Preferences Modal (new architecture) ──────────── */}
+      {preferencesModalOpen && (
+        <PreferencesModal onClose={() => setPreferencesModalOpen(false)} />
       )}
 
       {/* ── Channel Notification Preferences ─────────────── */}
@@ -1881,164 +1321,39 @@ function HomeChat() {
       )}
 
       {/* ── Custom Status Popup (Slack-style) ──────────────── */}
-      {customStatusOpen && (
-        <>
-          <div className="ws-menu-backdrop" onClick={() => setCustomStatusOpen(false)} />
-          <div className="aae-auth-modal-overlay" onClick={() => setCustomStatusOpen(false)}>
-            <div className="custom-status-popup" style={{
-              position: 'relative', bottom: 'auto', left: 'auto', right: 'auto',
-              maxWidth: 420, width: '100%', margin: '0 auto'
-            }} onClick={e => e.stopPropagation()}>
-              <h4>Set a status</h4>
-              <div className="custom-status-row">
-                <button type="button" className="custom-status-emoji-btn"
-                  onClick={() => {
-                    const emojis = ['😊', '🏠', '🌴', '🤒', '🚀', '📅', '🎯', '💬', '🔇', '⛔']
-                    const idx = emojis.indexOf(customStatusEmoji)
-                    setCustomStatusEmoji(emojis[(idx + 1) % emojis.length])
-                  }}>
-                  {customStatusEmoji || '😊'}
-                </button>
-                <input type="text" className="custom-status-input"
-                  placeholder="What's your status?"
-                  value={customStatusText}
-                  onChange={e => setCustomStatusText(e.target.value)}
-                  maxLength={64}
-                  autoFocus />
-              </div>
-              <div className="custom-status-presets">
-                {([
-                  { emoji: '📅', text: 'In a meeting' },
-                  { emoji: '🚌', text: 'Commuting' },
-                  { emoji: '🤒', text: 'Out sick' },
-                  { emoji: '🌴', text: 'Vacationing' },
-                  { emoji: '🏠', text: 'Working remotely' },
-                  { emoji: '🔇', text: 'Focusing' }
-                ]).map(p => (
-                  <button key={p.text} type="button" className="custom-status-preset"
-                    onClick={() => { setCustomStatusEmoji(p.emoji); setCustomStatusText(p.text) }}>
-                    <span>{p.emoji}</span> {p.text}
-                  </button>
-                ))}
-              </div>
-              <div className="custom-status-actions">
-                <button type="button" className="ghost-button" style={{ fontSize: 13 }}
-                  onClick={async () => {
-                    setCustomStatusEmoji('')
-                    setCustomStatusText('')
-                    await apiFetch('/api/auth/me', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ status_emoji: '', status_text: '' })
-                    })
-                    setCustomStatusOpen(false)
-                  }}>
-                  Clear status
-                </button>
-                <button type="button" className="slack-button" style={{ fontSize: 13 }}
-                  onClick={async () => {
-                    await apiFetch('/api/auth/me', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        status_emoji: customStatusEmoji || '😊',
-                        status_text: customStatusText
-                      })
-                    })
-                    setCustomStatusOpen(false)
-                  }}>
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <CustomStatusPopup open={customStatusOpen} onClose={() => setCustomStatusOpen(false)} />
 
       {/* ── Invite Members Modal (Slack-style) ─────────────── */}
-      {inviteModalOpen && (
-        <>
-          <div className="ws-menu-backdrop" onClick={() => setInviteModalOpen(false)} />
-          <div className="aae-auth-modal-overlay" onClick={() => setInviteModalOpen(false)}>
-            <div className="invite-modal" onClick={e => e.stopPropagation()}>
-              <div className="invite-modal-header">
-                <h3>Invite people to {activeTeam?.display_name || 'workspace'}</h3>
-                <button type="button" className="mm-icon-btn" onClick={() => setInviteModalOpen(false)} aria-label="Close">
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="invite-modal-body">
-                <p className="invite-modal-desc">
-                  Share this link with colleagues so they can join your workspace. The link expires in 7 days.
-                </p>
-                {inviteBusy ? (
-                  <div className="invite-modal-loading">
-                    <span className="module-loading">Generating invite link…</span>
-                  </div>
-                ) : inviteUrl ? (
-                  <div className="invite-modal-link-wrap">
-                    <div className="invite-modal-link-box">
-                      <Link2 size={15} style={{ flexShrink: 0, color: 'var(--mm-link)' }} />
-                      <span className="invite-modal-link-text">{inviteUrl}</span>
-                    </div>
-                    <button type="button" className="slack-button invite-modal-copy-btn"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(inviteUrl)
-                          setInviteCopied(true)
-                          setTimeout(() => setInviteCopied(false), 2500)
-                        } catch { /* fallback */ }
-                      }}>
-                      {inviteCopied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy link</>}
-                    </button>
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--mm-muted)', fontSize: 13 }}>Could not generate invite link. You may not have permission.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <InviteModal
+        open={inviteModalOpen}
+        workspaceName={activeTeam?.display_name || 'workspace'}
+        inviteUrl={inviteUrl}
+        inviteBusy={inviteBusy}
+        onClose={() => setInviteModalOpen(false)}
+      />
 
       {/* ── Sidebar Customizer (Slack-style) ───────────────── */}
-      {sidebarCustomizerOpen && (
-        <>
-          <div className="sidebar-customizer-overlay" onClick={() => setSidebarCustomizerOpen(false)} />
-          <div className="sidebar-customizer" role="dialog" aria-modal="true" aria-label="Customize sidebar">
-            <div className="sidebar-customizer-header">
-              <h3>Customize your sidebar</h3>
-              <button type="button" className="mm-icon-btn" onClick={() => setSidebarCustomizerOpen(false)} aria-label="Close">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="sidebar-customizer-body">
-              <p style={{ padding: '0 18px 8px', margin: 0, fontSize: 12, color: 'var(--mm-muted)' }}>
-                Toggle sections to show or hide them in your sidebar.
-              </p>
-              {sidebarSections.map((section, idx) => (
-                <div key={section.key} className="sidebar-customizer-item">
-                  <GripVertical size={16} className="grip-icon" />
-                  <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{section.icon}</span>
-                  <span className="item-label">{section.label}</span>
-                  <button
-                    type="button"
-                    className={`item-toggle${section.enabled ? ' active' : ''}`}
-                    aria-label={`Toggle ${section.label}`}
-                    onClick={() => {
-                      setSidebarSections(prev => {
-                        const next = [...prev]
-                        next[idx] = { ...next[idx], enabled: !next[idx].enabled }
-                        try { localStorage.setItem('aaelink_sidebar_sections', JSON.stringify(next)) } catch {}
-                        return next
-                      })
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+      <SidebarCustomizer
+        open={sidebarCustomizerOpen}
+        sections={sidebarSections}
+        onSectionsChange={setSidebarSections}
+        onClose={() => setSidebarCustomizerOpen(false)}
+      />
+
+      {/* ── Audio/Video Clip Recorder overlay (Slack Clips) ───── */}
+      {clipRecorder && (
+        <div className="modal-overlay" role="presentation" onClick={() => setClipRecorder(null)}>
+          <div onClick={e => e.stopPropagation()}>
+            <AudioVideoClipRecorder
+              mode={clipRecorder.mode}
+              onClose={() => setClipRecorder(null)}
+              onSend={(clip) => {
+                void handleSend(`[${clip.type} clip — ${Math.floor(clip.duration / 60)}:${String(clip.duration % 60).padStart(2, '0')}]${clip.transcript ? `\n> ${clip.transcript}` : ''}`)
+                setClipRecorder(null)
+              }}
+            />
           </div>
-        </>
+        </div>
       )}
     </main>
   )

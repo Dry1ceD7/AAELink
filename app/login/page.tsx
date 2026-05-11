@@ -368,7 +368,7 @@ export default function LoginPage() {
               </div>
 
               <div style={{ marginBottom: 24, textAlign: 'center' }}>
-                <a href="/api/auth/entra" className="ghost-button" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '12px 16px', background: '#fff', color: '#333', border: '1px solid #ccc', borderRadius: 4, textDecoration: 'none', fontWeight: 600 }}>
+                <a href="/api/auth/entra" className="ghost-button" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '12px 16px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, textDecoration: 'none', fontWeight: 600, transition: 'background 0.15s ease, border-color 0.15s ease' }}>
                   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
                     <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
                     <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>

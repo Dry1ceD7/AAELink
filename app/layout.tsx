@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from 'next'
 import './styles.css'
-import { Open_Sans } from 'next/font/google'
+import { Lato, Open_Sans } from 'next/font/google'
 import { DesktopNavigateSubscriber } from './components/DesktopNavigateSubscriber'
 import { UiDensityBoot } from './components/UiDensityBoot'
 import { ThemeBoot } from './components/ThemeBoot'
+import { PreferencesBoot } from './components/PreferencesBoot'
+
+const lato = Lato({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  display: 'swap',
+  variable: '--font-lato'
+})
 
 const openSans = Open_Sans({
   subsets: ['latin'],
@@ -32,8 +40,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#005596' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f172a' }
+    { media: '(prefers-color-scheme: light)', color: '#12086F' },
+    { media: '(prefers-color-scheme: dark)', color: '#0a0640' }
   ],
   width: 'device-width',
   initialScale: 1,
@@ -42,7 +50,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={openSans.variable} suppressHydrationWarning>
+    <html lang="en" className={`${lato.variable} ${openSans.variable}`} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -57,14 +65,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   document.documentElement.setAttribute('data-theme', effective);
                   document.documentElement.style.colorScheme = effective;
                 } catch (e) {}
+                try {
+                  var raw = localStorage.getItem('aaelink-user-prefs');
+                  if (raw) {
+                    var p = JSON.parse(raw);
+                    if (p.accentColor) document.documentElement.style.setProperty('--aae-accent', p.accentColor);
+                    if (p.uiScale && p.uiScale !== 100) document.documentElement.style.fontSize = p.uiScale + '%';
+                    if (p.messageDensity) document.documentElement.setAttribute('data-density', p.messageDensity);
+                    if (p.highContrast) document.documentElement.classList.add('high-contrast');
+                    if (p.reduceMotion) document.documentElement.classList.add('reduce-motion');
+                  }
+                } catch (e) {}
               })();
             `
           }}
         />
       </head>
-      <body className={openSans.className}>
+      <body className={lato.className}>
         <UiDensityBoot />
         <ThemeBoot />
+        <PreferencesBoot />
         <DesktopNavigateSubscriber />
         {children}
       </body>
