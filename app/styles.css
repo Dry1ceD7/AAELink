@@ -10833,16 +10833,24 @@ button.mm-user-pill {
 }
 
 /* ── 3. Message Action Bar — Fade-in with subtle slide ─────────────── */
+/* Hidden by default; revealed on row hover OR keyboard focus anywhere in
+ * the row (closes audit §4.1 P0 — toolbar is now reachable by keyboard). */
 .app-shell .message-actions-bar {
   opacity: 0;
   transform: translateY(4px);
   transition: opacity 0.15s ease, transform 0.15s ease;
   pointer-events: none;
 }
-.app-shell .message:hover .message-actions-bar {
+.app-shell .message:hover .message-actions-bar,
+.app-shell .message:focus-within .message-actions-bar {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+}
+.app-shell .message-actions-bar button:focus-visible {
+  outline: 2px solid var(--mm-link-color, #1264a3);
+  outline-offset: 2px;
+  background: rgba(0, 0, 0, 0.06);
 }
 @media (prefers-color-scheme: dark) {
   .app-shell .message-actions-bar {

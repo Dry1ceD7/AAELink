@@ -147,22 +147,26 @@ function MessageActions({
       <button
         type="button"
         title="Add reaction"
+        aria-label="Add reaction"
         onClick={() => setReactionPickerOpen(o => !o)}
       >
-        <Smile size={16} />
+        <Smile size={16} aria-hidden="true" />
       </button>
       {!post.root_id ? (
         <button
           type="button"
           title="Reply in thread"
+          aria-label="Reply in thread"
           onClick={() => onOpenThread(post)}
         >
-          <MessageSquare size={16} />
+          <MessageSquare size={16} aria-hidden="true" />
         </button>
       ) : null}
       <button
         type="button"
         title={saved ? 'Saved!' : 'Save message'}
+        aria-label={saved ? 'Message saved' : 'Save message'}
+        aria-pressed={saved}
         className={saved ? 'message-action-saved' : undefined}
         onClick={async () => {
           await apiFetch('/api/saved', {
@@ -174,22 +178,26 @@ function MessageActions({
           setTimeout(() => setSaved(false), 1500)
         }}
       >
-        {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+        {saved ? <BookmarkCheck size={16} aria-hidden="true" /> : <Bookmark size={16} aria-hidden="true" />}
       </button>
       <button
         type="button"
         title="Pin message"
+        aria-label="Pin message"
         onClick={() => onPinMessage?.(post)}
       >
-        <Pin size={16} />
+        <Pin size={16} aria-hidden="true" />
       </button>
       <div style={{ position: 'relative' }}>
         <button
           type="button"
           title="More actions"
+          aria-label="More message actions"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
           onClick={() => setMoreOpen(o => !o)}
         >
-          <MoreVertical size={16} />
+          <MoreVertical size={16} aria-hidden="true" />
         </button>
         {moreOpen && (
           <>
