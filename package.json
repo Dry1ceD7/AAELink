@@ -1,6 +1,6 @@
 {
   "name": "aaelink-clean",
-  "version": "0.0.0-phase2",
+  "version": "0.0.17-alpha",
   "private": true,
   "scripts": {
     "dev": "zsh scripts/dev-lan-https-auto.zsh",
@@ -31,7 +31,15 @@
     "desktop:start:branded": "npm run start:branded --prefix desktop",
     "desktop:icons": "npm run icons:sync --prefix desktop",
     "desktop:build:mac": "npm run desktop:install && npm run dist:mac --prefix desktop",
-    "desktop:build:win": "npm run desktop:install && npm run dist:win --prefix desktop"
+    "desktop:build:win": "npm run desktop:install && npm run dist:win --prefix desktop",
+    "worker": "npx tsx lib/worker.ts",
+    "worker:dev": "npx tsx --watch lib/worker.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:chromium": "playwright test --project=chromium"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1038.0",
@@ -53,9 +61,11 @@
     "typescript": "^6.0.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.1",
     "tsx": "^4.21.0",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^4.1.5"
   }
 }

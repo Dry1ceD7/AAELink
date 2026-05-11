@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: aaelink
     ports:
       - "25432:5432"
+      - "30432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

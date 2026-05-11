@@ -100,3 +100,14 @@ infra/*/secrets.yaml
 !infra/*/secrets.example.yaml
 sqlite.db
 .kilocode/
+
+# === Playwright ===
+e2e/.results/
+e2e/.report/
+e2e/.auth/
+test-results/
+playwright-report/
+blob-report/
+
+# === OMC runtime state ===
+.omc/

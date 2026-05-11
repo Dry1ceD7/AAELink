@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  # ── Lint, Typecheck, Unit Tests ──────────────────────────────────
+  quality:
+    name: Quality & Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +28,8 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run type-check
+      - name: Unit Tests
+        run: npm test
       - name: Build
         run: npm run build
         env:
@@ -33,3 +41,89 @@ jobs:
           S3_BUCKET: aaelink-documents
           S3_REGION: us-east-1
           STIRLING_URL: http://127.0.0.1:8080
+
+  # ── Integration Tests (requires Postgres) ────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aaelink
+          POSTGRES_PASSWORD: aaelink
+          POSTGRES_DB: aaelink
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aaelink"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Run Integration Tests
+        run: npx vitest run --dir __tests__
+        env:
+          DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
+          TEST_DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
+          AAELINK_OPEN_REGISTRATION: '1'
+
+  # ── E2E Tests (Playwright, optional — runs on main only) ─────────
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.ref == 'refs/heads/main'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aaelink
+          POSTGRES_PASSWORD: aaelink
+          POSTGRES_DB: aaelink
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aaelink"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E Tests
+        run: npm run e2e:chromium
+        env:
+          DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
+          AAELINK_OPEN_REGISTRATION: '1'
+          S3_ENDPOINT: http://127.0.0.1:9000
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
+          S3_BUCKET: aaelink-documents
+          S3_REGION: us-east-1
+      - name: Upload E2E Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
