@@ -58,9 +58,8 @@ function initAutoUpdater() {
     return lastUpdateStatus;
   });
 
-  ipcMain.handle("aaelink:get-app-version", () => {
-    return { version: app.getVersion(), isPackaged: app.isPackaged };
-  });
+
+  // Note: aaelink:get-app-version is registered by ipcHandlers.js
 
   ipcMain.handle("aaelink:install-update", () => {
     autoUpdater.quitAndInstall(false, true);

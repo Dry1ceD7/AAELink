@@ -12,7 +12,7 @@
 [![Downloads](https://img.shields.io/github/downloads/Dry1ceD7/AAELink/total?label=downloads&color=blue)](https://github.com/Dry1ceD7/AAELink/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-0a2342)](#license)
 
-### Current version: **`v0.0.3-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](https://github.com/Dry1ceD7/AAELink/releases/tag/v0.0.3-alpha)
+### Current version: **`v0.0.17-alpha`** &nbsp;·&nbsp; [Download installers](https://github.com/Dry1ceD7/AAELink/releases/latest) &nbsp;·&nbsp; [Release notes](docs/release-notes/v0.0.17-alpha.md)
 
 </div>
 
@@ -21,12 +21,12 @@
 ## About
 
 **AAELink** is the internal enterprise SuperApp for **Advanced ID Asia Engineering Co.,Ltd**.
-It starts as an **IT Help Desk** and grows into a single place for the whole
-company to work — tickets, files, notifications, identity, chat, and more.
+It started as an **IT Help Desk** and has grown into a **full Slack/Mattermost-grade** communication and productivity platform — tickets, messaging, channels, files, compliance, identity, workflows, and more. **227 API routes. 55/55 Slack method groups. 1,220 tests (103 suites, 84/84 lib modules). 429+ traced handlers (100% route coverage). Redis Pub/Sub fan-out. WebSocket transport layer. Channel archival automation. Bulk user provisioning. Webhook HMAC signing. DLQ + data retention. IP access control. Prometheus metrics exporter. OpenTelemetry export. SCIM v2. OpenID Connect. CSP + CSRF middleware. Enterprise security hardening.**
 
 The project ships as:
 
-- **Docker Compose** for local dependencies (Postgres, MinIO, Stirling-PDF) and a **Next.js** app you run with **`npm run dev`** or **`npm run start`** on the host.
+- **Docker Compose** for local dependencies (Postgres, MinIO, Stirling-PDF) and a **Next.js** app on the host.
+- **Kubernetes-ready** with K8s manifests for production deployment.
 - **Native desktop clients** for **Windows 10/11** and **macOS**.
 - A **modern web UI** accessible from any browser on the same network.
 
@@ -52,69 +52,80 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 
 ---
 
-## Current Features (Alpha 0.0.3)
+## Platform Capabilities (v0.0.8-alpha — 100% Parity)
 
-- **IT Help Desk** — submit, comment, triage and resolve tickets with realtime updates.
-- **Identity & access** — sign-in, sessions, four built-in roles: `super_admin`, `it_admin`, `it_employee`, `employee`.
-- **Super-admin oversight** — cross-departmental visibility over every ticket, user, and module; protected against accidental lockout.
-- **Admin panel** — user CRUD, department CRUD, custom role CRUD, permission assignment, webhook management.
-- **Workspaces & channels** — team-based workspace organization with channel messaging, topic editing, bookmarks, and channel info panels.
-- **Multi-Party Direct Messages** — robust group chat, user presence indicators (online/away/DND/offline), and inline document media previews.
-- **Rich Messaging** — TipTap-powered composer with bold/italic/strikethrough/code formatting, @mention autocomplete, :emoji: inline autocomplete, message reactions (emoji picker), message forwarding, message pinning, threaded replies, and message drafts.
-- **Slash Commands** — 21 built-in commands: `/shrug`, `/tableflip`, `/unflip`, `/me`, `/status`, `/dnd`, `/mute`, `/unmute`, `/remind`, `/topic`, `/join`, `/invite`, `/archive`, `/unarchive`, `/rename`, `/who`, `/collapse`, `/expand`, `/code`, `/clear`, `/help`. Autocomplete popup with keyboard navigation.
-- **Channel Header Dropdown** — Chevron dropdown on the channel name: Star, Mute/Unmute, Copy Link, Invite People, Archive, Leave Channel.
-- **Jump to Latest** — floating button appears when scrolled away from the bottom of the chat timeline.
-- **New Messages Separator** — red divider line at the first unread message (Slack-style). Click to dismiss.
-- **Channel Archive/Unarchive** — archive channels from the header dropdown or `/archive` command. `/unarchive` to restore.
-- **User Profile Card** — local time display from timezone, DND badge, enhanced status.
-- **Channel Browse** — Slack-style "Browse channels" modal for discovering and joining public channels with search, member count, and one-click join.
-- **Auto-Away** — presence automatically switches to "away" after 5 min idle; restores to "online" on activity.
-- **DND Schedule** — configurable Do Not Disturb hours in Settings. Notification sounds suppressed during schedule.
-- **Custom Emoji** — upload, search, and manage custom workspace emoji from the workspace menu.
-- **Search Highlighting** — matching terms highlighted in yellow in global search results.
-- **Thread Follow/Unfollow** — follow/unfollow toggle in thread panel header for notification control.
-- **Leave Confirmation** — confirmation dialog before leaving a channel, with rejoin instructions.
-- **Sidebar Tooltips** — hovering channels in the sidebar shows purpose/description.
-- **20 Micro-Animations** — reaction pop, message hover accent, action bar fade, skeleton loading, composer glow pulse, channel fade, modal spring, thread slide-in, thin scrollbar, dropdown animations, and more. Full Slack/Mattermost-grade interaction polish.
-- **Skeleton Loading** — animated shimmer placeholders while messages load from the server.
-- **Image Lightbox** — click-to-expand fullscreen image viewer with zoom, rotate, download, and keyboard controls.
-- **Presence Dot Animations** — online pulse glow + DND strikethrough indicator on sidebar presence dots.
-- **Profile Card Spring** — bouncy entrance animation for user profile cards with avatar ring hover glow.
-- **Fenced Code Blocks** — triple-backtick code blocks with language labels, monospace styling, and a hover-to-show Copy button.
-- **Smart Date Dividers** — "Today", "Yesterday", or full date separators between message groups.
-- **Active Channel Bar** — cyan left-edge indicator on the active sidebar channel.
-- **New Message Count** — "N new messages ↓" badge on the jump-to-bottom button when scrolled away.
-- **Comprehensive Dark Theme** — Full `[data-theme="dark"]` variable block with smooth animated transitions between Light/Dark/System modes.
-- **Full-Page Drag-Drop Overlay** — Slack-style immersive file drop zone with dashed border, backdrop blur, and spring animation.
-- **Workspace Icon Polish** — Slack-style circle-to-rounded-square hover transition with pill tooltips.
-- **Message Reminders** — "Remind me in 30m/1h/4h" from the message More menu, or `/remind [minutes] [text]`. Fires as in-app notification.
-- **Mark as Unread** — rewind the read cursor on any message so unread indicators re-appear in the sidebar.
-- **Custom Status with Expiry** — set status text + emoji with auto-clear timer (Slack-style "Clear after…"). Via `/status`, `/dnd`, or the settings panel.
-- **Channel Categories** — sidebar channel grouping API (Favorites, Channels, DMs, custom sections) with per-user sort ordering.
-- **@here / @channel / @all** — group mentions with autocomplete and Slack-style amber highlight rendering.
-- **Link Previews** — automatic URL unfurling with OpenGraph title/description/image cards inline in messages.
-- **Search & Navigation** — Quick Switcher (⌘K), global full-text message search (⌘⇧F), keyboard shortcuts reference (⌘/), and channel details toggle (⌘.).
-- **File Management** — drag-and-drop file upload with progress bars, file attachment cards, presigned S3 downloads via MinIO.
-- **Notifications** — realtime in-app alerts via SSE, per-channel notification preferences, typing indicators.
-- **Notification Sounds** — Web Audio API chime (Default/Subtle/None) with volume slider in Settings. No external audio files needed.
-- **Scheduled Messages** — send-later date/time picker in the composer for deferred delivery.
-- **Emergency IT support** — OTP-verified login screen request queue for urgent access help.
-- **Documents foundation** — document upload/download with PDF operation queues.
-- **Native desktop clients** — Windows `.exe` installer and macOS `.dmg` with auto-update support.
-- **WiFi/LAN deployable** — one host can serve the whole office for alpha testing.
+| Domain | Features | Routes |
+|--------|----------|--------|
+| **Messaging** | Channels, DMs, threads, reactions, forwarding, scheduled, drafts, permalinks, clips | 25+ |
+| **Search** | Full-text messages, advanced filters, user search, file content search, cross-workspace | 5 |
+| **Identity & Auth** | SSO (SAML/OIDC/OAuth2), SCIM, LDAP/AD, MFA (TOTP + backup codes), sessions, device trust | 12 |
+| **Compliance** | Legal hold, eDiscovery export, DLP rules, information barriers, audit log, retention | 8 |
+| **Collaboration** | Canvas docs, knowledge base, workflow builder, approvals, calendar, file preview | 10 |
+| **Voice & Video** | Call rooms (voice/video/huddle/screen share), TURN/STUN config, participant tracking | 1+ |
+| **Notifications** | In-app (SSE), email queue, push (APNS/FCM/Web Push), DND, keyword highlights | 6 |
+| **Integrations** | Webhooks, bot users, OAuth apps, event subscriptions, email ingestion, plugins | 8 |
+| **Admin** | Analytics, user/role/dept management, guest accounts, app policies, media policies | 15+ |
+| **Infrastructure** | Background jobs, cluster management, data residency, EKM, backups, observability | 10+ |
+| **Internationalization** | 18 locales, per-user locale preferences | 1 |
+| **Desktop** | Electron (Win/macOS), auto-update, idle detection, tray, deep links | — |
+
+> **227 API routes · 30/30 Slack method groups · 2,156 lines of DDL · 1,220 tests · 0 parity gaps**
 
 ---
 
 ## Roadmap
 
-| Status | Item |
-|---|---|
-| Shipped (Alpha 0.0.3) | IT Help Desk, identity, admin panel, file uploads, desktop clients, emergency support, documents, group chat, direct messages, channels, SSO (Microsoft Entra ID) |
-| Next | Approvals and workflows |
-| Later | Knowledge base / wiki |
-| Later | Calendar, leave requests, attendance |
-| Later | HR, finance and procurement integrations |
-| Later | Mobile clients (iOS, Android) |
+### ✅ Completed (v0.0.2 → v0.0.9)
+
+| Version | Milestone |
+|---------|----------|
+| v0.0.2 | Auth, users, roles, tickets, notifications, desktop clients |
+| v0.0.3 | Channels, messages, threads, reactions, presence, 20+ micro-animations |
+| v0.0.4 | Pins, bookmarks, link preview, webhooks, calendar |
+| v0.0.5 | Rate limits, feature flags, default channels, activity feed |
+| v0.0.6 | Advanced search, DND, custom emoji, slash commands, drafts |
+| v0.0.7 | **100% enterprise parity** — SSO/SCIM/LDAP/MFA, compliance suite, federation, Canvas, calls, push, EKM, clustering |
+| v0.0.8 | **Full Slack API parity (30/30 method groups)** — conversations.*, chat.*, views.*, oauth.*, workflows.*, functions.*, lists, assistant, reactions, usergroups, migration, 14 new DDL tables, 4 worker handlers |
+| v0.0.9 | **Observability & Admin Console** — OpenTelemetry tracing (W3C traceparent, P50/P95/P99 metrics), Vitest test suite (30 tests), 4 new admin panels (OAuth, Functions, Migration, Observability), `/api/admin/tracing` |
+| v0.0.10–v0.0.16 | Thread intelligence, notification UX, session intelligence, enterprise ticketing, document viewer, annotations, signatures, channel archival, bulk provisioning, CSRF hardening |
+| v0.0.17 | **Full stabilization** — zero demo-data stubs, Prometheus metrics exporter, Grafana dashboard, 7 new integration test suites |
+
+### 🔜 Next: v0.0.18-alpha — Alerting, E2E Testing & Production Hardening
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| P0 | **Alertmanager rules** | Error rate > 5%, P99 latency > 500ms, DB pool exhaustion alerts |
+| P0 | **E2E testing (Playwright)** | Full browser-based login → channel → message → thread flows |
+| P0 | **mTLS federation** | Certificate-based auth for cross-org shared channels |
+| P1 | **Audit log streaming** | Export audit events to SIEM (Splunk, Elastic, S3) |
+| P1 | **API rate limit dashboard** | Real-time rate limit metrics per route/user/IP |
+| P2 | **CI integration test runner** | Docker Compose-based CI pipeline with PostgreSQL + MinIO |
+| P2 | **OpenAPI spec generation** | Auto-generate OpenAPI 3.1 spec from 227 route handlers |
+
+### 🗓️ v0.1.0-beta — Production Readiness
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| P0 | **Kubernetes production manifests** | Helm chart with horizontal pod autoscaling, ingress, cert-manager |
+| P0 | **Redis pub/sub fan-out** | Replace Postgres NOTIFY for SSE at scale (>500 concurrent connections) |
+| P0 | **Elasticsearch integration** | Swap SQL full-text for Elasticsearch/OpenSearch at scale |
+| P1 | **WebRTC media server** | Janus/mediasoup integration for actual voice/video/screen share media |
+| P1 | **Native mobile app (PWA)** | Progressive Web App shell with push notifications, offline cache |
+| P1 | **LDAP live connector** | Actual LDAP bind/search against Active Directory |
+| P2 | **ClamAV integration** | Connect file scan API to live ClamAV daemon |
+| P2 | **HSM/KMS integration** | Connect EKM API to AWS KMS / Azure Key Vault / HashiCorp Vault |
+
+### 🎯 v1.0.0 — Enterprise GA
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| P0 | **Native mobile clients** | React Native iOS/Android with push proxy (APNS/FCM) |
+| P0 | **WebRTC calls** | Full voice/video/screen share with TURN/STUN servers |
+| P0 | **SOC 2 Type II audit** | Compliance certification readiness |
+| P1 | **Federation protocol** | Cross-org message relay for shared channels |
+| P1 | **Plugin SDK** | Developer SDK for building and distributing AAELink plugins |
+| P2 | **Marketplace** | App marketplace for third-party integrations |
+| P2 | **AI assistant** | Built-in AI copilot for message summarization, search, and workflows |
 
 ---
 

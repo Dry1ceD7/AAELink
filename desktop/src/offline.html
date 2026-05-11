@@ -29,6 +29,12 @@
       width: 100%;
       text-align: center;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .logo {
@@ -88,6 +94,7 @@
       display: flex;
       gap: 8px;
       margin-bottom: 12px;
+      position: relative;
     }
 
     input[type="text"] {
@@ -141,6 +148,101 @@
     .status--ok { color: #69db7c; }
     .status--loading { color: rgba(255,255,255,0.6); }
 
+    /* ── Auto-reconnect bar ── */
+    .auto-reconnect {
+      display: none;
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.65);
+      text-align: center;
+    }
+    .auto-reconnect .countdown {
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.9);
+      font-variant-numeric: tabular-nums;
+    }
+    .auto-reconnect .cancel-retry {
+      display: inline-block;
+      margin-left: 8px;
+      color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 11px;
+    }
+    .auto-reconnect .cancel-retry:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* ── Progress bar ── */
+    .retry-progress {
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .retry-progress-bar {
+      height: 100%;
+      background: #1C58D9;
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+
+    /* ── Recent servers ── */
+    .recent-servers {
+      margin-top: 12px;
+      text-align: left;
+    }
+    .recent-servers-label {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      font-size: 13px;
+    }
+    .recent-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .recent-item-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      flex-shrink: 0;
+    }
+    .recent-item-url {
+      flex: 1;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .recent-item-remove {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .recent-item-remove:hover { color: #ff6b6b; }
+
     .help {
       margin-top: 28px;
       padding-top: 20px;
@@ -183,6 +285,13 @@
       Previously tried: <code id="failed-url-text"></code>
     </p>
 
+    <div id="detected-banner" style="display:none; margin: 0 0 16px; padding: 10px 14px; background: rgba(105, 219, 124, 0.12); border: 1px solid rgba(105, 219, 124, 0.35); border-radius: 8px; text-align: left; font-size: 13px;">
+      Detected this Mac's WiFi IP: <code id="detected-ip-text" style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:'SF Mono',Consolas,monospace; font-size:12px;"></code>
+      <button id="btn-use-detected" type="button" style="margin-top:8px; width:100%; padding:8px 12px; border:none; border-radius:6px; background:#69db7c; color:#001d36; font-weight:600; font-size:13px; cursor:pointer;">
+        Use detected IP
+      </button>
+    </div>
+
     <label for="server-ip">Server address</label>
     <div class="input-group">
       <input
@@ -199,6 +308,16 @@
 
     <p class="status" id="status"></p>
 
+    <div class="auto-reconnect" id="auto-reconnect">
+      Reconnecting in <span class="countdown" id="countdown">10</span>s
+      <span class="cancel-retry" onclick="cancelAutoReconnect()">cancel</span>
+      <div class="retry-progress">
+        <div class="retry-progress-bar" id="retry-progress-bar"></div>
+      </div>
+    </div>
+
+    <div class="recent-servers" id="recent-servers"></div>
+
     <div class="help">
       <strong>How to find the server address</strong>
       <ol>
@@ -212,11 +331,101 @@
 
   <script>
     const PORT = 3040;
+    const MAX_RECENT = 5;
+    const RETRY_SECONDS = 15;
     const ipInput = document.getElementById('server-ip');
     const statusEl = document.getElementById('status');
     const btnEl = document.getElementById('btn-connect');
     const failedInfoEl = document.getElementById('failed-info');
     const failedUrlEl = document.getElementById('failed-url-text');
+    const autoReconnectEl = document.getElementById('auto-reconnect');
+    const countdownEl = document.getElementById('countdown');
+    const retryBarEl = document.getElementById('retry-progress-bar');
+    const recentEl = document.getElementById('recent-servers');
+
+    let retryTimer = null;
+    let retryCountdown = 0;
+    let retryInterval = null;
+
+    // ── Recent servers (persisted in localStorage) ──
+    function getRecentServers() {
+      try {
+        return JSON.parse(localStorage.getItem('AAELINK_RECENT_SERVERS') || '[]');
+      } catch { return []; }
+    }
+
+    function addRecentServer(url) {
+      let list = getRecentServers().filter(u => u !== url);
+      list.unshift(url);
+      if (list.length > MAX_RECENT) list = list.slice(0, MAX_RECENT);
+      localStorage.setItem('AAELINK_RECENT_SERVERS', JSON.stringify(list));
+      renderRecent();
+    }
+
+    function removeRecentServer(url) {
+      const list = getRecentServers().filter(u => u !== url);
+      localStorage.setItem('AAELINK_RECENT_SERVERS', JSON.stringify(list));
+      renderRecent();
+    }
+
+    function renderRecent() {
+      const list = getRecentServers();
+      if (list.length === 0) {
+        recentEl.innerHTML = '';
+        return;
+      }
+      recentEl.innerHTML = `
+        <div class="recent-servers-label">Recent servers</div>
+        ${list.map(url => `
+          <div class="recent-item" onclick="selectRecent('${url.replace(/'/g, "\\'")}')">
+            <span class="recent-item-dot"></span>
+            <span class="recent-item-url">${url}</span>
+            <span class="recent-item-remove" onclick="event.stopPropagation(); removeRecentServer('${url.replace(/'/g, "\\'")}')" title="Remove">×</span>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function selectRecent(url) {
+      try {
+        const u = new URL(url);
+        ipInput.value = u.hostname + (u.port && u.port !== String(PORT) ? ':' + u.port : '');
+      } catch {
+        ipInput.value = url;
+      }
+      tryConnect();
+    }
+
+    // ── Auto-reconnect ──
+    function startAutoReconnect() {
+      retryCountdown = RETRY_SECONDS;
+      autoReconnectEl.style.display = 'block';
+      countdownEl.textContent = retryCountdown;
+      retryBarEl.style.width = '100%';
+
+      // Animate progress bar
+      requestAnimationFrame(() => {
+        retryBarEl.style.width = '0%';
+        retryBarEl.style.transition = `width ${RETRY_SECONDS}s linear`;
+      });
+
+      retryInterval = setInterval(() => {
+        retryCountdown--;
+        countdownEl.textContent = Math.max(0, retryCountdown);
+        if (retryCountdown <= 0) {
+          cancelAutoReconnect();
+          tryConnect();
+        }
+      }, 1000);
+    }
+
+    function cancelAutoReconnect() {
+      autoReconnectEl.style.display = 'none';
+      if (retryInterval) { clearInterval(retryInterval); retryInterval = null; }
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      retryBarEl.style.transition = 'none';
+      retryBarEl.style.width = '0%';
+    }
 
     // Show the URL that failed (if redirected from a load error)
     const hashUrl = decodeURIComponent(location.hash.slice(1) || '');
@@ -229,6 +438,10 @@
         const u = new URL(hashUrl);
         ipInput.value = u.hostname;
       } catch {}
+
+      // Auto-reconnect after a failure redirect
+      showStatus('Connection failed. Will retry automatically.', 'error');
+      startAutoReconnect();
     }
 
     // Load saved server URL
@@ -242,11 +455,55 @@
       }
     }
 
+    // ── Auto-detected WiFi IP (from main process) ──
+    // Pre-fills the input AND shows a one-click "Use detected" banner. Driven
+    // by either ?detectedIp=… in the URL (set by main when discovery fails) or
+    // a fresh IPC call to the host (works on every relaunch, regardless of WiFi).
+    const detectedBannerEl = document.getElementById('detected-banner');
+    const detectedIpTextEl = document.getElementById('detected-ip-text');
+    const btnUseDetectedEl = document.getElementById('btn-use-detected');
+
+    function showDetected(ip) {
+      if (!ip) return;
+      detectedIpTextEl.textContent = ip;
+      detectedBannerEl.style.display = 'block';
+      if (!ipInput.value) ipInput.value = ip;
+    }
+
+    btnUseDetectedEl.addEventListener('click', () => {
+      const ip = detectedIpTextEl.textContent.trim();
+      if (!ip) return;
+      ipInput.value = ip;
+      tryConnect();
+    });
+
+    // 1. From query string (main process passed it on load failure)
+    const params = new URLSearchParams(location.search);
+    const queryDetected = params.get('detectedIp');
+    if (queryDetected) showDetected(queryDetected);
+
+    // 2. Fresh from main process (more reliable than localStorage; survives
+    //    WiFi network changes because main re-detects on every launch)
+    if (window.aaelinkDesktop?.getDiscoveryInfo) {
+      window.aaelinkDesktop.getDiscoveryInfo().then((info) => {
+        if (info?.detectedIp) showDetected(info.detectedIp);
+        if (info?.savedUrl && !ipInput.value) {
+          try {
+            const u = new URL(info.savedUrl);
+            ipInput.value = u.hostname;
+          } catch {}
+        }
+      }).catch(() => { /* offline page works without IPC */ });
+    }
+
+    renderRecent();
+
     ipInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') tryConnect();
     });
 
     async function tryConnect() {
+      cancelAutoReconnect();
       let raw = ipInput.value.trim();
       if (!raw) {
         showStatus('Please enter a server IP address', 'error');
@@ -275,6 +532,29 @@
       btnEl.disabled = true;
       showStatus('Connecting…', 'loading');
 
+      // Prefer the IPC path: main process probes /api/health (no CORS issue,
+      // honors dev TLS trust), persists to userData, and navigates the window.
+      // Falls back to fetch + window.location for non-Electron contexts.
+      if (window.aaelinkDesktop?.connectNow) {
+        const r = await window.aaelinkDesktop.connectNow(url).catch(() => null);
+        if (r?.ok) {
+          addRecentServer(url);
+          showStatus('Connected! Loading AAELink…', 'ok');
+          return; // navigation handled by main
+        }
+        addRecentServer(url);
+        localStorage.setItem('AAELINK_SERVER_URL', url);
+        showStatus(
+          r?.error === 'unreachable'
+            ? 'Server not responding on that address.'
+            : 'Connection failed. Will retry automatically.',
+          'error'
+        );
+        startAutoReconnect();
+        btnEl.disabled = false;
+        return;
+      }
+
       try {
         // Try to reach the server (with a short timeout)
         const controller = new AbortController();
@@ -286,25 +566,18 @@
         });
         clearTimeout(timeout);
 
-        // If we get here (even opaque response with no-cors), server is reachable
+        addRecentServer(url);
         localStorage.setItem('AAELINK_SERVER_URL', url);
         showStatus('Connected! Loading AAELink…', 'ok');
 
-        // Navigate to the server
-        setTimeout(() => {
-          window.location.href = url;
-        }, 500);
+        setTimeout(() => { window.location.href = url; }, 500);
 
       } catch (err) {
-        // no-cors fetch will throw on network error; try direct navigation as fallback
-        // The server might be reachable but just doesn't support CORS
+        addRecentServer(url);
         localStorage.setItem('AAELINK_SERVER_URL', url);
         showStatus('Attempting connection…', 'loading');
-        setTimeout(() => {
-          window.location.href = url;
-        }, 300);
+        setTimeout(() => { window.location.href = url; }, 300);
       }
-      // Note: button stays disabled intentionally — navigation is in progress.
     }
 
     function showStatus(msg, type) {

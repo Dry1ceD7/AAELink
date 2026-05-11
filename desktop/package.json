@@ -1,6 +1,6 @@
 {
   "name": "aaelink-desktop",
-  "version": "0.0.3-alpha",
+  "version": "0.0.17-alpha",
   "private": true,
   "description": "AAELink desktop shell — opens your AAELink server in a dedicated window.",
   "main": "src/main.js",

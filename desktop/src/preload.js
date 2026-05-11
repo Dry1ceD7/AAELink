@@ -108,4 +108,130 @@ contextBridge.exposeInMainWorld("aaelinkDesktop", {
     ipcRenderer.on("aaelink-update-status", listener);
     return () => ipcRenderer.removeListener("aaelink-update-status", listener);
   },
+
+  // ── System idle state (idle / active transitions) ──────────────────────
+  /**
+   * Subscribe to system idle/active state changes.
+   * Payload: `{ state: "idle" | "active", idle_seconds: number }`
+   * @param {(payload: { state: string; idle_seconds: number }) => void} callback
+   * @returns {() => void}  Unsubscribe
+   */
+  subscribeIdleState: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => callback(payload ?? {});
+    ipcRenderer.on("aaelink-idle-state", listener);
+    return () => ipcRenderer.removeListener("aaelink-idle-state", listener);
+  },
+
+  // ── Power events (suspend / resume) ────────────────────────────────────
+  /**
+   * Subscribe to system power events (suspend/resume).
+   * Payload: `{ event: "suspend" | "resume" }`
+   * @param {(payload: { event: string }) => void} callback
+   * @returns {() => void}  Unsubscribe
+   */
+  subscribePowerEvent: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => callback(payload ?? {});
+    ipcRenderer.on("aaelink-power-event", listener);
+    return () => ipcRenderer.removeListener("aaelink-power-event", listener);
+  },
+
+  // ── System information ─────────────────────────────────────────────────
+  /**
+   * Get system information for the About panel.
+   * @returns {Promise<{
+   *   hostname: string; platform: string; arch: string;
+   *   os_version: string; os_type: string;
+   *   total_memory_mb: number; free_memory_mb: number;
+   *   uptime_hours: number; cpus: number;
+   *   node_version: string; electron_version: string; chrome_version: string;
+   *   user_data_path: string;
+   * }>}
+   */
+  getSystemInfo: () =>
+    ipcRenderer.invoke("aaelink:get-system-info"),
+
+  // ── Zoom controls ──────────────────────────────────────────────────────
+  /**
+   * Zoom the window content.
+   * @param {"in" | "out" | "reset"} action
+   * @returns {Promise<{ ok: boolean; zoom?: number }>}
+   */
+  zoom: (action) =>
+    ipcRenderer.invoke("aaelink:zoom", action),
+
+  // ── Window controls ────────────────────────────────────────────────────
+  /**
+   * Control the main window.
+   * @param {"minimize" | "maximize" | "fullscreen"} action
+   * @returns {Promise<{ ok: boolean }>}
+   */
+  windowControl: (action) =>
+    ipcRenderer.invoke("aaelink:window-control", action),
+
+  // ── Clipboard ───────────────────────────────────────────────────────────
+  /**
+   * Write text to the system clipboard.
+   * @param {string} text
+   * @returns {Promise<{ ok: boolean }>}
+   */
+  clipboardWrite: (text) =>
+    ipcRenderer.invoke("aaelink:clipboard-write", text),
+
+  /**
+   * Read text from the system clipboard.
+   * @returns {Promise<{ ok: boolean; text?: string }>}
+   */
+  clipboardRead: () =>
+    ipcRenderer.invoke("aaelink:clipboard-read"),
+
+  // ── Open external URL ──────────────────────────────────────────────────
+  /**
+   * Open a URL in the system default browser.
+   * @param {string} url
+   * @returns {Promise<{ ok: boolean }>}
+   */
+  openExternal: (url) =>
+    ipcRenderer.invoke("aaelink:open-external", url),
+
+  // ── App version ─────────────────────────────────────────────────────────
+  /**
+   * Get the Electron app version and name.
+   * @returns {Promise<{ version: string; name: string }>}
+   */
+  getAppVersion: () =>
+    ipcRenderer.invoke("aaelink:get-app-version"),
+
+  // ── Server discovery (used by the offline / connect screen) ────────────
+  /**
+   * Get the WiFi IP this Mac is currently using and the last URL we saved.
+   * @returns {Promise<{ ok: boolean; detectedIp: string; savedUrl: string; defaultPort: number }>}
+   */
+  getDiscoveryInfo: () =>
+    ipcRenderer.invoke("aaelink:get-discovery-info"),
+
+  /**
+   * Probe whether a server URL is reachable (HEAD/GET /api/health, ~1.2 s timeout).
+   * @param {string} url
+   * @returns {Promise<{ ok: boolean; reachable?: boolean }>}
+   */
+  probeServer: (url) =>
+    ipcRenderer.invoke("aaelink:probe-server", url),
+
+  /**
+   * Persist a server URL to userData so it survives across launches and WiFi changes.
+   * @param {string} url
+   * @returns {Promise<{ ok: boolean; error?: string }>}
+   */
+  saveServerUrl: (url) =>
+    ipcRenderer.invoke("aaelink:save-server-url", url),
+
+  /**
+   * Probe + save + navigate the main window to a server URL.
+   * @param {string} url
+   * @returns {Promise<{ ok: boolean; error?: string }>}
+   */
+  connectNow: (url) =>
+    ipcRenderer.invoke("aaelink:connect-now", url),
 });

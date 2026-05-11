@@ -12,7 +12,7 @@
  *  - before-quit / tray-close guard so Windows users don't accidentally exit
  */
 
-const { app, BrowserWindow, nativeImage, shell, Tray, Menu, ipcMain } = require("electron");
+const { app, BrowserWindow, nativeImage, shell, Tray, Menu, ipcMain, powerMonitor } = require("electron");
 const fs   = require("fs");
 const os   = require("os");
 const path = require("path");
@@ -21,6 +21,12 @@ const { initAutoUpdater }     = require("./main/autoUpdater");
 const { registerIpcHandlers } = require("./main/ipcHandlers");
 const { setApplicationMenu }  = require("./main/nativeMenu");
 const { DEFAULT_APP_ORIGIN }  = require("./shared/constants");
+const {
+  discoverServerUrl,
+  probeUrl,
+  saveUrl: saveDiscoveredUrl,
+  DEFAULT_PORT: DISCOVERY_PORT,
+} = require("./main/discovery");
 
 // ── Hardware acceleration ─────────────────────────────────────────────────────
 // Hand off compositing / video decode to the GPU so the renderer never pegs CPU.
@@ -93,6 +99,35 @@ function computeStartUrl() {
   return DEFAULT_APP_ORIGIN || "";
 }
 
+/**
+ * Result of the live discovery used by createWindow().
+ * Populated in app.whenReady() before the window is constructed so the
+ * cert-trust switch and the load decision both see the same URL.
+ */
+let __discovery = { url: "", source: "pending", detectedIp: "" };
+
+async function runDiscovery() {
+  try {
+    const r = await discoverServerUrl({ app, argv: process.argv, env: process.env });
+    __discovery = r;
+    if (r.url) {
+      try {
+        console.log(`[AAELink] discovered server: ${r.url} (source=${r.source})`);
+      } catch { /* ignore */ }
+    } else {
+      try {
+        console.warn(
+          `[AAELink] no server reachable on this WiFi (detected IP: ${r.detectedIp || "?"}). ` +
+          "Falling back to connect screen."
+        );
+      } catch { /* ignore */ }
+    }
+  } catch (e) {
+    try { console.error("[AAELink] discovery failed:", e?.message || e); } catch { /* ignore */ }
+    __discovery = { url: "", source: "error", detectedIp: "" };
+  }
+}
+
 // Dev / lab: trust Next.js experimental HTTPS (self-signed) on private IPs / localhost.
 // Opt out: AAELINK_DESKTOP_TRUST_DEV_TLS=0. Force on: AAELINK_DESKTOP_TRUST_DEV_TLS=1.
 function shouldIgnoreCertificateErrors(startUrl) {
@@ -108,7 +143,11 @@ function shouldIgnoreCertificateErrors(startUrl) {
   }
 }
 
-const __startUrlForCertSwitch = computeStartUrl();
+// Cert-trust switch must be set before app.whenReady(). We can't await
+// discovery here, but we can be conservative: if the user provided an
+// explicit URL we honor it; otherwise we trust private-IP HTTPS in dev (the
+// detected URL will also be private). Discovery runs at whenReady().
+const __startUrlForCertSwitch = computeStartUrl() || "https://192.168.0.0:3040";
 if (shouldIgnoreCertificateErrors(__startUrlForCertSwitch)) {
   app.commandLine.appendSwitch("ignore-certificate-errors");
 }
@@ -144,6 +183,29 @@ let globalBadgeCount = 0;
 /** Set to true before app.quit() so the close-guard lets the window actually close. */
 app.isQuiting = false;
 
+// ── Window bounds persistence ─────────────────────────────────────────────────
+const BOUNDS_FILE = path.join(app.getPath("userData"), "window-bounds.json");
+
+function loadWindowBounds() {
+  try {
+    if (fs.existsSync(BOUNDS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(BOUNDS_FILE, "utf-8"));
+      if (data && typeof data.width === "number" && typeof data.height === "number") {
+        return { width: data.width, height: data.height, x: data.x, y: data.y };
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveWindowBounds() {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) return;
+  try {
+    const bounds = mainWindow.getBounds();
+    fs.writeFileSync(BOUNDS_FILE, JSON.stringify(bounds), "utf-8");
+  } catch { /* ignore */ }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function resolveWindowIcon() {
@@ -161,6 +223,9 @@ function applyDockIcon(iconPath) {
 }
 
 function resolveStartUrl() {
+  // Prefer the live discovery result. Falls back to the static computation
+  // (env/arg/dev-IP/blank) only if discovery hasn't run or returned nothing.
+  if (__discovery && __discovery.url) return __discovery.url;
   return computeStartUrl();
 }
 
@@ -267,9 +332,12 @@ function createWindow() {
   const startUrl = resolveStartUrl();
   const iconPath = resolveWindowIcon();
 
+  const savedBounds = loadWindowBounds();
+
   const win = new BrowserWindow({
-    width:     1360,
-    height:    880,
+    width:     savedBounds?.width  || 1360,
+    height:    savedBounds?.height || 880,
+    ...(savedBounds?.x != null && savedBounds?.y != null ? { x: savedBounds.x, y: savedBounds.y } : {}),
     minWidth:  400,
     minHeight: 360,
     title:     "AAELink",
@@ -306,20 +374,72 @@ function createWindow() {
     if (mainWindow === win) mainWindow = null;
   });
 
-  // If no server URL configured (packaged first-launch), show the connect page
-  if (!startUrl) {
-    win.loadFile(path.join(__dirname, "offline.html"));
-  } else {
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("ERR_CONNECTION_TIMED_OUT")), 7000);
-    });
+  // Save bounds on resize/move (debounced)
+  let boundsTimer = null;
+  const debounceSaveBounds = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(saveWindowBounds, 500);
+  };
+  win.on("resize", debounceSaveBounds);
+  win.on("move", debounceSaveBounds);
 
-    Promise.race([win.loadURL(startUrl), timeoutPromise]).catch((err) => {
-      console.error("[AAELink] Failed to load URL:", startUrl, err.message || err);
-      if (!win.isDestroyed()) {
-        win.loadFile(path.join(__dirname, "offline.html"), {
-          hash: encodeURIComponent(startUrl),
-        });
+  // Helper: load offline.html with the failed URL + detected IP pre-filled.
+  const loadOffline = (failedUrl) => {
+    if (win.isDestroyed()) return;
+    const detectedIp = (__discovery && __discovery.detectedIp) || "";
+    win.loadFile(path.join(__dirname, "offline.html"), {
+      hash:   failedUrl ? encodeURIComponent(failedUrl) : undefined,
+      search: detectedIp ? `detectedIp=${encodeURIComponent(detectedIp)}` : undefined,
+    });
+  };
+
+  if (!startUrl) {
+    // No server URL — go straight to the connect page (pre-filled with detected IP).
+    loadOffline("");
+  } else {
+    // did-fail-load fires for *real* failures (DNS, connection refused, TLS,
+    // server timeouts). It does NOT fire for ERR_ABORTED (-3), which is what
+    // happens on a normal HTTP redirect chain (e.g. / → /login). The previous
+    // implementation awaited loadURL() and treated -3 as a failure, falling
+    // back to offline.html even when the server was perfectly reachable —
+    // that was the "blank" / "connect screen" symptom. Listen to the event
+    // instead so we only show offline.html when the network actually failed.
+    let failed = false;
+    const onFailLoad = (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+      if (!isMainFrame) return;
+      // Filter the redirect-aborted "errors" out completely.
+      if (errorCode === -3 /* ERR_ABORTED */) return;
+      if (failed) return;
+      failed = true;
+      console.error(
+        `[AAELink] load failed: ${errorCode} ${errorDescription} url=${validatedUrl}`
+      );
+      loadOffline(startUrl);
+    };
+    win.webContents.on("did-fail-load", onFailLoad);
+
+    // Belt-and-braces 9 s top-end timeout: if the server never responds at all
+    // (no did-finish-load, no did-fail-load — e.g. network black-hole), fall
+    // through to the connect page so the user isn't stuck on a blank window.
+    const timeoutId = setTimeout(() => {
+      if (failed || win.isDestroyed()) return;
+      const url = win.webContents.getURL();
+      if (!url || url === "about:blank") {
+        failed = true;
+        console.error(`[AAELink] load timed out for ${startUrl}`);
+        loadOffline(startUrl);
+      }
+    }, 9000);
+    win.webContents.once("did-finish-load", () => clearTimeout(timeoutId));
+
+    win.loadURL(startUrl).catch((err) => {
+      // loadURL itself can reject for the same -3 reason; treat the same way.
+      const msg = err?.message || String(err);
+      if (msg.includes("ERR_ABORTED")) return;
+      if (!failed) {
+        failed = true;
+        console.error("[AAELink] loadURL rejected:", msg);
+        loadOffline(startUrl);
       }
     });
   }
@@ -369,7 +489,7 @@ app.on("open-url", (event, url) => {
 });
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const iconPath = resolveWindowIcon();
   applyDockIcon(iconPath);
 
@@ -383,6 +503,13 @@ app.whenReady().then(() => {
 
   setApplicationMenu({ isDarwin: process.platform === "darwin" });
   createTray(iconPath);
+
+  // Discover the server (own WiFi → localhost → saved → env) BEFORE creating
+  // the window so the right URL is loaded the first time, no flash of the
+  // connect page when a server is reachable. Time-bounded inside discovery
+  // (each probe ≤1.2 s; ≤5 candidates → <6 s worst case).
+  await runDiscovery();
+
   createWindow();
   initAutoUpdater();
 
@@ -405,5 +532,53 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  saveWindowBounds();
   app.isQuiting = true;
+});
+
+// ── System idle detection ─────────────────────────────────────────────────────
+// Broadcast idle / active state to the renderer so it can update user presence.
+const IDLE_THRESHOLD_SECONDS = 300; // 5 minutes
+let lastIdleState = "active";
+
+function checkIdleState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const idleSeconds = powerMonitor.getSystemIdleTime();
+    const newState = idleSeconds >= IDLE_THRESHOLD_SECONDS ? "idle" : "active";
+    if (newState !== lastIdleState) {
+      lastIdleState = newState;
+      mainWindow.webContents.send("aaelink-idle-state", {
+        state: newState,
+        idle_seconds: idleSeconds,
+      });
+    }
+  } catch { /* ignore */ }
+}
+
+// Check idle state every 30 seconds
+setInterval(checkIdleState, 30_000);
+
+// Forward power events (suspend/resume) so the renderer can reconnect streams
+app.whenReady().then(() => {
+  powerMonitor.on("suspend", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("aaelink-power-event", { event: "suspend" });
+    }
+  });
+  powerMonitor.on("resume", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("aaelink-power-event", { event: "resume" });
+    }
+  });
+  powerMonitor.on("lock-screen", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("aaelink-idle-state", { state: "idle", idle_seconds: 0 });
+    }
+  });
+  powerMonitor.on("unlock-screen", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("aaelink-idle-state", { state: "active", idle_seconds: 0 });
+    }
+  });
 });
