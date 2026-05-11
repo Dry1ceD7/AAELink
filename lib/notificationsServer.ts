@@ -203,3 +203,103 @@ export async function notifySupportEmergencyStaff(args: {
     }))
   )
 }
+
+/** Notify a user when they are assigned to a ticket. */
+export async function notifyTicketAssignment(args: {
+  pool: Pool
+  workspaceId: string
+  ticketId: string
+  ticketTitle: string
+  assigneeId: string
+  assignedByLabel: string
+}): Promise<void> {
+  const allowed = await filterUsersForNotification(args.pool, [args.assigneeId], 'ticket_activity')
+  if (allowed.length === 0) return
+
+  await insertNotifications(args.pool, [{
+    user_id: args.assigneeId,
+    kind: 'ticket_assignment',
+    title: `Ticket assigned to you`,
+    body: `${args.assignedByLabel} assigned you: ${snippet(args.ticketTitle, 100)}`,
+    workspace_id: args.workspaceId,
+    channel_id: null,
+    message_id: null,
+    ticket_id: args.ticketId
+  }])
+}
+
+/** Notify the assignee and IT staff when an SLA is breached. */
+export async function notifyTicketSlaBreach(args: {
+  pool: Pool
+  workspaceId: string
+  ticketId: string
+  ticketTitle: string
+  priority: string
+  assigneeId: string | null
+}): Promise<void> {
+  const { rows: itStaff } = await args.pool.query<{ id: string }>(
+    `SELECT id FROM aaelink.users
+     WHERE platform_role IN ('super_admin', 'it_admin', 'it_employee')`,
+    []
+  )
+  const targetIds = new Set(itStaff.map(r => r.id))
+  if (args.assigneeId) targetIds.add(args.assigneeId)
+
+  let targets = [...targetIds]
+  targets = await filterUsersForNotification(args.pool, targets, 'ticket_activity')
+  if (targets.length === 0) return
+
+  const title = `SLA breached — ${args.priority.toUpperCase()}`
+  const body = `Ticket "${snippet(args.ticketTitle, 80)}" has exceeded its SLA deadline.`
+
+  await insertNotifications(
+    args.pool,
+    targets.map(user_id => ({
+      user_id,
+      kind: 'ticket_sla_breach',
+      title,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: null,
+      message_id: null,
+      ticket_id: args.ticketId
+    }))
+  )
+}
+
+/** Notify the original ticket requester when their ticket status changes. */
+export async function notifyTicketStatusChange(args: {
+  pool: Pool
+  workspaceId: string
+  ticketId: string
+  ticketTitle: string
+  createdBy: string
+  changedById: string
+  changedByLabel: string
+  oldStatus: string
+  newStatus: string
+}): Promise<void> {
+  // Don't notify if the requester is the one making the change
+  if (args.createdBy === args.changedById) return
+
+  const allowed = await filterUsersForNotification(args.pool, [args.createdBy], 'ticket_activity')
+  if (allowed.length === 0) return
+
+  const statusLabels: Record<string, string> = {
+    open: 'Open', pending: 'Pending', in_progress: 'In Progress',
+    resolved: 'Resolved', closed: 'Closed'
+  }
+  const from = statusLabels[args.oldStatus] || args.oldStatus
+  const to = statusLabels[args.newStatus] || args.newStatus
+
+  await insertNotifications(args.pool, [{
+    user_id: args.createdBy,
+    kind: 'ticket_status',
+    title: `Ticket updated: ${from} → ${to}`,
+    body: `${args.changedByLabel} updated "${snippet(args.ticketTitle, 80)}" from ${from} to ${to}.`,
+    workspace_id: args.workspaceId,
+    channel_id: null,
+    message_id: null,
+    ticket_id: args.ticketId
+  }])
+}

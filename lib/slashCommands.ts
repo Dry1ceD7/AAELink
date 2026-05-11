@@ -100,7 +100,7 @@ const commands: SlashCommand[] = [
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status_text: 'Do Not Disturb', status_emoji: '🔕', expires_at: expiresAt })
       })
-      return { action: 'ephemeral', text: `🔕 Do Not Disturb enabled for ${minutes} minutes.` }
+      return { action: 'ephemeral', text: `Do Not Disturb enabled for ${minutes} minutes.` }
     }
   },
   {
@@ -114,7 +114,7 @@ const commands: SlashCommand[] = [
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel_id: channelId, level: 'nothing', muted: true })
       })
-      return { action: 'ephemeral', text: '🔇 Channel muted. You will not receive notifications from this channel.' }
+      return { action: 'ephemeral', text: 'Channel muted. You will not receive notifications from this channel.' }
     }
   },
   {
@@ -128,7 +128,7 @@ const commands: SlashCommand[] = [
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel_id: channelId, level: 'default', muted: false })
       })
-      return { action: 'ephemeral', text: '🔔 Channel unmuted. Notifications restored.' }
+      return { action: 'ephemeral', text: 'Channel unmuted. Notifications restored.' }
     }
   },
   {
@@ -214,7 +214,7 @@ const commands: SlashCommand[] = [
     description: 'Collapse all image & link previews in the channel',
     usage: '/collapse',
     execute: async () => {
-      return { action: 'ephemeral', text: '📎 Previews collapsed. Use /expand to restore.' }
+      return { action: 'ephemeral', text: 'Previews collapsed. Use /expand to restore.' }
     }
   },
   {
@@ -222,7 +222,7 @@ const commands: SlashCommand[] = [
     description: 'Expand all image & link previews in the channel',
     usage: '/expand',
     execute: async () => {
-      return { action: 'ephemeral', text: '📎 Previews expanded.' }
+      return { action: 'ephemeral', text: 'Previews expanded.' }
     }
   },
   {

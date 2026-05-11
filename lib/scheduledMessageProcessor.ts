@@ -61,7 +61,7 @@ async function processScheduledMessages(): Promise<number> {
       )
 
       sent++
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(`[ScheduledMessages] Failed to send ${row.id}:`, err)
       // Don't mark as sent — will retry on next tick
     }

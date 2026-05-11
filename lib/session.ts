@@ -23,9 +23,20 @@ export async function readSessionUserId(): Promise<string | null> {
   const pool = getPool()
   if (!pool) return null
   await ensureSchema()
-  const { rows } = await pool.query<{ user_id: string }>(
-    `SELECT user_id FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
+  const { rows } = await pool.query<{ user_id: string; last_active_at: number }>(
+    `SELECT user_id, last_active_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
     [sid, Date.now()]
   )
-  return rows[0]?.user_id ?? null
+  const uid = rows[0]?.user_id ?? null
+  if (uid) {
+    // Debounced touch: only update last_active_at if it's been > 5 minutes
+    const last = rows[0]?.last_active_at ?? 0
+    if (Date.now() - last > 300_000) {
+      pool.query(
+        `UPDATE aaelink.sessions SET last_active_at = $1 WHERE id = $2`,
+        [Date.now(), sid]
+      ).catch(() => { /* non-critical */ })
+    }
+  }
+  return uid
 }

@@ -6,7 +6,13 @@ let migrateOnce: Promise<void> | null = null
 
 export function ensureSchema(): Promise<void> {
   if (!migrateOnce) {
-    migrateOnce = run()
+    migrateOnce = run().catch((err) => {
+      // Bust the cache on failure so the next request can retry instead of
+      // forever serving the same poisoned rejection. Without this, a single
+      // partial migration failure makes every API request 500 until restart.
+      migrateOnce = null
+      throw err
+    })
   }
   return migrateOnce
 }
@@ -428,6 +434,7 @@ async function run() {
   await pool.query(`ALTER TABLE aaelink.sessions ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT ''`)
   await pool.query(`ALTER TABLE aaelink.sessions ADD COLUMN IF NOT EXISTS ip_address TEXT NOT NULL DEFAULT ''`)
   await pool.query(`ALTER TABLE aaelink.sessions ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.sessions ADD COLUMN IF NOT EXISTS last_active_at BIGINT NOT NULL DEFAULT 0`)
 
   // Message body trigram index for global search (pg_trgm if available)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_body_search ON aaelink.messages USING btree (channel_id, created_at DESC)`)
@@ -697,6 +704,14 @@ async function run() {
 
   // ── v0.0.3-alpha additions ──────────────────────────────────────────
 
+  // Pronouns and department on user profile
+  await pool.query(
+    `ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS pronouns TEXT`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS department TEXT`
+  )
+
   // User status expiry (Slack-style "Clear after…")
   await pool.query(
     `ALTER TABLE aaelink.user_status ADD COLUMN IF NOT EXISTS expires_at BIGINT NOT NULL DEFAULT 0`
@@ -741,6 +756,906 @@ async function run() {
       PRIMARY KEY (user_id, channel_id)
     );
   `)
+
+  // ── v0.0.5-alpha additions ──────────────────────────────────────────
+
+  // Default channel flag (channels that every new member auto-joins)
+  await pool.query(
+    `ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`
+  )
+
+  // Feature flags table (admin-managed runtime toggles)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.feature_flags (
+      id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      flag_name   TEXT UNIQUE NOT NULL,
+      enabled     BOOLEAN NOT NULL DEFAULT true,
+      description TEXT DEFAULT '',
+      updated_by  TEXT DEFAULT '',
+      updated_at  BIGINT DEFAULT 0,
+      deleted_at  BIGINT DEFAULT NULL
+    );
+  `)
+
+  // Webhook delivery log (track each outgoing/incoming webhook delivery)
+  // NOTE: kept as separate pool.query() calls — combining CREATE TABLE +
+  // CREATE INDEX in one query made Postgres validate the index against the
+  // catalog before the table was committed, so it failed with
+  // "column delivered_at does not exist" on every fresh DB.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webhook_deliveries (
+      id          TEXT PRIMARY KEY,
+      webhook_id  TEXT NOT NULL REFERENCES aaelink.webhooks(id) ON DELETE CASCADE,
+      status_code INT NOT NULL DEFAULT 0,
+      request_body TEXT NOT NULL DEFAULT '',
+      response_body TEXT NOT NULL DEFAULT '',
+      delivered_at BIGINT NOT NULL,
+      duration_ms  INT NOT NULL DEFAULT 0,
+      error_message TEXT NOT NULL DEFAULT ''
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook
+       ON aaelink.webhook_deliveries(webhook_id, delivered_at DESC);`
+  )
+
+  // ── v0.0.6-alpha additions ──────────────────────────────────────────
+
+  // DND (Do Not Disturb) schedule settings per user
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.dnd_settings (
+      user_id       TEXT PRIMARY KEY REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      enabled       BOOLEAN NOT NULL DEFAULT false,
+      start_time    TEXT NOT NULL DEFAULT '22:00',
+      end_time      TEXT NOT NULL DEFAULT '08:00',
+      timezone      TEXT NOT NULL DEFAULT 'UTC',
+      snooze_until  BIGINT NOT NULL DEFAULT 0,
+      updated_at    BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // Custom emoji (workspace-level, Slack parity)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.custom_emoji (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      image_url     TEXT NOT NULL DEFAULT '',
+      alias_for     TEXT NOT NULL DEFAULT '',
+      created_by    TEXT NOT NULL REFERENCES aaelink.users(id),
+      created_at    BIGINT NOT NULL,
+      UNIQUE (workspace_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_custom_emoji_workspace ON aaelink.custom_emoji(workspace_id);
+  `)
+
+  // Slash commands registry (custom commands with webhook callbacks)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.slash_commands (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      description   TEXT NOT NULL DEFAULT '',
+      usage_hint    TEXT NOT NULL DEFAULT '',
+      callback_url  TEXT NOT NULL DEFAULT '',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      created_by    TEXT NOT NULL REFERENCES aaelink.users(id),
+      created_at    BIGINT NOT NULL,
+      UNIQUE (workspace_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_slash_commands_workspace ON aaelink.slash_commands(workspace_id);
+  `)
+
+  // Message drafts (server-side persistence across devices)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.message_drafts (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      root_id     TEXT NOT NULL DEFAULT '',
+      body        TEXT NOT NULL DEFAULT '',
+      updated_at  BIGINT NOT NULL,
+      UNIQUE (user_id, channel_id, root_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_drafts_user ON aaelink.message_drafts(user_id, updated_at DESC);
+  `)
+
+  // ── v0.0.7-alpha additions ──────────────────────────────────────────
+
+  // Starred / favorite channels (sidebar section)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.starred_channels (
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      sort_order  INT NOT NULL DEFAULT 0,
+      starred_at  BIGINT NOT NULL,
+      PRIMARY KEY (user_id, channel_id)
+    );
+  `)
+
+  // User notification keywords (custom highlight words)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.user_keywords (
+      user_id     TEXT PRIMARY KEY REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      keywords    TEXT NOT NULL DEFAULT '[]',
+      updated_at  BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // Message forwarding tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.message_forwards (
+      id                    TEXT PRIMARY KEY,
+      original_message_id   TEXT NOT NULL,
+      forwarded_message_id  TEXT NOT NULL,
+      source_channel_id     TEXT NOT NULL,
+      target_channel_id     TEXT NOT NULL,
+      forwarded_by          TEXT NOT NULL REFERENCES aaelink.users(id),
+      forwarded_at          BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_forwards_original ON aaelink.message_forwards(original_message_id);
+  `)
+
+  // Scheduled messages (future delivery queue)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.scheduled_messages (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      root_id     TEXT NOT NULL DEFAULT '',
+      body        TEXT NOT NULL,
+      send_at     BIGINT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','cancelled','failed')),
+      sent_at     BIGINT,
+      created_at  BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_messages_pending ON aaelink.scheduled_messages(status, send_at) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS idx_scheduled_messages_user ON aaelink.scheduled_messages(user_id, status);
+  `)
+
+  // Sidebar sections / channel categories (user-defined)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sidebar_sections (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      workspace_id  TEXT NOT NULL,
+      name          TEXT NOT NULL,
+      emoji         TEXT NOT NULL DEFAULT '',
+      sort_order    INT NOT NULL DEFAULT 0,
+      is_collapsed  BOOLEAN NOT NULL DEFAULT false
+    );
+    CREATE INDEX IF NOT EXISTS idx_sidebar_sections_user ON aaelink.sidebar_sections(user_id, workspace_id);
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sidebar_section_channels (
+      section_id  TEXT NOT NULL REFERENCES aaelink.sidebar_sections(id) ON DELETE CASCADE,
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      sort_order  INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (section_id, channel_id)
+    );
+  `)
+
+  // Guest accounts (external collaborators)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.guest_accounts (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL,
+      user_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      invited_by    TEXT REFERENCES aaelink.users(id),
+      expires_at    BIGINT NOT NULL DEFAULT 0,
+      created_at    BIGINT NOT NULL,
+      UNIQUE (workspace_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_guest_accounts_ws ON aaelink.guest_accounts(workspace_id);
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.guest_channel_access (
+      guest_id    TEXT NOT NULL REFERENCES aaelink.guest_accounts(id) ON DELETE CASCADE,
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      granted_at  BIGINT NOT NULL,
+      PRIMARY KEY (guest_id, channel_id)
+    );
+  `)
+
+  // Channel posting permissions (announcement / broadcast channels)
+  await pool.query(`
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS posting_mode TEXT NOT NULL DEFAULT 'everyone';
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.channel_approved_posters (
+      channel_id  TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      granted_at  BIGINT NOT NULL,
+      PRIMARY KEY (channel_id, user_id)
+    );
+  `)
+
+  // Content moderation / message flagging
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.moderation_reports (
+      id                TEXT PRIMARY KEY,
+      reporter_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      message_id        TEXT,
+      reported_user_id  TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      channel_id        TEXT,
+      reason            TEXT NOT NULL,
+      details           TEXT NOT NULL DEFAULT '',
+      status            TEXT NOT NULL DEFAULT 'pending',
+      action_taken      TEXT,
+      resolution_notes  TEXT,
+      resolved_by       TEXT REFERENCES aaelink.users(id),
+      resolved_at       BIGINT,
+      created_at        BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_moderation_reports_status ON aaelink.moderation_reports(status, created_at DESC);
+  `)
+
+  // Message attachments (file bindings)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.message_attachments (
+      id          TEXT PRIMARY KEY,
+      message_id  TEXT NOT NULL,
+      file_id     TEXT NOT NULL,
+      sort_order  INT NOT NULL DEFAULT 0,
+      created_at  BIGINT NOT NULL,
+      UNIQUE (message_id, file_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_attachments_msg ON aaelink.message_attachments(message_id);
+  `)
+
+  // Channel topic / purpose columns
+  await pool.query(`
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS topic TEXT NOT NULL DEFAULT '';
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT '';
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS topic_set_by TEXT DEFAULT NULL;
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS topic_set_at BIGINT DEFAULT 0;
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS purpose_set_by TEXT DEFAULT NULL;
+    ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS purpose_set_at BIGINT DEFAULT 0;
+  `)
+
+  // Email notification queue
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.email_queue (
+      id               TEXT PRIMARY KEY,
+      recipient_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      recipient_email  TEXT NOT NULL,
+      type             TEXT NOT NULL,
+      subject          TEXT NOT NULL,
+      body_text        TEXT NOT NULL DEFAULT '',
+      body_html        TEXT NOT NULL DEFAULT '',
+      metadata         JSONB NOT NULL DEFAULT '{}',
+      status           TEXT NOT NULL DEFAULT 'pending',
+      error            TEXT,
+      sent_at          BIGINT,
+      created_at       BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_queue_status ON aaelink.email_queue(status, created_at DESC);
+  `)
+
+  // Workspace invite links
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.workspace_invite_links (
+      id               TEXT PRIMARY KEY,
+      workspace_id     TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      token            TEXT NOT NULL UNIQUE,
+      created_by       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      max_uses         INT NOT NULL DEFAULT 0,
+      use_count        INT NOT NULL DEFAULT 0,
+      expires_at       BIGINT NOT NULL DEFAULT 0,
+      allowed_domains  JSONB NOT NULL DEFAULT '[]',
+      active           BOOLEAN NOT NULL DEFAULT true,
+      created_at       BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_invite_links_token ON aaelink.workspace_invite_links(token) WHERE active = true;
+  `)
+
+  // Backups management table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.backups (
+      id               TEXT PRIMARY KEY,
+      type             TEXT NOT NULL DEFAULT 'full',
+      status           TEXT NOT NULL DEFAULT 'pending',
+      storage_dest     TEXT NOT NULL DEFAULT 'local',
+      size_bytes       BIGINT NOT NULL DEFAULT 0,
+      started_at       BIGINT NOT NULL,
+      completed_at     BIGINT DEFAULT 0,
+      error            TEXT,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      metadata         JSONB NOT NULL DEFAULT '{}'
+    );
+  `)
+
+  // System config key-value store (for session policy, markdown config, media policy, backup schedule)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.system_config (
+      key              TEXT PRIMARY KEY,
+      value            TEXT NOT NULL DEFAULT '{}',
+      updated_at       BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // User accessibility preferences column
+  await pool.query(`
+    ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS accessibility_prefs TEXT DEFAULT '{}';
+  `)
+
+  // ── Batch 6: Jobs, Compliance, Integrations, i18n ────────────────────
+
+  // Background job queue
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.jobs (
+      id               TEXT PRIMARY KEY,
+      type             TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'pending',
+      priority         INTEGER NOT NULL DEFAULT 5,
+      payload          JSONB NOT NULL DEFAULT '{}',
+      run_after        BIGINT NOT NULL DEFAULT 0,
+      max_retries      INTEGER NOT NULL DEFAULT 3,
+      attempts         INTEGER NOT NULL DEFAULT 0,
+      last_error       TEXT,
+      started_at       BIGINT DEFAULT 0,
+      completed_at     BIGINT DEFAULT 0,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON aaelink.jobs(status, priority DESC, created_at ASC);
+  `)
+
+  // Legal holds (compliance)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.legal_holds (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      description      TEXT NOT NULL DEFAULT '',
+      matter_id        TEXT NOT NULL DEFAULT '',
+      status           TEXT NOT NULL DEFAULT 'active',
+      custodian_ids    JSONB NOT NULL DEFAULT '[]',
+      channel_ids      JSONB NOT NULL DEFAULT '[]',
+      scope_from       BIGINT NOT NULL DEFAULT 0,
+      scope_to         BIGINT NOT NULL DEFAULT 0,
+      released_at      BIGINT DEFAULT 0,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // eDiscovery exports
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.ediscovery_exports (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'pending',
+      format           TEXT NOT NULL DEFAULT 'json',
+      scope            JSONB NOT NULL DEFAULT '{}',
+      scope_from       BIGINT NOT NULL DEFAULT 0,
+      scope_to         BIGINT NOT NULL DEFAULT 0,
+      message_count    INTEGER NOT NULL DEFAULT 0,
+      file_count       INTEGER NOT NULL DEFAULT 0,
+      size_bytes       BIGINT NOT NULL DEFAULT 0,
+      download_key     TEXT,
+      completed_at     BIGINT DEFAULT 0,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // Bot users and OAuth apps
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.bot_users (
+      id               TEXT PRIMARY KEY,
+      kind             TEXT NOT NULL DEFAULT 'bot',
+      name             TEXT NOT NULL,
+      description      TEXT NOT NULL DEFAULT '',
+      avatar_url       TEXT NOT NULL DEFAULT '',
+      scopes           JSONB NOT NULL DEFAULT '[]',
+      status           TEXT NOT NULL DEFAULT 'active',
+      client_id        TEXT UNIQUE,
+      client_secret    TEXT,
+      api_token        TEXT,
+      redirect_uris    JSONB NOT NULL DEFAULT '[]',
+      workspace_id     TEXT,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // Event subscriptions (webhook delivery)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.event_subscriptions (
+      id               TEXT PRIMARY KEY,
+      bot_id           TEXT REFERENCES aaelink.bot_users(id) ON DELETE CASCADE,
+      endpoint_url     TEXT NOT NULL,
+      events           JSONB NOT NULL DEFAULT '[]',
+      signing_secret   TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'active',
+      workspace_id     TEXT,
+      description      TEXT NOT NULL DEFAULT '',
+      delivery_count   INTEGER NOT NULL DEFAULT 0,
+      failure_count    INTEGER NOT NULL DEFAULT 0,
+      last_delivery_at BIGINT DEFAULT 0,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // Email ingestion routes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.email_routes (
+      id               TEXT PRIMARY KEY,
+      workspace_id     TEXT NOT NULL,
+      channel_id       TEXT NOT NULL,
+      inbound_address  TEXT UNIQUE NOT NULL,
+      label            TEXT NOT NULL DEFAULT '',
+      status           TEXT NOT NULL DEFAULT 'active',
+      allowed_senders  JSONB NOT NULL DEFAULT '[]',
+      strip_signatures BOOLEAN NOT NULL DEFAULT true,
+      create_threads   BOOLEAN NOT NULL DEFAULT true,
+      messages_received INTEGER NOT NULL DEFAULT 0,
+      last_received_at BIGINT DEFAULT 0,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_routes_address ON aaelink.email_routes(inbound_address) WHERE status = 'active';
+  `)
+
+  // User locale column
+  await pool.query(`
+    ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS locale TEXT DEFAULT 'en';
+  `)
+
+  // ── Batch 7: Devices, DLP, File Scanning, Plugins, Barriers ─────────
+
+  // Device management
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.devices (
+      id               TEXT PRIMARY KEY,
+      user_id          TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      device_type      TEXT NOT NULL DEFAULT 'web',
+      device_name      TEXT NOT NULL DEFAULT '',
+      os               TEXT NOT NULL DEFAULT '',
+      browser          TEXT NOT NULL DEFAULT '',
+      ip_address       TEXT NOT NULL DEFAULT '',
+      push_token       TEXT NOT NULL DEFAULT '',
+      trust_status     TEXT NOT NULL DEFAULT 'untrusted',
+      registered_at    BIGINT NOT NULL,
+      last_active_at   BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_devices_user ON aaelink.devices(user_id);
+  `)
+
+  // DLP rules
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.dlp_rules (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      description      TEXT NOT NULL DEFAULT '',
+      type             TEXT NOT NULL DEFAULT 'pattern_match',
+      pattern          TEXT NOT NULL DEFAULT '',
+      action           TEXT NOT NULL DEFAULT 'warn',
+      severity         TEXT NOT NULL DEFAULT 'medium',
+      priority         INTEGER NOT NULL DEFAULT 5,
+      scope_channels   JSONB NOT NULL DEFAULT '[]',
+      is_active        BOOLEAN NOT NULL DEFAULT true,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // DLP violations log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.dlp_violations (
+      id               TEXT PRIMARY KEY,
+      rule_id          TEXT REFERENCES aaelink.dlp_rules(id) ON DELETE SET NULL,
+      user_id          TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      channel_id       TEXT,
+      content_snippet  TEXT NOT NULL DEFAULT '',
+      action_taken     TEXT NOT NULL DEFAULT '',
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // File scans (virus/malware)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.file_scans (
+      id               TEXT PRIMARY KEY,
+      file_id          TEXT NOT NULL,
+      filename         TEXT NOT NULL DEFAULT '',
+      file_size        BIGINT NOT NULL DEFAULT 0,
+      mime_type        TEXT NOT NULL DEFAULT '',
+      result           TEXT NOT NULL DEFAULT 'pending',
+      scan_engine      TEXT NOT NULL DEFAULT 'clamav',
+      threat_name      TEXT NOT NULL DEFAULT '',
+      uploaded_by      TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL,
+      scanned_at       BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_file_scans_result ON aaelink.file_scans(result);
+  `)
+
+  // File content index (full-text search inside files)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.file_index (
+      id               TEXT PRIMARY KEY,
+      file_id          TEXT UNIQUE NOT NULL,
+      filename         TEXT NOT NULL DEFAULT '',
+      file_type        TEXT NOT NULL DEFAULT '',
+      channel_id       TEXT,
+      content_preview  TEXT NOT NULL DEFAULT '',
+      content_length   INTEGER NOT NULL DEFAULT 0,
+      search_vector    TSVECTOR,
+      uploaded_by      TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      indexed_at       BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_file_index_search ON aaelink.file_index USING GIN(search_vector);
+  `)
+
+  // Plugins
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.plugins (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      version          TEXT NOT NULL DEFAULT '1.0.0',
+      description      TEXT NOT NULL DEFAULT '',
+      author           TEXT NOT NULL DEFAULT '',
+      homepage_url     TEXT NOT NULL DEFAULT '',
+      icon_url         TEXT NOT NULL DEFAULT '',
+      workspace_id     TEXT,
+      manifest_url     TEXT NOT NULL DEFAULT '',
+      capabilities     JSONB NOT NULL DEFAULT '[]',
+      settings_schema  JSONB NOT NULL DEFAULT '{}',
+      status           TEXT NOT NULL DEFAULT 'installed',
+      installed_by     TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      installed_at     BIGINT NOT NULL,
+      updated_at       BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // Information barriers
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.information_barriers (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      type             TEXT NOT NULL DEFAULT 'custom',
+      description      TEXT NOT NULL DEFAULT '',
+      group_a_ids      JSONB NOT NULL DEFAULT '[]',
+      group_b_ids      JSONB NOT NULL DEFAULT '[]',
+      block_dm         BOOLEAN NOT NULL DEFAULT true,
+      block_channels   BOOLEAN NOT NULL DEFAULT true,
+      block_search     BOOLEAN NOT NULL DEFAULT true,
+      block_file_share BOOLEAN NOT NULL DEFAULT true,
+      is_active        BOOLEAN NOT NULL DEFAULT true,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL
+    );
+  `)
+
+  // ── Batch 8: SSO, SCIM, Federation, Canvas, Clips ──────────────────
+
+  // SSO providers
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sso_providers (
+      id                     TEXT PRIMARY KEY,
+      name                   TEXT NOT NULL,
+      type                   TEXT NOT NULL DEFAULT 'oidc',
+      issuer                 TEXT NOT NULL DEFAULT '',
+      metadata_url           TEXT NOT NULL DEFAULT '',
+      discovery_url          TEXT NOT NULL DEFAULT '',
+      client_id              TEXT NOT NULL DEFAULT '',
+      client_secret_hash     TEXT NOT NULL DEFAULT '',
+      callback_url           TEXT NOT NULL DEFAULT '',
+      jit_provisioning       BOOLEAN NOT NULL DEFAULT true,
+      default_role           TEXT NOT NULL DEFAULT 'member',
+      attribute_mapping      JSONB NOT NULL DEFAULT '{}',
+      group_role_mapping     JSONB NOT NULL DEFAULT '{}',
+      session_lifetime_hours INTEGER NOT NULL DEFAULT 24,
+      enforce_mfa            BOOLEAN NOT NULL DEFAULT false,
+      is_active              BOOLEAN NOT NULL DEFAULT true,
+      login_count            BIGINT NOT NULL DEFAULT 0,
+      last_login_at          BIGINT NOT NULL DEFAULT 0,
+      created_by             TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at             BIGINT NOT NULL,
+      updated_at             BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // SCIM connections
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.scim_connections (
+      id                TEXT PRIMARY KEY,
+      name              TEXT NOT NULL,
+      provider          TEXT NOT NULL DEFAULT 'azure_ad',
+      tenant_id         TEXT NOT NULL DEFAULT '',
+      bearer_token_hash TEXT NOT NULL DEFAULT '',
+      attribute_mapping JSONB NOT NULL DEFAULT '{}',
+      is_active         BOOLEAN NOT NULL DEFAULT true,
+      created_by        TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at        BIGINT NOT NULL
+    );
+  `)
+
+  // SCIM sync log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.scim_sync_log (
+      id           TEXT PRIMARY KEY,
+      action       TEXT NOT NULL DEFAULT '',
+      external_id  TEXT NOT NULL DEFAULT '',
+      user_id      TEXT NOT NULL DEFAULT '',
+      status       TEXT NOT NULL DEFAULT 'success',
+      created_at   BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scim_sync_log_created ON aaelink.scim_sync_log(created_at DESC);
+  `)
+
+  // SCIM columns on users
+  await pool.query(`
+    ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS scim_external_id TEXT;
+    ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS scim_active BOOLEAN DEFAULT true;
+    ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS scim_last_sync BIGINT DEFAULT 0;
+  `)
+
+  // Shared channels (cross-org federation)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.shared_channels (
+      id              TEXT PRIMARY KEY,
+      channel_id      TEXT,
+      workspace_id    TEXT,
+      direction       TEXT NOT NULL DEFAULT 'outbound',
+      remote_org_name TEXT NOT NULL DEFAULT '',
+      remote_org_url  TEXT NOT NULL DEFAULT '',
+      invite_token    TEXT NOT NULL DEFAULT '',
+      sync_mode       TEXT NOT NULL DEFAULT 'bidirectional',
+      share_history   BOOLEAN NOT NULL DEFAULT true,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      created_by      TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at      BIGINT NOT NULL,
+      accepted_at     BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // Canvases (collaborative documents)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.canvases (
+      id              TEXT PRIMARY KEY,
+      title           TEXT NOT NULL DEFAULT 'Untitled',
+      type            TEXT NOT NULL DEFAULT 'personal_note',
+      channel_id      TEXT,
+      icon            TEXT NOT NULL DEFAULT '',
+      cover_image     TEXT NOT NULL DEFAULT '',
+      content_blocks  JSONB NOT NULL DEFAULT '[]',
+      word_count      INTEGER NOT NULL DEFAULT 0,
+      block_count     INTEGER NOT NULL DEFAULT 0,
+      shared_with     JSONB NOT NULL DEFAULT '[]',
+      is_pinned       BOOLEAN NOT NULL DEFAULT false,
+      is_template     BOOLEAN NOT NULL DEFAULT false,
+      created_by      TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      last_edited_by  TEXT,
+      created_at      BIGINT NOT NULL,
+      updated_at      BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_canvases_channel ON aaelink.canvases(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_canvases_creator ON aaelink.canvases(created_by);
+  `)
+
+  // Clips (short video/audio)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.clips (
+      id                TEXT PRIMARY KEY,
+      channel_id        TEXT,
+      thread_id         TEXT,
+      clip_type         TEXT NOT NULL DEFAULT 'video',
+      title             TEXT NOT NULL DEFAULT '',
+      file_id           TEXT NOT NULL,
+      file_url          TEXT NOT NULL DEFAULT '',
+      duration_seconds  INTEGER NOT NULL DEFAULT 0,
+      file_size         BIGINT NOT NULL DEFAULT 0,
+      thumbnail_url     TEXT NOT NULL DEFAULT '',
+      mime_type         TEXT NOT NULL DEFAULT '',
+      transcript        TEXT NOT NULL DEFAULT '',
+      transcript_status TEXT NOT NULL DEFAULT 'pending',
+      views             INTEGER NOT NULL DEFAULT 0,
+      created_by        TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at        BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_clips_channel ON aaelink.clips(channel_id);
+  `)
+
+  // ── Batch 9: MFA, Push, Calls, LDAP, EKM, Clustering ─────────────
+
+  // MFA enrollments
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.mfa_enrollments (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      method       TEXT NOT NULL DEFAULT 'totp',
+      secret_hash  TEXT NOT NULL DEFAULT '',
+      is_active    BOOLEAN NOT NULL DEFAULT false,
+      is_verified  BOOLEAN NOT NULL DEFAULT false,
+      created_at   BIGINT NOT NULL,
+      last_used_at BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_mfa_user ON aaelink.mfa_enrollments(user_id);
+  `)
+
+  // Push notification tokens
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.push_tokens (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      token         TEXT NOT NULL UNIQUE,
+      provider      TEXT NOT NULL DEFAULT 'fcm',
+      device_name   TEXT NOT NULL DEFAULT '',
+      platform      TEXT NOT NULL DEFAULT 'unknown',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      registered_at BIGINT NOT NULL,
+      last_push_at  BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON aaelink.push_tokens(user_id);
+  `)
+
+  // Push delivery log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.push_log (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL DEFAULT '',
+      title       TEXT NOT NULL DEFAULT '',
+      body        TEXT NOT NULL DEFAULT '',
+      channel_id  TEXT NOT NULL DEFAULT '',
+      priority    TEXT NOT NULL DEFAULT 'normal',
+      silent      BOOLEAN NOT NULL DEFAULT false,
+      badge_count INTEGER NOT NULL DEFAULT 0,
+      status      TEXT NOT NULL DEFAULT 'queued',
+      created_at  BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_log_created ON aaelink.push_log(created_at DESC);
+  `)
+
+  // Call rooms
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.call_rooms (
+      id                  TEXT PRIMARY KEY,
+      channel_id          TEXT,
+      call_type           TEXT NOT NULL DEFAULT 'voice',
+      title               TEXT NOT NULL DEFAULT '',
+      status              TEXT NOT NULL DEFAULT 'active',
+      recording           BOOLEAN NOT NULL DEFAULT false,
+      screen_share_user_id TEXT NOT NULL DEFAULT '',
+      max_participants    INTEGER NOT NULL DEFAULT 50,
+      created_by          TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at          BIGINT NOT NULL,
+      ended_at            BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_call_rooms_channel ON aaelink.call_rooms(channel_id);
+  `)
+
+  // Call participants
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.call_participants (
+      id              TEXT PRIMARY KEY,
+      room_id         TEXT NOT NULL REFERENCES aaelink.call_rooms(id) ON DELETE CASCADE,
+      user_id         TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      role            TEXT NOT NULL DEFAULT 'participant',
+      muted           BOOLEAN NOT NULL DEFAULT false,
+      video_on        BOOLEAN NOT NULL DEFAULT false,
+      screen_sharing  BOOLEAN NOT NULL DEFAULT false,
+      joined_at       BIGINT NOT NULL,
+      left_at         BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_call_participants_room ON aaelink.call_participants(room_id);
+  `)
+
+  // LDAP connections
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.ldap_connections (
+      id                      TEXT PRIMARY KEY,
+      name                    TEXT NOT NULL,
+      host                    TEXT NOT NULL DEFAULT '',
+      port                    INTEGER NOT NULL DEFAULT 389,
+      use_tls                 BOOLEAN NOT NULL DEFAULT true,
+      bind_dn                 TEXT NOT NULL DEFAULT '',
+      bind_password_hash      TEXT NOT NULL DEFAULT '',
+      base_dn                 TEXT NOT NULL DEFAULT '',
+      user_filter             TEXT NOT NULL DEFAULT '',
+      group_filter            TEXT NOT NULL DEFAULT '',
+      attribute_mapping       JSONB NOT NULL DEFAULT '{}',
+      group_role_mapping      JSONB NOT NULL DEFAULT '{}',
+      sync_interval_minutes   INTEGER NOT NULL DEFAULT 60,
+      is_active               BOOLEAN NOT NULL DEFAULT true,
+      last_sync_at            BIGINT NOT NULL DEFAULT 0,
+      last_sync_status        TEXT NOT NULL DEFAULT 'never',
+      last_sync_users_synced  INTEGER NOT NULL DEFAULT 0,
+      last_sync_errors        INTEGER NOT NULL DEFAULT 0,
+      created_by              TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at              BIGINT NOT NULL
+    );
+  `)
+
+  // LDAP sync log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.ldap_sync_log (
+      id            TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'running',
+      users_synced  INTEGER NOT NULL DEFAULT 0,
+      errors        INTEGER NOT NULL DEFAULT 0,
+      created_at    BIGINT NOT NULL
+    );
+  `)
+
+  // Encryption keys
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.encryption_keys (
+      id                 TEXT PRIMARY KEY,
+      key_alias          TEXT NOT NULL DEFAULT '',
+      provider           TEXT NOT NULL DEFAULT 'local',
+      algorithm          TEXT NOT NULL DEFAULT 'AES-256-GCM',
+      key_material_hash  TEXT NOT NULL DEFAULT '',
+      status             TEXT NOT NULL DEFAULT 'active',
+      created_at         BIGINT NOT NULL,
+      rotated_at         BIGINT NOT NULL DEFAULT 0,
+      expires_at         BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // Cluster nodes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.cluster_nodes (
+      id                  TEXT PRIMARY KEY,
+      node_id             TEXT NOT NULL UNIQUE,
+      node_url            TEXT NOT NULL DEFAULT '',
+      cpu_percent         REAL NOT NULL DEFAULT 0,
+      memory_percent      REAL NOT NULL DEFAULT 0,
+      active_connections  INTEGER NOT NULL DEFAULT 0,
+      version             TEXT NOT NULL DEFAULT '',
+      registered_at       BIGINT NOT NULL,
+      last_heartbeat      BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+
+  // ── Batch 10: Webhook v2 (v0.0.8 hardening) ──────────────────────
+
+  // Webhook v2 subscriptions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webhooks_v2 (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL DEFAULT '',
+      url                 TEXT NOT NULL DEFAULT '',
+      secret              TEXT NOT NULL DEFAULT '',
+      events              JSONB NOT NULL DEFAULT '[]',
+      channel_id          TEXT NOT NULL DEFAULT '',
+      is_active           BOOLEAN NOT NULL DEFAULT true,
+      max_retries         INTEGER NOT NULL DEFAULT 6,
+      timeout_ms          INTEGER NOT NULL DEFAULT 10000,
+      rate_limit_per_min  INTEGER NOT NULL DEFAULT 60,
+      created_by          TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at          BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhooks_v2_active ON aaelink.webhooks_v2(is_active);
+  `)
+
+  // Webhook v2 delivery log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webhook_deliveries_v2 (
+      id              TEXT PRIMARY KEY,
+      webhook_id      TEXT NOT NULL DEFAULT '',
+      event_type      TEXT NOT NULL DEFAULT '',
+      status          TEXT NOT NULL DEFAULT 'pending',
+      status_code     INTEGER NOT NULL DEFAULT 0,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      next_retry_at   BIGINT NOT NULL DEFAULT 0,
+      request_body    TEXT NOT NULL DEFAULT '',
+      response_body   TEXT NOT NULL DEFAULT '',
+      latency_ms      INTEGER NOT NULL DEFAULT 0,
+      error_message   TEXT NOT NULL DEFAULT '',
+      created_at      BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_v2_deliveries_webhook ON aaelink.webhook_deliveries_v2(webhook_id, created_at DESC);
+  `)
+
+  // ── Add missing created_by column (referenced by ensureGlobalWorkspaceAndDepartments) ──
+  await pool.query(`ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS created_by TEXT`)
 
   await ensureGlobalWorkspaceAndDepartments(pool)
 }
@@ -827,4 +1742,478 @@ async function ensureGlobalWorkspaceAndDepartments(pool: import('pg').Pool) {
       )
     }
   }
+
+  // ── Webhook delivery log ──
+  // Note: the first migration already creates webhook_deliveries with `delivered_at`.
+  // This CREATE TABLE IF NOT EXISTS is a no-op if the table exists, but we keep
+  // the index compatible with the original column name.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webhook_deliveries (
+      id TEXT PRIMARY KEY,
+      webhook_id TEXT NOT NULL,
+      event TEXT NOT NULL DEFAULT 'message',
+      status_code INT NOT NULL DEFAULT 0,
+      response_body TEXT NOT NULL DEFAULT '',
+      error TEXT NOT NULL DEFAULT '',
+      duration_ms INT NOT NULL DEFAULT 0,
+      delivered_at BIGINT NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`ALTER TABLE aaelink.webhook_deliveries ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wh_deliveries_webhook ON aaelink.webhook_deliveries(webhook_id, delivered_at DESC)`)
+
+  // ── Channel mutes (server-side) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.channel_mutes (
+      user_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      PRIMARY KEY (user_id, channel_id)
+    )
+  `)
+
+  // ── Channel stars (server-side) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.channel_stars (
+      user_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      PRIMARY KEY (user_id, channel_id)
+    )
+  `)
+
+  // ── Login activity tracking ──
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS login_count INT NOT NULL DEFAULT 0;
+      ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS last_login_at BIGINT NOT NULL DEFAULT 0;
+    EXCEPTION WHEN OTHERS THEN NULL; END $$
+  `)
+
+  // ── Ticketing v2: expanded ticket columns ──
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general';
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS sla_due_at BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS closed_at BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'ui';
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}';
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS source_message_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS source_channel_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE aaelink.tickets ADD COLUMN IF NOT EXISTS viewer_ids TEXT[] NOT NULL DEFAULT '{}';
+    EXCEPTION WHEN OTHERS THEN NULL; END $$
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tickets_assignee ON aaelink.tickets(assignee_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tickets_status ON aaelink.tickets(workspace_id, status)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tickets_sla ON aaelink.tickets(sla_due_at) WHERE sla_due_at > 0`)
+
+  // ── Ticket comments (internal notes + external replies) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.ticket_comments (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      author_id TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      is_internal BOOLEAN NOT NULL DEFAULT false,
+      created_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON aaelink.ticket_comments(ticket_id, created_at)`)
+
+  // ── Ticket activity log (immutable audit trail) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.ticket_activity_log (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      field_name TEXT NOT NULL DEFAULT '',
+      old_value TEXT NOT NULL DEFAULT '',
+      new_value TEXT NOT NULL DEFAULT '',
+      meta JSONB NOT NULL DEFAULT '{}',
+      created_at BIGINT NOT NULL
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_activity_ticket ON aaelink.ticket_activity_log(ticket_id, created_at)`)
+
+  // ── Client profiles (CRM-linked entities for template swapping) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.client_profiles (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL DEFAULT '',
+      logo_url TEXT NOT NULL DEFAULT '',
+      logo_key TEXT NOT NULL DEFAULT '',
+      address_line1 TEXT NOT NULL DEFAULT '',
+      address_line2 TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      country TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      website TEXT NOT NULL DEFAULT '',
+      legal_boilerplate TEXT NOT NULL DEFAULT '',
+      tax_id TEXT NOT NULL DEFAULT '',
+      metadata JSONB NOT NULL DEFAULT '{}',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_profiles_ws ON aaelink.client_profiles(workspace_id)`)
+
+  // ── Document templates (master templates for document assembly) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.document_templates (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT 'general',
+      file_key TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/pdf',
+      placeholders JSONB NOT NULL DEFAULT '[]',
+      created_by TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_templates_ws ON aaelink.document_templates(workspace_id)`)
+
+  // ── Document versions (version history for generated / edited documents) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.document_versions (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      version_number INT NOT NULL DEFAULT 1,
+      file_key TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/pdf',
+      size_bytes BIGINT NOT NULL DEFAULT 0,
+      change_summary TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL,
+      client_profile_id TEXT NOT NULL DEFAULT '',
+      ticket_id TEXT NOT NULL DEFAULT '',
+      created_at BIGINT NOT NULL
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON aaelink.document_versions(document_id, version_number DESC)`)
+
+  // ── Document annotations (collaborative markup) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.document_annotations (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      page_number INT NOT NULL DEFAULT 1,
+      type TEXT NOT NULL DEFAULT 'highlight',
+      content TEXT NOT NULL DEFAULT '',
+      coordinates JSONB NOT NULL DEFAULT '{}',
+      style JSONB NOT NULL DEFAULT '{}',
+      author_id TEXT NOT NULL,
+      resolved BOOLEAN NOT NULL DEFAULT false,
+      parent_id TEXT NOT NULL DEFAULT '',
+      created_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_annotations_doc ON aaelink.document_annotations(document_id, page_number)`)
+
+  // ── Document signatures ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.document_signatures (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
+      signer_id TEXT NOT NULL,
+      signing_order INT NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'pending',
+      signature_image_key TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      signed_at BIGINT NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_signatures_doc ON aaelink.document_signatures(document_id, signing_order)`)
+
+  // ── Batch 33 additive columns (client_profiles & document_templates) ──
+  await pool.query(`ALTER TABLE aaelink.document_templates ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.document_templates ADD COLUMN IF NOT EXISTS variables JSONB NOT NULL DEFAULT '{}'`)
+  await pool.query(`ALTER TABLE aaelink.document_templates ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_doc_templates_ws_cat ON aaelink.document_templates(workspace_id, category)`)
+
+  // ── Thread followers (follow/unfollow thread notifications) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.thread_followers (
+      thread_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (thread_id, user_id)
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_thread_followers_user ON aaelink.thread_followers(user_id)`)
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ██  Batch 34 — v0.0.8-alpha: Full Slack API Parity DDL            ██
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── Lists (Slack Lists — structured data tables in channels) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.lists (
+      id           TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL DEFAULT '',
+      channel_id   TEXT NOT NULL DEFAULT '',
+      name         TEXT NOT NULL DEFAULT '',
+      description  TEXT NOT NULL DEFAULT '',
+      columns      JSONB NOT NULL DEFAULT '[]',
+      view_type    TEXT NOT NULL DEFAULT 'table',
+      created_by   TEXT NOT NULL DEFAULT '',
+      created_at   BIGINT NOT NULL DEFAULT 0,
+      updated_at   BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lists_ws ON aaelink.lists(workspace_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lists_ch ON aaelink.lists(channel_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.list_items (
+      id         TEXT PRIMARY KEY,
+      list_id    TEXT NOT NULL,
+      values     JSONB NOT NULL DEFAULT '{}',
+      position   INT NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_list_items_list ON aaelink.list_items(list_id, position)`)
+
+  // ── Functions Registry (Slack functions.* — custom automation) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.functions_registry (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL DEFAULT '',
+      name          TEXT NOT NULL DEFAULT '',
+      description   TEXT NOT NULL DEFAULT '',
+      input_schema  JSONB NOT NULL DEFAULT '{}',
+      output_schema JSONB NOT NULL DEFAULT '{}',
+      app_id        TEXT NOT NULL DEFAULT '',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      created_by    TEXT NOT NULL DEFAULT '',
+      created_at    BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_funcs_ws ON aaelink.functions_registry(workspace_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.function_executions (
+      id           TEXT PRIMARY KEY,
+      function_id  TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      inputs       JSONB NOT NULL DEFAULT '{}',
+      outputs      JSONB NOT NULL DEFAULT '{}',
+      error        TEXT NOT NULL DEFAULT '',
+      triggered_by TEXT NOT NULL DEFAULT '',
+      created_at   BIGINT NOT NULL DEFAULT 0,
+      completed_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_func_execs_fn ON aaelink.function_executions(function_id, created_at DESC)`)
+
+  // ── Workflows (Slack workflows.* — multi-step automation) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.workflows (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      icon        TEXT NOT NULL DEFAULT '⚡',
+      status      TEXT NOT NULL DEFAULT 'active',
+      is_featured BOOLEAN NOT NULL DEFAULT false,
+      created_by  TEXT NOT NULL DEFAULT '',
+      created_at  BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT '⚡'`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT false`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_status ON aaelink.workflows(status)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.workflow_steps (
+      id          TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      position    INT NOT NULL DEFAULT 0,
+      type        TEXT NOT NULL DEFAULT 'function',
+      function_id TEXT NOT NULL DEFAULT '',
+      config      JSONB NOT NULL DEFAULT '{}',
+      created_at  BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wf_steps_wf ON aaelink.workflow_steps(workflow_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.workflow_triggers (
+      id          TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      type        TEXT NOT NULL DEFAULT 'webhook',
+      config      JSONB NOT NULL DEFAULT '{}',
+      created_at  BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wf_triggers_wf ON aaelink.workflow_triggers(workflow_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.workflow_executions (
+      id           TEXT PRIMARY KEY,
+      workflow_id  TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      triggered_by TEXT NOT NULL DEFAULT '',
+      error        TEXT NOT NULL DEFAULT '',
+      created_at   BIGINT NOT NULL DEFAULT 0,
+      completed_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wf_execs_wf ON aaelink.workflow_executions(workflow_id, created_at DESC)`)
+
+  // ── Remote Files (Slack files.remote.* — external file references) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.files_remote (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL DEFAULT '',
+      external_id   TEXT NOT NULL DEFAULT '',
+      external_url  TEXT NOT NULL DEFAULT '',
+      title         TEXT NOT NULL DEFAULT '',
+      filetype      TEXT NOT NULL DEFAULT '',
+      provider      TEXT NOT NULL DEFAULT '',
+      preview_image TEXT NOT NULL DEFAULT '',
+      shared_channels TEXT[] NOT NULL DEFAULT '{}',
+      created_by    TEXT NOT NULL DEFAULT '',
+      created_at    BIGINT NOT NULL DEFAULT 0,
+      updated_at    BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_remote_ws ON aaelink.files_remote(workspace_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_remote_ext ON aaelink.files_remote(external_id)`)
+
+  // ── OAuth Tokens & Apps (Slack oauth.v2.* / auth.*) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.oauth_apps (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL DEFAULT '',
+      client_id     TEXT UNIQUE NOT NULL,
+      client_secret TEXT NOT NULL DEFAULT '',
+      redirect_uris TEXT[] NOT NULL DEFAULT '{}',
+      scopes        TEXT NOT NULL DEFAULT '',
+      description   TEXT NOT NULL DEFAULT '',
+      icon_url      TEXT NOT NULL DEFAULT '',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      created_by    TEXT NOT NULL DEFAULT '',
+      created_at    BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_apps_client ON aaelink.oauth_apps(client_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.oauth_tokens (
+      id           TEXT PRIMARY KEY,
+      token        TEXT UNIQUE NOT NULL,
+      token_type   TEXT NOT NULL DEFAULT 'bot',
+      app_id       TEXT NOT NULL DEFAULT '',
+      user_id      TEXT NOT NULL DEFAULT '',
+      workspace_id TEXT NOT NULL DEFAULT '',
+      scope        TEXT NOT NULL DEFAULT '',
+      expires_at   BIGINT NOT NULL DEFAULT 0,
+      created_at   BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON aaelink.oauth_tokens(user_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_app ON aaelink.oauth_tokens(app_id)`)
+
+  // ── User Groups (Slack usergroups.* — @-mentionable groups) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.user_groups (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL DEFAULT '',
+      handle      TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      is_active   BOOLEAN NOT NULL DEFAULT true,
+      created_by  TEXT NOT NULL DEFAULT '',
+      created_at  BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_groups_handle ON aaelink.user_groups(handle)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.user_group_members (
+      group_id TEXT NOT NULL,
+      user_id  TEXT NOT NULL,
+      added_at BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (group_id, user_id)
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ugm_user ON aaelink.user_group_members(user_id)`)
+
+  // ── Read State (conversations.mark — compound key for last-read tracking) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.read_state (
+      user_id      TEXT NOT NULL,
+      channel_id   TEXT NOT NULL,
+      last_read_at BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, channel_id)
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_read_state_ch ON aaelink.read_state(channel_id)`)
+
+  // ── Additive columns for v0.0.8 ──
+  await pool.query(`ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false`)
+  await pool.query(`ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}'`)
+  await pool.query(`ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS department TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT ''`)
+
+  // ── Audit Stream Configs (v0.0.11) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.audit_stream_configs (
+      id               TEXT PRIMARY KEY,
+      destination      TEXT NOT NULL DEFAULT 'webhook',
+      endpoint         TEXT NOT NULL DEFAULT '',
+      auth_token       TEXT NOT NULL DEFAULT '',
+      headers          JSONB NOT NULL DEFAULT '{}',
+      event_filter     JSONB NOT NULL DEFAULT '[]',
+      batch_size       INT NOT NULL DEFAULT 100,
+      poll_interval_ms INT NOT NULL DEFAULT 10000,
+      index_name       TEXT NOT NULL DEFAULT 'aaelink-audit',
+      bucket           TEXT NOT NULL DEFAULT '',
+      prefix           TEXT NOT NULL DEFAULT '',
+      is_active        BOOLEAN NOT NULL DEFAULT true,
+      created_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at       BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+
+  // ── API Keys (v0.0.12) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.api_keys (
+      id                 TEXT PRIMARY KEY,
+      name               TEXT NOT NULL DEFAULT '',
+      key_prefix         TEXT NOT NULL DEFAULT '',
+      key_hash           TEXT NOT NULL UNIQUE,
+      scopes             JSONB NOT NULL DEFAULT '["read"]',
+      user_id            TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      created_at         BIGINT NOT NULL DEFAULT 0,
+      expires_at         BIGINT,
+      last_used_at       BIGINT NOT NULL DEFAULT 0,
+      request_count      BIGINT NOT NULL DEFAULT 0,
+      rate_limit_per_min INT NOT NULL DEFAULT 60,
+      is_active          BOOLEAN NOT NULL DEFAULT true
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_user ON aaelink.api_keys(user_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON aaelink.api_keys(key_hash) WHERE is_active = true`)
 }

@@ -33,6 +33,8 @@ declare global {
       }>
       /** Desktop only: set dock/taskbar badge count. */
       setBadgeCount?: (count: number) => Promise<{ ok: boolean }>
+      /** Desktop only: show a native notification (used by notificationClient). */
+      showNotification?: (opts: { title: string; body: string; icon?: string }) => void
     }
   }
 }
