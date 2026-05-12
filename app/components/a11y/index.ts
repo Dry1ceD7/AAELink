@@ -2,4 +2,5 @@ export { TabList, TabPanel, type TabItem, type TabListProps, type TabPanelProps 
 export { ToggleButton, type ToggleButtonProps } from './ToggleButton'
 export { IconButton, type IconButtonProps } from './IconButton'
 export { useAriaLive, type AriaLivePriority, type UseAriaLiveResult } from './useAriaLive'
+export { useConfirm, type ConfirmOptions, type UseConfirmResult } from './useConfirm'
 export { tabListKeyAction, type TabOrientation, type TabListKeyAction } from './tabListKeyHandler'
