@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { Calendar, Clock, UserCheck, Plus, Check, X, Trash2, MapPin } from 'lucide-react'
+import { useConfirm } from '@/app/components/a11y'
 
 type Tab = 'calendar' | 'leave' | 'attendance'
 
@@ -98,6 +99,7 @@ function isSameLocalDate(ts: number | null | undefined, ref: Date): boolean {
 }
 
 export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [activeTab, setActiveTab] = useState<Tab>('calendar')
 
   const [events, setEvents] = useState<Event[]>([])
@@ -162,7 +164,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const handleDeleteEvent = async (id: string) => {
-    if (!confirm('Delete this event? This cannot be undone.')) return
+    if (!(await confirm({ title: 'Delete event', message: 'Delete this event? This cannot be undone.', danger: true, confirmLabel: 'Delete' }))) return
     try {
       const res = await apiFetch(`/api/calendar/events/${id}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -224,6 +226,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
   }, [attendance, todayOnly])
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--mm-border-color)', padding: '16px 24px 0', gap: 24 }}>
         <button
@@ -450,5 +453,7 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

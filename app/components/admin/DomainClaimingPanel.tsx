@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Globe, Lightbulb, Plus, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─────────────────────────────────────────────────────────────────────
    DomainClaimingPanel — Domain Verification & Auto-Capture
@@ -29,6 +30,7 @@ const statusConfig: Record<string, { bg: string; text: string; icon: string }> =
 }
 
 export default function DomainClaimingPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [domains, setDomains] = useState<Domain[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -75,7 +77,7 @@ export default function DomainClaimingPanel({ onClose }: { onClose: () => void }
   }
 
   const removeDomain = async (id: string) => {
-    if (!confirm('Remove this domain? Users will no longer be auto-captured.')) return
+    if (!(await confirm({ title: 'Remove domain', message: 'Remove this domain? Users will no longer be auto-captured.', danger: true, confirmLabel: 'Remove' }))) return
     await apiFetch('/api/admin/domains', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -87,6 +89,7 @@ export default function DomainClaimingPanel({ onClose }: { onClose: () => void }
   const dnsRecord = newDomain ? `aaelink-verify=${btoa(newDomain).slice(0, 16)}` : ''
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
@@ -217,5 +220,7 @@ export default function DomainClaimingPanel({ onClose }: { onClose: () => void }
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

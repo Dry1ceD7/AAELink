@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { Users, Search, X, Plus, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, Edit, Trash2, Hash, User, Loader2 } from 'lucide-react'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ── User Groups — Wired to /api/admin/user-groups ──────────────── */
 
@@ -18,6 +19,7 @@ interface UserGroup {
 }
 
 export default function UserGroupsPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [groups, setGroups] = useState<UserGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -54,7 +56,7 @@ export default function UserGroupsPanel({ onClose }: { onClose: () => void }) {
   }, [])
 
   const deleteGroup = useCallback(async (id: string) => {
-    if (!confirm('Delete this user group?')) return
+    if (!(await confirm({ title: 'Delete user group', message: 'Delete this user group?', danger: true, confirmLabel: 'Delete' }))) return
     setGroups(prev => prev.filter(g => g.id !== id))
     await apiFetch(`/api/admin/user-groups?id=${id}`, { method: 'DELETE' }).catch(() => {})
   }, [])
@@ -89,6 +91,7 @@ export default function UserGroupsPanel({ onClose }: { onClose: () => void }) {
   )
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -231,5 +234,7 @@ export default function UserGroupsPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

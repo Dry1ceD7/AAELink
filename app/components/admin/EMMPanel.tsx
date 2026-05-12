@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Smartphone, Bot, Laptop, Monitor, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─────────────────────────────────────────────────────────────────────
    EMMPanel — Enterprise Mobility Management
@@ -45,6 +46,7 @@ function relativeTime(ts: string | undefined): string {
 }
 
 export default function EMMPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [devices, setDevices] = useState<ManagedDevice[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'devices' | 'policies' | 'apps'>('devices')
@@ -74,7 +76,7 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
   })
 
   async function lockDevice(id: string) {
-    if (!confirm('Lock this device? The user will be signed out.')) return
+    if (!(await confirm({ title: 'Lock device', message: 'Lock this device? The user will be signed out.', confirmLabel: 'Lock' }))) return
     await apiFetch(`/api/admin/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -84,7 +86,7 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
   }
 
   async function wipeDevice(id: string) {
-    if (!confirm('REMOTE WIPE this device? This cannot be undone.')) return
+    if (!(await confirm({ title: 'Remote wipe device', message: 'REMOTE WIPE this device? This cannot be undone.', danger: true, confirmLabel: 'Wipe' }))) return
     await apiFetch(`/api/admin/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -94,6 +96,7 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
@@ -246,5 +249,7 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

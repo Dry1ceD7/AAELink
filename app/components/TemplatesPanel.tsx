@@ -5,6 +5,7 @@ import {
   FileText, Plus, Search, Trash2, Edit3, X, Loader2,
   Upload, Save, AlertCircle, Eye, Layers, Tag, ToggleLeft, ToggleRight
 } from 'lucide-react'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─── types ───────────────────────────────────────────────────────────── */
 
@@ -30,6 +31,7 @@ interface TemplatesPanelProps {
 /* ─── component ───────────────────────────────────────────────────────── */
 
 export function TemplatesPanel({ workspaceId }: TemplatesPanelProps) {
+  const { confirm, confirmDialog } = useConfirm()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -135,7 +137,7 @@ export function TemplatesPanel({ workspaceId }: TemplatesPanelProps) {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this template?')) return
+    if (!(await confirm({ title: 'Delete template', message: 'Delete this template?', danger: true, confirmLabel: 'Delete' }))) return
     await fetch('/api/templates', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -164,6 +166,7 @@ export function TemplatesPanel({ workspaceId }: TemplatesPanelProps) {
   }
 
   return (
+    <>
     <div className="module-panel templates-panel-module">
       {/* Header */}
       <div className="module-panel-header">
@@ -310,5 +313,7 @@ export function TemplatesPanel({ workspaceId }: TemplatesPanelProps) {
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

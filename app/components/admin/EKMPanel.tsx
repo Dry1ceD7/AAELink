@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { KeyRound, Cloud, Diamond, Hexagon, Lock, RotateCcw, Eye, Sparkles, FileText, Plus, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─────────────────────────────────────────────────────────────────────
    EKMPanel — Enterprise Key Management
@@ -51,6 +52,7 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 }
 
 export default function EKMPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [keys, setKeys] = useState<EncryptionKey[]>([])
   const [events, setEvents] = useState<KeyEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,7 +78,7 @@ export default function EKMPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { void load() }, [load])
 
   async function rotateKey(id: string) {
-    if (!confirm('Rotate this encryption key? Active sessions will be re-encrypted.')) return
+    if (!(await confirm({ title: 'Rotate key', message: 'Rotate this encryption key? Active sessions will be re-encrypted.', confirmLabel: 'Rotate' }))) return
     await apiFetch('/api/admin/encryption', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -86,7 +88,7 @@ export default function EKMPanel({ onClose }: { onClose: () => void }) {
   }
 
   async function revokeKey(id: string) {
-    if (!confirm('REVOKE this key? This is irreversible and may cause data loss.')) return
+    if (!(await confirm({ title: 'Revoke key', message: 'REVOKE this key? This is irreversible and may cause data loss.', danger: true, confirmLabel: 'Revoke' }))) return
     await apiFetch('/api/admin/encryption', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -96,6 +98,7 @@ export default function EKMPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
@@ -277,5 +280,7 @@ export default function EKMPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

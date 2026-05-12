@@ -5,6 +5,7 @@ import { Hash, Pin, X, Pencil, Users, Info, UserPlus, Archive, Trash2, BellOff, 
 import { apiFetch } from '@/lib/apiClient'
 import { MessageRichText } from '@/lib/messageRich'
 import { isChannelMuted, toggleMuteChannel } from '@/lib/channelMute'
+import { useConfirm } from '@/app/components/a11y'
 
 interface ChannelDetail {
   id: string
@@ -47,6 +48,7 @@ interface Props {
 }
 
 export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMuteToggled, currentUserId }: Props) {
+  const { confirm, confirmDialog } = useConfirm()
   const [info, setInfo] = useState<ChannelDetail | null>(null)
   const [pins, setPins] = useState<PinnedMessage[]>([])
   const [members, setMembers] = useState<ChannelMember[]>([])
@@ -115,6 +117,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
   }
 
   return (
+    <>
     <aside className="channel-info-panel">
       <header className="channel-info-header">
         <h2><Info size={16} /> Channel details</h2>
@@ -222,7 +225,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
               <button type="button" className="ghost-button"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center', color: '#c4510d' }}
                 onClick={async () => {
-                  if (!confirm(`Leave #${info.display_name}? You can rejoin later.`)) return
+                  if (!(await confirm({ title: 'Leave channel', message: `Leave #${info.display_name}? You can rejoin later.`, confirmLabel: 'Leave', cancelLabel: 'Stay' }))) return
                   const res = await apiFetch(
                     `/api/channel-members?channel_id=${encodeURIComponent(channelId)}&user_id=me`,
                     { method: 'DELETE' }
@@ -242,7 +245,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
               <button type="button" className="ghost-button ghost-button--danger"
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center' }}
                 onClick={async () => {
-                  if (!confirm('Are you sure you want to archive this channel?')) return
+                  if (!(await confirm({ title: 'Archive channel', message: 'Are you sure you want to archive this channel?', danger: true, confirmLabel: 'Archive' }))) return
                   const res = await apiFetch('/api/channels', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -267,7 +270,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
                   const warn = info.type === 'O'
                     ? 'Making this channel private will restrict access to invited members only. This cannot be easily undone.'
                     : 'Making this channel public will allow anyone in the workspace to join and view its history.'
-                  if (!confirm(`Convert #${info.display_name} to a ${targetType} channel?\n\n${warn}`)) return
+                  if (!(await confirm({ title: `Convert to ${targetType}`, message: `Convert #${info.display_name} to a ${targetType} channel?\n\n${warn}`, danger: info.type === 'O', confirmLabel: 'Convert' }))) return
                   const action = info.type === 'O' ? 'convert_to_private' : 'convert_to_public'
                   const res = await apiFetch('/api/channels', {
                     method: 'PATCH',
@@ -430,7 +433,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
                         style={{ fontSize: 11, color: '#c4510d' }}
                         title="Remove member"
                         onClick={async () => {
-                          if (!confirm(`Remove ${m.username} from this channel?`)) return
+                          if (!(await confirm({ title: 'Remove member', message: `Remove ${m.username} from this channel?`, danger: true, confirmLabel: 'Remove' }))) return
                           const res = await apiFetch(
                             `/api/channel-members?channel_id=${encodeURIComponent(channelId)}&user_id=${encodeURIComponent(m.user_id)}`,
                             { method: 'DELETE' }
@@ -455,5 +458,7 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
         </div>
       )}
     </aside>
+    {confirmDialog}
+    </>
   )
 }

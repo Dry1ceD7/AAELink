@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Monitor, Smartphone, Globe, Trash2, Shield, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 interface SessionRow {
   id: string
@@ -51,6 +52,7 @@ function DeviceIcon({ type }: { type: 'desktop' | 'mobile' | 'web' }) {
 }
 
 export function SessionManagementPanel() {
+  const { confirm, confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [revoking, setRevoking] = useState<string | null>(null)
@@ -69,7 +71,7 @@ export function SessionManagementPanel() {
   useEffect(() => { void load() }, [load])
 
   async function revoke(id: string) {
-    if (!confirm('Revoke this session? The device will be logged out immediately.')) return
+    if (!(await confirm({ title: 'Revoke session', message: 'Revoke this session? The device will be logged out immediately.', danger: true, confirmLabel: 'Revoke' }))) return
     setRevoking(id)
     const res = await apiFetch(`/api/auth/sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
     setRevoking(null)
@@ -77,7 +79,7 @@ export function SessionManagementPanel() {
   }
 
   async function revokeAll() {
-    if (!confirm('Revoke ALL other sessions? Every other device will be logged out.')) return
+    if (!(await confirm({ title: 'Revoke all other sessions', message: 'Revoke ALL other sessions? Every other device will be logged out.', danger: true, confirmLabel: 'Revoke all' }))) return
     setRevokingAll(true)
     const others = sessions.filter(s => !s.is_current)
     for (const s of others) {
@@ -96,6 +98,7 @@ export function SessionManagementPanel() {
   }
 
   return (
+    <>
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
@@ -166,5 +169,7 @@ export function SessionManagementPanel() {
         </p>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

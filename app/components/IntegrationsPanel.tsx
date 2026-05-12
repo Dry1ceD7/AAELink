@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { Webhook, AppWindow, Plus, Trash2, Copy, Check, Lock } from 'lucide-react'
-import { TabList } from '@/app/components/a11y'
+import { TabList, useConfirm } from '@/app/components/a11y'
 
 type Tab = 'webhooks' | 'apps'
 
@@ -30,6 +30,7 @@ interface Channel {
 }
 
 export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [activeTab, setActiveTab] = useState<Tab>('webhooks')
 
   const [webhooks, setWebhooks] = useState<WebhookData[]>([])
@@ -105,7 +106,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const handleDeleteWebhook = async (id: string) => {
-    if (!confirm('Delete this webhook? Any external service still posting to its URL will start receiving 404s.')) return
+    if (!(await confirm({ title: 'Delete webhook', message: 'Delete this webhook? Any external service still posting to its URL will start receiving 404s.', danger: true, confirmLabel: 'Delete' }))) return
     try {
       const res = await apiFetch(`/api/integrations/webhooks/${id}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -153,6 +154,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <TabList
         tabs={[
@@ -289,5 +291,7 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

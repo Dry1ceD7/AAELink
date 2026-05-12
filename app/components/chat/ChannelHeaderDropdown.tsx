@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Star, BellOff, Bell, LogOut, Link2, UserPlus, Archive, Copy } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 interface Props {
   channelId: string
@@ -28,6 +29,7 @@ export const ChannelHeaderDropdown = memo(function ChannelHeaderDropdown({
   onLeaveChannel,
   onInviteToChannel,
 }: Props) {
+  const { confirm, confirmDialog } = useConfirm()
   const [open, setOpen] = useState(false)
   const [muted, setMuted] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -90,6 +92,7 @@ export const ChannelHeaderDropdown = memo(function ChannelHeaderDropdown({
   if (channelType === 'D') return null
 
   return (
+    <>
     <div className="channel-header-dropdown-wrap" ref={ref}>
       <button
         type="button"
@@ -131,7 +134,7 @@ export const ChannelHeaderDropdown = memo(function ChannelHeaderDropdown({
 
           <button type="button" className="channel-header-dropdown-item" role="menuitem"
             onClick={async () => {
-              if (!confirm(`Archive #${channelName}? Members can still view history but won't be able to post.`)) return
+              if (!(await confirm({ title: 'Archive channel', message: `Archive #${channelName}? Members can still view history but won't be able to post.`, danger: true, confirmLabel: 'Archive' }))) return
               setOpen(false)
               await apiFetch('/api/channel-info', {
                 method: 'PATCH',
@@ -151,5 +154,7 @@ export const ChannelHeaderDropdown = memo(function ChannelHeaderDropdown({
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 })

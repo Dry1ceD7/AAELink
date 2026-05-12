@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Monitor, Smartphone, Globe, Trash2, Shield, Loader2, X } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ── Session Management — View & revoke active sessions (admin module) ─ */
 
@@ -53,6 +54,7 @@ function DeviceIcon({ type }: { type: 'desktop' | 'mobile' | 'web' }) {
 }
 
 export default function SessionManagementPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [revoking, setRevoking] = useState<string | null>(null)
@@ -71,7 +73,7 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
   useEffect(() => { void load() }, [load])
 
   async function revoke(id: string) {
-    if (!confirm('Revoke this session? The device will be logged out immediately.')) return
+    if (!(await confirm({ title: 'Revoke session', message: 'Revoke this session? The device will be logged out immediately.', danger: true, confirmLabel: 'Revoke' }))) return
     setRevoking(id)
     const res = await apiFetch(`/api/auth/sessions?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
     setRevoking(null)
@@ -79,7 +81,7 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
   }
 
   async function revokeAll() {
-    if (!confirm('Revoke ALL other sessions? Every other device will be logged out.')) return
+    if (!(await confirm({ title: 'Revoke all sessions', message: 'Revoke ALL other sessions? Every other device will be logged out.', danger: true, confirmLabel: 'Revoke all' }))) return
     setRevokingAll(true)
     const others = sessions.filter(s => !s.is_current)
     for (const s of others) {
@@ -98,6 +100,7 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
   const uniqueIPs = new Set(sessions.map(s => s.ip_address).filter(Boolean)).size
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -191,5 +194,7 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
         )}
       </div>
     </div>
+    {confirmDialog}
+    </>
   )
 }

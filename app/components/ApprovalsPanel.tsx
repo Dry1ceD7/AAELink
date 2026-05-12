@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 import {
   Check, X, Clock, FileText, CheckCircle2, XCircle, Plus,
   ChevronDown, ChevronRight, Ban, MessageSquare, ArrowRight, Loader2
@@ -84,6 +85,7 @@ function fmtDate(ts: number) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [data, setData] = useState<ApprovalsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState<string | null>(null)
@@ -188,7 +190,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const cancelRequest = async (id: string) => {
-    if (!confirm('Cancel this request? This cannot be undone.')) return
+    if (!(await confirm({ title: 'Cancel request', message: 'Cancel this request? This cannot be undone.', danger: true, confirmLabel: 'Cancel request', cancelLabel: 'Keep' }))) return
     setSubmitting(id)
     try {
       const res = await apiFetch(`/api/approvals/requests/${id}`, { method: 'DELETE' })
@@ -222,6 +224,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
   const { pending_approvals = [], my_requests = [] } = data || {}
 
   return (
+    <>
     <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
       {/* ── Tab Bar + New Request Button ─────────────────────────── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -373,6 +376,8 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }
 

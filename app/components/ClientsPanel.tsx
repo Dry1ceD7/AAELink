@@ -5,6 +5,7 @@ import {
   Users, Plus, Search, Trash2, Edit3, X, Loader2, ChevronDown, ChevronUp,
   Mail, Phone, MapPin, Building2, FileText, Save, AlertCircle
 } from 'lucide-react'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─── types ───────────────────────────────────────────────────────────── */
 
@@ -33,6 +34,7 @@ interface ClientsPanelProps {
 /* ─── component ───────────────────────────────────────────────────────── */
 
 export function ClientsPanel({ workspaceId }: ClientsPanelProps) {
+  const { confirm, confirmDialog } = useConfirm()
   const [clients, setClients] = useState<ClientProfile[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -116,7 +118,7 @@ export function ClientsPanel({ workspaceId }: ClientsPanelProps) {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this client profile?')) return
+    if (!(await confirm({ title: 'Delete client', message: 'Delete this client profile?', danger: true, confirmLabel: 'Delete' }))) return
     await fetch('/api/clients', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -129,6 +131,7 @@ export function ClientsPanel({ workspaceId }: ClientsPanelProps) {
   const currentPage = Math.floor(offset / limit) + 1
 
   return (
+    <>
     <div className="module-panel clients-panel-module">
       {/* Header */}
       <div className="module-panel-header">
@@ -278,5 +281,7 @@ export function ClientsPanel({ workspaceId }: ClientsPanelProps) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

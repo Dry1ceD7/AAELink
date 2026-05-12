@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Scale, User, AlertTriangle, Package, Plus, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ─────────────────────────────────────────────────────────────────────
    LegalHoldPanel — Legal Holds & eDiscovery
@@ -31,6 +32,7 @@ const statusConfig: Record<string, { bg: string; text: string; label: string }> 
 }
 
 export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [holds, setHolds] = useState<LegalHold[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -76,7 +78,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
   }
 
   const releaseHold = async (id: string) => {
-    if (!confirm('Release this legal hold? Data will no longer be preserved.')) return
+    if (!(await confirm({ title: 'Release legal hold', message: 'Release this legal hold? Data will no longer be preserved.', danger: true, confirmLabel: 'Release' }))) return
     await apiFetch(`/api/compliance/legal-holds?hold_id=${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -86,6 +88,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
@@ -246,5 +249,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }

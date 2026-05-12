@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { SmilePlus, Upload, X, Plus, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/apiClient'
+import { useConfirm } from '@/app/components/a11y'
 
 /* ── Custom Emoji Manager — Upload & manage workspace emojis ─────── */
 
@@ -17,6 +18,7 @@ interface CustomEmoji {
 }
 
 export default function CustomEmojiPanel({ onClose }: { onClose: () => void }) {
+  const { confirm, confirmDialog } = useConfirm()
   const [emojis, setEmojis] = useState<CustomEmoji[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -54,7 +56,7 @@ export default function CustomEmojiPanel({ onClose }: { onClose: () => void }) {
     })
 
   const deleteEmoji = async (id: string) => {
-    if (!confirm('Remove this custom emoji?')) return
+    if (!(await confirm({ title: 'Remove emoji', message: 'Remove this custom emoji?', danger: true, confirmLabel: 'Remove' }))) return
     const wsId = typeof window !== 'undefined' ? localStorage.getItem('aaelink_workspace_id') || '' : ''
     await apiFetch('/api/emoji', {
       method: 'DELETE',
@@ -83,6 +85,7 @@ export default function CustomEmojiPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -160,5 +163,7 @@ export default function CustomEmojiPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </div>
+    {confirmDialog}
+    </>
   )
 }
