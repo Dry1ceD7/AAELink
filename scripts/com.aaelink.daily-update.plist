@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily headless auto-update for AAELink. Source-of-truth copy; the live agent lives at
+  ~/Library/LaunchAgents/com.aaelink.daily-update.plist.
+
+  Install:
+    cp scripts/com.aaelink.daily-update.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.aaelink.daily-update.plist 2>/dev/null
+    launchctl load   ~/Library/LaunchAgents/com.aaelink.daily-update.plist
+  Runs scripts/daily-update.sh every day at 04:22 local via a login shell (so bun/git/omc
+  are on PATH). Never expires; runs whether or not Claude is open.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aaelink.daily-update</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>bash /Users/d7y1ce/AAE/AAELink/scripts/daily-update.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>4</integer>
+    <key>Minute</key><integer>22</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/d7y1ce/AAE/AAELink/.omc/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/d7y1ce/AAE/AAELink/.omc/logs/launchd.err.log</string>
+</dict>
+</plist>
