@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertCircle, CheckCircle, Link2 } from 'lucide-react'
-import { apiFetch } from '@/lib/apiClient'
+import { apiFetch } from '@/lib/api/apiClient'
 
 export default function InvitePage() {
   const params = useParams()

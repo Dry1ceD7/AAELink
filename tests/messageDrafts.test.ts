@@ -27,7 +27,7 @@ import {
   clearDraft,
   getChannelIdsWithDrafts,
   getDraftCount,
-} from '@/lib/messageDrafts'
+} from '@/lib/messaging/messageDrafts'
 
 describe('MessageDrafts — saveDraft / getDraft / clearDraft', () => {
   beforeEach(() => {

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
+import { getPool } from '@/lib/infra/db'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { randomUUID } from 'crypto'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 async function _GET(req: NextRequest) {
   try {

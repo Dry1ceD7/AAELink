@@ -8,7 +8,7 @@ import {
   isValidTransition, getCustomFieldsForCategory,
   PRIORITY_CONFIG, STATUS_CONFIG, CATEGORY_CONFIG,
   type TicketPriority, type TicketStatus, type TicketCategory,
-} from '@/lib/slaEngine'
+} from '@/lib/enterprise/slaEngine'
 
 const HOUR = 3_600_000
 const MIN = 60_000

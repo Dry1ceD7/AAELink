@@ -2,8 +2,8 @@
  * AAELink — Notification Schedule Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { evaluateNotification, checkKeywordMatch, suppressionReason } from '@/lib/notificationSchedule'
-import type { UserPreferences } from '@/lib/userPreferences'
+import { evaluateNotification, checkKeywordMatch, suppressionReason } from '@/lib/notifications/notificationSchedule'
+import type { UserPreferences } from '@/lib/ui/userPreferences'
 
 function basePrefs(overrides: Partial<UserPreferences> = {}): UserPreferences {
   return {

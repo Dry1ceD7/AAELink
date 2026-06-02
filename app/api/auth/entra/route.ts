@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
+import { getPool } from '@/lib/infra/db'
 import { randomUUID } from 'crypto'
-import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const AUTHORITY = 'https://login.microsoftonline.com'
 const SESSION_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000
@@ -71,7 +71,7 @@ async function _GET(req: NextRequest) {
       const lastName = profileData.surname || ''
       const displayName = profileData.displayName || email.split('@')[0]
 
-      let userRes = await pool.query(`SELECT id FROM aaelink.users WHERE email = $1`, [email])
+      const userRes = await pool.query(`SELECT id FROM aaelink.users WHERE email = $1`, [email])
       let userId = ''
 
       if (userRes.rows.length === 0) {

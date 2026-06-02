@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { getBucket, getObjectBytes, getS3Client } from '@/lib/s3'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { getBucket, getObjectBytes, getS3Client } from '@/lib/infra/s3'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const STIRLING_URL = process.env.STIRLING_URL || 'http://localhost:8085'
 

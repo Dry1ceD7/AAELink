@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { Pool } from 'pg'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { type ReactionSummary, isValidReactionKey } from '@/lib/reactions'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { type ReactionSummary, isValidReactionKey } from '@/lib/messaging/reactions'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 async function summarizeForMessage(
   pool: Pool,

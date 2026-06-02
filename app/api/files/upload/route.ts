@@ -1,11 +1,11 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
 import fs from 'fs'
 import path from 'path'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB

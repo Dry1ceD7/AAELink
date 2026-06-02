@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { apiFetch } from '@/lib/apiClient'
+import { apiFetch } from '@/lib/api/apiClient'
 
 interface CreateChannelModalProps {
   open: boolean

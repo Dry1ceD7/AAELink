@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   SUPPORT_SESSION_COOKIE,
   clearSupportSessionCookie,
   readSupportVerifiedUserId,
   revokeSupportContactSessionByCookieId
-} from '@/lib/supportSession'
+} from '@/lib/auth/supportSession'
 
 /** Returns whether the current browser has a valid support (IT contact) verification. */
 async function _GET() {

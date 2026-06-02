@@ -1,6 +1,6 @@
 {
   "name": "aaelink-clean",
-  "version": "0.0.17-alpha",
+  "version": "0.0.58-alpha",
   "private": true,
   "scripts": {
     "dev": "zsh scripts/dev-lan-https-auto.zsh",
@@ -18,8 +18,8 @@
     "start:wifi": "next start -p 3040 -H 0.0.0.0",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
-    "release:build": "npm run lint && npm run type-check && npm run build",
-    "seed:platform-admin": "npx tsx scripts/seed-platform-admin.ts",
+    "release:build": "bun run lint && bun run type-check && bun run build",
+    "seed:platform-admin": "bunx tsx scripts/seed-platform-admin.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "bootstrap:local": "zsh scripts/bootstrap-local.zsh",
@@ -32,8 +32,11 @@
     "desktop:icons": "npm run icons:sync --prefix desktop",
     "desktop:build:mac": "npm run desktop:install && npm run dist:mac --prefix desktop",
     "desktop:build:win": "npm run desktop:install && npm run dist:win --prefix desktop",
-    "worker": "npx tsx lib/worker.ts",
-    "worker:dev": "npx tsx --watch lib/worker.ts",
+    "worker": "bunx tsx lib/worker.ts",
+    "worker:dev": "bunx tsx --watch lib/worker.ts",
+    "ws:gateway": "bunx tsx scripts/wsGateway.ts",
+    "ws:gateway:dev": "bunx tsx --watch scripts/wsGateway.ts",
+    "openapi": "node scripts/gen-openapi.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -62,10 +65,19 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/pg": "^8.20.0",
+    "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^10.2.1",
+    "eslint-config-next": "^16.2.6",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "happy-dom": "^20.9.0",
     "tsx": "^4.21.0",
     "typescript-eslint": "^8.59.1",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

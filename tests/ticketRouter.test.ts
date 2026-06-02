@@ -2,7 +2,7 @@
  * AAELink — Ticket Router Exhaustive Tests (pure logic — detectCategory / detectPriority)
  */
 import { describe, it, expect } from 'vitest'
-import { detectCategory, detectPriority } from '@/lib/ticketRouter'
+import { detectCategory, detectPriority } from '@/lib/enterprise/ticketRouter'
 
 // ── detectCategory ──────────────────────────────────────────────────
 

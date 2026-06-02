@@ -5,16 +5,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { AlertCircle, Download, Search, BarChart3 } from 'lucide-react'
-import { apiFetch } from '@/lib/apiClient'
-import { isPlatformAdmin, isSuperAdmin } from '@/lib/platformRole'
-import AuditLogPanel from '@/app/components/admin/AuditLogPanel'
-import { WebhookManagementPanel } from '@/app/components/admin/WebhookManagementPanel'
-import { WorkflowManagementPanel } from '@/app/components/admin/WorkflowManagementPanel'
-import { DepartmentManagementPanel } from '@/app/components/admin/DepartmentManagementPanel'
-import { OAuthAppsPanel } from '@/app/components/admin/OAuthAppsPanel'
-import { MigrationPanel } from '@/app/components/admin/MigrationPanel'
-import { FunctionsPanel } from '@/app/components/admin/FunctionsPanel'
-import { ObservabilityPanel } from '@/app/components/admin/ObservabilityPanel'
+import { apiFetch } from '@/lib/api/apiClient'
+import { isPlatformAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
+import AuditLogPanel from '@/components/admin/AuditLogPanel'
+import { WebhookManagementPanel } from '@/components/admin/WebhookManagementPanel'
+import { WorkflowManagementPanel } from '@/components/admin/WorkflowManagementPanel'
+import { DepartmentManagementPanel } from '@/components/admin/DepartmentManagementPanel'
+import { OAuthAppsPanel } from '@/components/admin/OAuthAppsPanel'
+import { MigrationPanel } from '@/components/admin/MigrationPanel'
+import { FunctionsPanel } from '@/components/admin/FunctionsPanel'
+import { ObservabilityPanel } from '@/components/admin/ObservabilityPanel'
+import { TicketingSettingsPanel } from '@/components/admin/TicketingSettingsPanel'
 
 type Me = { platform_role?: string }
 
@@ -653,6 +654,11 @@ export default function AdminPage() {
           {/* ── Observability & Tracing ────────────────────────── */}
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
             <ObservabilityPanel />
+          </section>
+
+          {/* ── Ticketing — SLA & Business Hours ────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <TicketingSettingsPanel />
           </section>
           </div>
         </div>

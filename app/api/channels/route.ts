@@ -1,11 +1,11 @@
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import type { Pool } from 'pg'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { slugifySegment } from '@/lib/slug'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { slugifySegment } from '@/lib/ui/slug'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: string) {
   const { rows } = await pool.query<{ ok: number }>(
@@ -226,8 +226,7 @@ async function _POST(req: Request) {
       return NextResponse.json({ channel: { id, team_id: workspace_id, name, display_name, type: 'D', dm_peer_id: actualPeer, dm_peer_display: display_name } })
     } else {
       // Group DM (MPDM)
-      const crypto = require('crypto')
-      const nameHash = crypto.createHash('sha256').update(allIds.join(',')).digest('hex').slice(0, 40)
+      const nameHash = createHash('sha256').update(allIds.join(',')).digest('hex').slice(0, 40)
       const name = `mpdm-${nameHash}`
       
       const { rows: existing } = await pool.query<{ id: string; name: string; display_name: string; type: string }>(
@@ -345,9 +344,23 @@ async function _PATCH(req: Request) {
     }
     if (body.purpose !== undefined) {
       await pool.query(`UPDATE aaelink.channels SET purpose = $1 WHERE id = $2`, [body.purpose.slice(0, 500), channelId])
+      try {
+        await pool.query(
+          `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, '', 'system_purpose', $5, $5)`,
+          [randomUUID(), channelId, uid, body.purpose.slice(0, 500), Date.now()]
+        )
+      } catch { /* best-effort */ }
     }
     if (body.header !== undefined) {
       await pool.query(`UPDATE aaelink.channels SET header = $1 WHERE id = $2`, [body.header.slice(0, 1000), channelId])
+      try {
+        await pool.query(
+          `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, '', 'system_header', $5, $5)`,
+          [randomUUID(), channelId, uid, body.header.slice(0, 1000), Date.now()]
+        )
+      } catch { /* best-effort */ }
     }
     return NextResponse.json({ ok: true })
   }
@@ -382,11 +395,20 @@ async function _PATCH(req: Request) {
     }
   }
 
+  const now = Date.now()
+
   if (action === 'archive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = $1 WHERE id = $2`,
-      [Date.now(), channelId]
+      [now, channelId]
     )
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, '', '', 'system_archive', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
   } else if (action === 'unarchive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = 0 WHERE id = $1`,
@@ -402,9 +424,16 @@ async function _PATCH(req: Request) {
       await pool.query(
         `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
          VALUES ($1, $2, $3, 'channel.convert_to_private', $4, $5, $6)`,
-        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'O', to: 'P' }), Date.now()]
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'O', to: 'P' }), now]
       )
     } catch { /* audit log is best-effort */ }
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, 'private', '', 'system_channel_converted', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
   } else if (action === 'convert_to_public') {
     if (ch.type !== 'P') {
       return NextResponse.json({ error: 'channel_not_private' }, { status: 400 })
@@ -414,9 +443,16 @@ async function _PATCH(req: Request) {
       await pool.query(
         `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
          VALUES ($1, $2, $3, 'channel.convert_to_public', $4, $5, $6)`,
-        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'P', to: 'O' }), Date.now()]
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'P', to: 'O' }), now]
       )
     } catch { /* audit log is best-effort */ }
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, 'public', '', 'system_channel_converted', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
   }
 
   return NextResponse.json({ ok: true, action })

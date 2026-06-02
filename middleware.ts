@@ -1,55 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkLimit } from '@/lib/api/rateLimitStore'
+import { applySecurityHeaders, generateNonce } from '@/lib/auth/csp'
 
 /**
  * Next.js Edge Middleware — Request-level guardrails.
  *
- * This middleware runs on every request before hitting route handlers.
- * It provides:
- *   1. CORS headers for API routes
- *   2. Security headers (CSP, HSTS, X-Frame-Options, etc.)
- *   3. IP-based rate limiting for auth routes (login, register, account-request)
- *   4. Request ID injection for traceability
+ * - CORS for API routes
+ * - Security headers including CSP (audit-2026-05-26 CHG-004)
+ * - Rate limiting via Redis-backed cross-replica store (audit CHG-002)
+ * - Request ID injection
+ *
+ * Pre-CHG-002 history: rate limiting lived in a module-scope `Map`. Behind
+ * N replicas the effective rate was N× the configured limit. The Redis
+ * store added in `lib/rateLimitStore.ts` closes that gap; the in-process
+ * Map is the fallback when `REDIS_URL` is unset or `ioredis` is absent.
  */
-
-/* ── Rate limit store (in-memory, edge-compatible) ─────────────────────── */
-
-const rateBuckets = new Map<string, { count: number; windowEnd: number }>()
-
-function checkRateLimit(
-  key: string,
-  maxRequests: number,
-  windowMs: number
-): { ok: boolean; retryAfterMs: number } {
-  const now = Date.now()
-  const existing = rateBuckets.get(key)
-
-  if (!existing || now >= existing.windowEnd) {
-    rateBuckets.set(key, { count: 1, windowEnd: now + windowMs })
-    return { ok: true, retryAfterMs: 0 }
-  }
-
-  existing.count += 1
-  if (existing.count <= maxRequests) {
-    return { ok: true, retryAfterMs: 0 }
-  }
-
-  return { ok: false, retryAfterMs: existing.windowEnd - now }
-}
-
-// Sweep stale entries every 30s
-if (typeof globalThis !== 'undefined') {
-  const timer = setInterval(() => {
-    const now = Date.now()
-    for (const [key, bucket] of rateBuckets) {
-      if (now >= bucket.windowEnd) rateBuckets.delete(key)
-    }
-  }, 30_000)
-  if (timer && typeof timer === 'object' && 'unref' in timer) {
-    (timer as NodeJS.Timeout).unref()
-  }
-}
-
-/* ── Rate limit tiers ──────────────────────────────────────────────────── */
 
 interface RateLimitRule {
   pattern: RegExp
@@ -76,9 +41,7 @@ const RATE_LIMIT_RULES: RateLimitRule[] = [
   { pattern: /^\/api\//,                       maxRequests: 120, windowMs: 60_000 },
 ]
 
-/* ── Middleware handler ────────────────────────────────────────────────── */
-
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const response = NextResponse.next()
 
@@ -86,43 +49,31 @@ export function middleware(request: NextRequest) {
   const requestId = crypto.randomUUID()
   response.headers.set('X-Request-Id', requestId)
 
-  // ── Security headers ──
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'SAMEORIGIN')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set('X-DNS-Prefetch-Control', 'on')
-  response.headers.set(
-    'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=(), payment=()'
-  )
-
-  // Only set HSTS in production
-  if (process.env.NODE_ENV === 'production') {
-    response.headers.set(
-      'Strict-Transport-Security',
-      'max-age=63072000; includeSubDomains; preload'
-    )
-  }
+  // ── Security headers + CSP (CHG-004) ──
+  // CSP needs `'unsafe-inline'` in `style-src` for now because Tiptap and
+  // existing inline-style hits (CHG-005) still rely on it. The
+  // inline-style sweep removes that need before v0.1.0.
+  const nonce = generateNonce()
+  applySecurityHeaders(response, nonce, {
+    allowUnsafeInlineStyles: true,
+    enableHsts: process.env.NODE_ENV === 'production',
+  })
 
   // ── CORS for API routes ──
   if (pathname.startsWith('/api/')) {
     const origin = request.headers.get('origin') || ''
-    const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+    const allowedOrigins = (process.env.CORS_ORIGINS || '')
+      .split(',').map(s => s.trim()).filter(Boolean)
 
-    // Allow same-origin and configured origins
     if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       response.headers.set('Access-Control-Allow-Origin', origin || '*')
       response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
-      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id')
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, x-csrf-token')
       response.headers.set('Access-Control-Max-Age', '86400')
     }
 
-    // Preflight
     if (request.method === 'OPTIONS') {
-      return new NextResponse(null, {
-        status: 204,
-        headers: response.headers
-      })
+      return new NextResponse(null, { status: 204, headers: response.headers })
     }
 
     // ── Rate limiting (API routes only) ──
@@ -132,12 +83,11 @@ export function middleware(request: NextRequest) {
 
     for (const rule of RATE_LIMIT_RULES) {
       if (rule.pattern.test(pathname)) {
-        // For auth routes use IP, for others use IP + session approximation
         const key = `${ip}:${pathname}`
-        const { ok, retryAfterMs } = checkRateLimit(key, rule.maxRequests, rule.windowMs)
+        const { ok, retryAfterMs } = await checkLimit(key, rule.maxRequests, rule.windowMs)
 
         if (!ok) {
-          return NextResponse.json(
+          const denied = NextResponse.json(
             {
               error: 'rate_limited',
               message: 'Too many requests. Please try again later.',
@@ -154,11 +104,12 @@ export function middleware(request: NextRequest) {
               }
             }
           )
+          // Re-apply security headers on the denial response so CSP still applies.
+          return applySecurityHeaders(denied, nonce, { allowUnsafeInlineStyles: true })
         }
 
-        // Set rate limit headers on successful requests
         response.headers.set('X-RateLimit-Limit', String(rule.maxRequests))
-        break // Apply first matching rule only
+        break
       }
     }
   }

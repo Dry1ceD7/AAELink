@@ -5,7 +5,7 @@
  * and Prometheus export.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { RateLimitMetrics } from '@/lib/rateLimitMetrics'
+import { RateLimitMetrics } from '@/lib/api/rateLimitMetrics'
 
 describe('Rate Limit Metrics', () => {
   let metrics: RateLimitMetrics

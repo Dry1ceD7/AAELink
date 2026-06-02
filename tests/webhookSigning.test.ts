@@ -10,7 +10,7 @@ import {
   verifySignature,
   generateSigningSecret,
   SIGNATURE_VERSION,
-} from '@/lib/webhookSigning'
+} from '@/lib/webhooks/webhookSigning'
 
 const SECRET = 'whsec_test_secret_key_for_unit_tests'
 

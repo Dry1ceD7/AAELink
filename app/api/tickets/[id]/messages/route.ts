@@ -1,12 +1,12 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { notifyTicketReply } from '@/lib/notificationsServer'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { canViewTicket } from '@/lib/ticketAccess'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { notifyTicketReply } from '@/lib/notifications/notificationsServer'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { canViewTicket } from '@/lib/enterprise/ticketAccess'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()

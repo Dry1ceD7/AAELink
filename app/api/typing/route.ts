@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Typing Indicators API — ephemeral, in-memory (no DB persistence).

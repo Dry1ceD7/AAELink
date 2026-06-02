@@ -12,7 +12,7 @@ import {
   SENSITIVE_OPERATIONS,
   DEFAULT_SESSION_SECURITY,
   type DeviceFingerprint,
-} from '@/lib/sessionSecurity'
+} from '@/lib/auth/sessionSecurity'
 
 // ── Fingerprinting ──────────────────────────────────────────────────
 

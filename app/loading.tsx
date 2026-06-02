@@ -9,7 +9,6 @@ export default function Loading() {
       aria-labelledby="splash-label"
     >
       <div className="mm-splash-inner">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/brand/aae-logo.png"
           alt=""

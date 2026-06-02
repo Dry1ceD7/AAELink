@@ -2,7 +2,7 @@
  * AAELink — User Preferences Tests
  */
 import { describe, it, expect } from 'vitest'
-import { getAutoTimezone, getEffectiveTimezone, type UserPreferences } from '@/lib/userPreferences'
+import { getAutoTimezone, getEffectiveTimezone, type UserPreferences } from '@/lib/ui/userPreferences'
 
 describe('UserPreferences — getAutoTimezone', () => {
   it('returns a non-empty IANA timezone', () => {

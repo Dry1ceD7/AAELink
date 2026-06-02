@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Settings, SmilePlus, ShieldAlert, LogOut, BellOff, CircleDot, ChevronUp } from 'lucide-react'
-import { apiFetch } from '@/lib/apiClient'
-import { isPlatformAdmin } from '@/lib/platformRole'
+import { apiFetch } from '@/lib/api/apiClient'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 
 interface UserFooterProps {
   me: { id: string; username?: string; first_name?: string; last_name?: string; platform_role?: string; nickname?: string } | null

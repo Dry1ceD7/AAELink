@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Superpowers — verify after writes",
+  "description": "After any batch of file writes finishes, prompt the agent to run all four gates (type-check, lint, test, build) and surface any failures. Mirrors the Agent Bridge auto-review loop.",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "write"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A batch of file writes just completed. Apply the Superpowers verification discipline:\n\n1. Decide whether this batch is at a natural checkpoint (a feature/fix is functionally complete) or whether more writes are imminent. If more writes are imminent, skip this run and wait.\n2. If this is a checkpoint, run the four gates in order. Stop at the first failure:\n   - `npm run type-check`\n   - `npm run lint`\n   - `npm test`\n   - `npm run build`\n3. If any gate fails, report the failing output (truncated to the error block), do not declare success, and continue working until it passes.\n4. Only after all four exit 0, you may use the \"shipped\" message format from `.kiro/skills/superpowers-verification.md`.\n\nDo not run gates after every single edit — only at functional checkpoints."
+  },
+  "workspaceFolderName": "AAELink",
+  "shortName": "superpowers-four-gates"
+}

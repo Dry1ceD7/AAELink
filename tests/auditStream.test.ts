@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Pool } from 'pg'
-import { formatters, AuditStreamer, type AuditEvent } from '@/lib/auditStream'
+import { formatters, AuditStreamer, type AuditEvent } from '@/lib/enterprise/auditStream'
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 

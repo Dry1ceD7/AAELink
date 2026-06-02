@@ -1,10 +1,10 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { verifyPassword } from '@/lib/password'
-import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { verifyPassword } from '@/lib/auth/password'
+import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000
 

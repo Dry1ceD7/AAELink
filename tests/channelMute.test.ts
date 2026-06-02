@@ -15,7 +15,7 @@ const mockLocalStorage = {
 } satisfies Storage
 
 // Mock apiFetch to avoid real network calls
-vi.mock('@/lib/apiClient', () => ({
+vi.mock('@/lib/api/apiClient', () => ({
   apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
 }))
 
@@ -25,7 +25,7 @@ Object.defineProperty(globalThis, 'window', {
 })
 Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, writable: true })
 
-import { readMutedChannels, isChannelMuted } from '@/lib/channelMute'
+import { readMutedChannels, isChannelMuted } from '@/lib/channels/channelMute'
 
 describe('ChannelMute — readMutedChannels', () => {
   beforeEach(() => {

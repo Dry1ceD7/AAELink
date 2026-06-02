@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   REACTION_KEYS, isAllowedReactionKey, isValidReactionKey,
   reactionToEmoji, REACTION_EMOJI_MAP,
-} from '@/lib/reactions'
+} from '@/lib/messaging/reactions'
 
 describe('Reactions — isAllowedReactionKey', () => {
   it('accepts all built-in keys', () => {

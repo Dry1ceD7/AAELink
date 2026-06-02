@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { metrics } from '@/lib/tracing'
-import { readSessionUserId } from '@/lib/session'
-import { getPool } from '@/lib/db'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { metrics } from '@/lib/infra/tracing'
+import { readSessionUserId } from '@/lib/auth/session'
+import { getPool } from '@/lib/infra/db'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/admin/tracing — Observability dashboard data

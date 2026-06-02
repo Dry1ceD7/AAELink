@@ -28,4 +28,4 @@ echo ""
 echo "Listening on 0.0.0.0:3040 ..."
 echo ""
 
-exec npx next dev -p 3040 -H 0.0.0.0
+exec bunx next dev -p 3040 -H 0.0.0.0

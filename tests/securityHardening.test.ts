@@ -5,7 +5,7 @@
  * device fingerprinting, anomaly detection, and session limits.
  */
 import { describe, it, expect } from 'vitest'
-import { generateNonce, buildCspPolicy, parseCspReport } from '@/lib/csp'
+import { generateNonce, buildCspPolicy, parseCspReport } from '@/lib/auth/csp'
 import {
   generateDeviceFingerprint,
   detectAnomalies,
@@ -13,7 +13,7 @@ import {
   requiresReauth,
   isRecentlyAuthenticated,
   DEFAULT_SESSION_SECURITY,
-} from '@/lib/sessionSecurity'
+} from '@/lib/auth/sessionSecurity'
 
 // ── CSP: Nonce ───────────────────────────────────────────────────────
 

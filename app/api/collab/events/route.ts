@@ -1,10 +1,10 @@
-import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { startScheduledMessageProcessor } from '@/lib/scheduledMessageProcessor'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { startScheduledMessageProcessor } from '@/lib/infra/scheduledMessageProcessor'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // Start the scheduled message delivery processor on module load
 startScheduledMessageProcessor()

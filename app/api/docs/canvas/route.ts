@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Canvas / Collaborative Documents API — freeform structured docs within channels.
@@ -32,6 +32,39 @@ async function _GET(req: NextRequest) {
   const channelId = req.nextUrl.searchParams.get('channel_id') || ''
   const type = req.nextUrl.searchParams.get('type') || ''
   const mine = req.nextUrl.searchParams.get('mine') === 'true'
+  const id = req.nextUrl.searchParams.get('id') || ''
+
+  // Single-canvas lookup with full content_blocks (used by the editor on mount)
+  if (id) {
+    const { rows } = await pool.query(
+      `SELECT c.id, c.title, c.type, c.channel_id, c.icon, c.cover_image,
+              c.is_pinned, c.is_template, c.shared_with,
+              c.content_blocks,
+              c.word_count, c.block_count,
+              c.created_by, u.username AS author, c.created_at, c.updated_at,
+              c.last_edited_by, u2.username AS last_editor
+       FROM aaelink.canvases c
+       LEFT JOIN aaelink.users u ON u.id = c.created_by
+       LEFT JOIN aaelink.users u2 ON u2.id = c.last_edited_by
+       WHERE c.id = $1
+       LIMIT 1`,
+      [id]
+    )
+    const c = rows[0]
+    if (!c) return NextResponse.json({ error: 'canvas_not_found' }, { status: 404 })
+    // Access check: creator, channel canvas, template, or shared explicitly.
+    const sharedWith = Array.isArray(c.shared_with) ? c.shared_with : (() => { try { return JSON.parse(c.shared_with || '[]') } catch { return [] } })()
+    const allowed = c.created_by === uid || c.type === 'channel_canvas' || c.type === 'template' || (Array.isArray(sharedWith) && sharedWith.includes(uid))
+    if (!allowed) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    return NextResponse.json({
+      canvas: {
+        ...c,
+        content_blocks: typeof c.content_blocks === 'string' ? JSON.parse(c.content_blocks || '[]') : (c.content_blocks ?? []),
+        created_at: Number(c.created_at),
+        updated_at: Number(c.updated_at || 0),
+      }
+    })
+  }
 
   let where = 'WHERE 1=1'
   const params: string[] = []

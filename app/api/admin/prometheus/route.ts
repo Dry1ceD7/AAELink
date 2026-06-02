@@ -1,30 +1,84 @@
-import { NextResponse } from 'next/server'
-import { metrics } from '@/lib/tracing'
-import { getPool } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server'
+import { metrics } from '@/lib/infra/tracing'
+import { getPool } from '@/lib/infra/db'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { timingSafeEqual } from 'crypto'
 
 /**
  * Prometheus / OpenMetrics Exporter
  *
- * GET /api/admin/prometheus — exports metrics in Prometheus exposition format
+ * GET /api/admin/prometheus — exports metrics in Prometheus exposition format.
  *
- * Scrape target for Prometheus: http://<host>:3000/api/admin/prometheus
+ * Auth model (audit-2026-05-26 CRIT-002):
+ *   1. Bearer token: PROMETHEUS_SCRAPE_TOKEN env var matched against
+ *      Authorization: Bearer <token>. Used by the Prometheus scrape job.
+ *   2. Platform admin session cookie. Used by the admin UI panel.
+ *   At least one MUST succeed; otherwise 401.
+ *
+ * Pre-CRIT-002 the route was unauthenticated and exported user / message /
+ * channel counts plus per-route latency distributions. That is reconnaissance
+ * fuel for any attacker that finds the URL. The Bearer-token path keeps
+ * standard Prometheus scrape ergonomics; the session path keeps the in-app
+ * admin panel working.
+ *
+ * Scrape target for Prometheus:
+ *   curl -H "Authorization: Bearer $PROMETHEUS_SCRAPE_TOKEN" \
+ *        http://<host>:3000/api/admin/prometheus
+ *
  * Content-Type: text/plain; version=0.0.4; charset=utf-8
- *
- * Metrics exported:
- *   - aaelink_http_requests_total        (counter)
- *   - aaelink_http_errors_total          (counter)
- *   - aaelink_http_request_duration_ms   (summary p50/p95/p99)
- *   - aaelink_db_connections_total       (gauge)
- *   - aaelink_db_connections_idle        (gauge)
- *   - aaelink_db_connections_waiting     (gauge)
- *   - aaelink_uptime_seconds             (gauge)
- *   - aaelink_routes_tracked             (gauge)
- *   - aaelink_error_rate_percent         (gauge)
- *   - aaelink_users_total                (gauge)
- *   - aaelink_messages_total             (gauge)
- *   - aaelink_channels_total             (gauge)
  */
-export async function GET() {
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  if (a.length !== b.length) return false
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+  } catch {
+    return false
+  }
+}
+
+async function authorize(req: NextRequest): Promise<NextResponse | null> {
+  // ── Bearer token path (Prometheus scrape) ──
+  const expected = process.env.PROMETHEUS_SCRAPE_TOKEN?.trim() || ''
+  if (expected.length > 0) {
+    const auth = req.headers.get('authorization') || ''
+    if (auth.startsWith('Bearer ')) {
+      const provided = auth.slice('Bearer '.length).trim()
+      if (constantTimeEqual(provided, expected)) return null
+    }
+  }
+
+  // ── Session path (admin UI) ──
+  try {
+    const uid = await readSessionUserId()
+    if (uid) {
+      const pool = getPool()
+      if (pool) {
+        const { rows } = await pool.query<{ platform_role: string }>(
+          `SELECT platform_role FROM aaelink.users WHERE id = $1`,
+          [uid]
+        )
+        const role = rows[0]?.platform_role
+        if (isPlatformAdmin(role)) return null
+      }
+    }
+  } catch {
+    // fall through to 401
+  }
+
+  return NextResponse.json(
+    { error: 'unauthorized', message: 'Prometheus endpoint requires Bearer token or platform-admin session.' },
+    { status: 401 }
+  )
+}
+
+async function _GET(req: NextRequest) {
+  const denied = await authorize(req)
+  if (denied) return denied
+
   const sys = metrics.getSystemMetrics()
   const routes = metrics.getRouteMetrics()
 
@@ -143,3 +197,6 @@ export async function GET() {
     },
   })
 }
+
+// ── Traced exports ──────────────────────────────────────────────────
+export const GET = tracedRoute('GET', '/api/admin/prometheus', _GET)

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/search/messages?q=...&workspace_id=...&channel_id=...&limit=...&offset=...
@@ -23,6 +23,11 @@ async function _GET(req: NextRequest) {
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 25, 50)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
 
+  const fromUser = req.nextUrl.searchParams.get('from') || ''
+  const before   = req.nextUrl.searchParams.get('before') || ''
+  const after    = req.nextUrl.searchParams.get('after') || ''
+  const has      = req.nextUrl.searchParams.get('has') || ''
+
   const pattern = `%${q}%`
   const params: (string | number)[] = [uid, pattern]
   let idx = 3
@@ -38,6 +43,46 @@ async function _GET(req: NextRequest) {
     params.push(workspaceId)
     idx++
   }
+
+  // from:<username> — filter by author
+  let fromFilter = ''
+  if (fromUser) {
+    fromFilter = ` AND u.username = $${idx}`
+    params.push(fromUser)
+    idx++
+  }
+
+  // before:<YYYY-MM-DD> — messages before date
+  let beforeFilter = ''
+  if (before && /^\d{4}-\d{2}-\d{2}$/.test(before)) {
+    const ts = new Date(`${before}T23:59:59`).getTime()
+    beforeFilter = ` AND m.created_at <= $${idx}`
+    params.push(ts)
+    idx++
+  }
+
+  // after:<YYYY-MM-DD> — messages after date
+  let afterFilter = ''
+  if (after && /^\d{4}-\d{2}-\d{2}$/.test(after)) {
+    const ts = new Date(`${after}T00:00:00`).getTime()
+    afterFilter = ` AND m.created_at >= $${idx}`
+    params.push(ts)
+    idx++
+  }
+
+  // has:<type> — filter by content type
+  let hasFilter = ''
+  if (has === 'file' || has === 'attachment') {
+    hasFilter = ` AND EXISTS (SELECT 1 FROM aaelink.file_attachments fa WHERE fa.message_id = m.id)`
+  } else if (has === 'pin') {
+    hasFilter = ` AND EXISTS (SELECT 1 FROM aaelink.pinned_messages pm WHERE pm.message_id = m.id)`
+  } else if (has === 'reaction') {
+    hasFilter = ` AND EXISTS (SELECT 1 FROM aaelink.reactions r2 WHERE r2.message_id = m.id)`
+  } else if (has === 'link') {
+    hasFilter = ` AND m.body ~ 'https?://'`
+  }
+
+  const extraFilters = `${channelFilter}${fromFilter}${beforeFilter}${afterFilter}${hasFilter}`
 
   // Search query — join messages with channels and users,
   // filtering to channels the user has access to (public or member)
@@ -67,7 +112,7 @@ async function _GET(req: NextRequest) {
         )
         OR (c.type = 'D' AND (c.dm_user_a = $1 OR c.dm_user_b = $1))
       )
-      ${channelFilter}
+      ${extraFilters}
     ORDER BY m.created_at DESC
     LIMIT $${idx} OFFSET $${idx + 1}
   `
@@ -78,6 +123,7 @@ async function _GET(req: NextRequest) {
     SELECT COUNT(*)::int AS total
     FROM aaelink.messages m
     JOIN aaelink.channels c ON c.id = m.channel_id
+    JOIN aaelink.users u ON u.id = m.user_id
     WHERE m.body ILIKE $2
       AND c.archived_at = 0
       AND (
@@ -88,9 +134,9 @@ async function _GET(req: NextRequest) {
         )
         OR (c.type = 'D' AND (c.dm_user_a = $1 OR c.dm_user_b = $1))
       )
-      ${channelFilter}
+      ${extraFilters}
   `
-  const countParams = channelId || workspaceId ? [uid, pattern, channelId || workspaceId] : [uid, pattern]
+  const countParams = params.slice(0, idx - 1) // all params except limit/offset
 
   const [{ rows }, { rows: countRows }] = await Promise.all([
     pool.query(sql, params),

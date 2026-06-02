@@ -1,6 +1,6 @@
-import type { ChatPost } from '@/lib/realtime'
-import type { AppUser } from '@/app/components/chat/ChatMessage'
-import type { ReactionSummary } from '@/lib/reactions'
+import type { ChatPost } from '@/lib/realtime/realtime'
+import type { AppUser } from '@/components/chat/ChatMessage'
+import type { ReactionSummary } from '@/lib/messaging/reactions'
 
 export interface Channel {
   id: string

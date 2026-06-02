@@ -2,13 +2,14 @@
 
 import { useRef } from 'react'
 import { Hash, Lock, Users } from 'lucide-react'
-import { ChatMessage, type AppUser, displayName } from '@/app/components/chat/ChatMessage'
-import { Composer, type ComposerHandle } from '@/app/components/chat/Composer'
-import { TypingIndicator } from '@/app/components/chat/TypingIndicator'
-import { DateSeparator, JumpToDate } from '@/app/components/chat/DateSeparator'
-import { MessageSkeleton } from '@/app/components/chat/MessageSkeleton'
-import type { ChatPost } from '@/lib/realtime'
-import type { SlashMeUser } from '@/lib/composerSlash'
+import { ChatMessage, type AppUser, displayName } from '@/components/chat/ChatMessage'
+import { SystemMessage, isSystemPost } from '@/components/chat/SystemMessage'
+import { Composer, type ComposerHandle } from '@/components/chat/Composer'
+import { TypingIndicator } from '@/components/chat/TypingIndicator'
+import { DateSeparator, JumpToDate } from '@/components/chat/DateSeparator'
+import { MessageSkeleton } from '@/components/chat/MessageSkeleton'
+import type { ChatPost } from '@/lib/realtime/realtime'
+import type { SlashMeUser } from '@/lib/messaging/composerSlash'
 
 interface MessageTimelineProps {
   channel: { id: string; name: string; display_name: string; type?: string; dm_peer_display?: string } | null
@@ -51,6 +52,10 @@ interface MessageTimelineProps {
   onMentionClick: (username: string) => void
   /** Navigate to route */
   navigateToTicket: (ticketId: string) => void
+  /** Empty-state CTAs (audit §3.5). Callbacks are optional so single-use call sites can omit them. */
+  onAddDescription?: () => void
+  onAddMembers?: () => void
+  onAddBookmark?: () => void
 }
 
 function formatDateLabel(ts: number): string {
@@ -117,6 +122,9 @@ export function MessageTimeline({
   setNewMsgCount,
   onMentionClick,
   navigateToTicket,
+  onAddDescription,
+  onAddMembers,
+  onAddBookmark,
 }: MessageTimelineProps) {
   return (
     <>
@@ -151,7 +159,11 @@ export function MessageTimeline({
         )}
 
         {!postsLoading && posts.length === 0 && (
-          <div className="channel-intro-block" style={{ padding: '40px 20px', marginTop: 'auto' }}>
+          <section
+            className="channel-intro-block"
+            style={{ padding: '40px 20px', marginTop: 'auto' }}
+            aria-label="Channel introduction"
+          >
             <div style={{ width: '72px', height: '72px', background: 'var(--mm-sidebar-bg)', color: 'white', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', marginBottom: '20px' }}>
               {channel?.type === 'D' ? <Users size={36} /> : channel?.type === 'P' ? <Lock size={36} /> : <Hash size={36} />}
             </div>
@@ -165,7 +177,46 @@ export function MessageTimeline({
                 ? `This is the very beginning of your direct message history with ${channel.dm_peer_display || channel.display_name || channel.name}.`
                 : `This is the start of the #${channel?.display_name || channel?.name || 'channel'} channel. Say hello below!`}
             </p>
-          </div>
+
+            {/* CTA cards — only for channels (not DMs) (audit §3.5) */}
+            {channel && channel.type !== 'D' && (onAddDescription || onAddMembers || onAddBookmark) && (
+              <div style={{ marginTop: 28, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, maxWidth: 640 }}>
+                {onAddDescription && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', gap: 4 }}
+                    onClick={() => onAddDescription()}
+                  >
+                    <strong style={{ fontSize: 13 }}>Add a description</strong>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Tell members what this channel is for.</span>
+                  </button>
+                )}
+                {onAddMembers && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', gap: 4 }}
+                    onClick={() => onAddMembers()}
+                  >
+                    <strong style={{ fontSize: 13 }}>Add members</strong>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Invite teammates to join the conversation.</span>
+                  </button>
+                )}
+                {onAddBookmark && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', gap: 4 }}
+                    onClick={() => onAddBookmark()}
+                  >
+                    <strong style={{ fontSize: 13 }}>Add a bookmark</strong>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Pin a link, doc, or important resource.</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
         )}
 
         {visiblePosts.map((post, index) => {
@@ -187,7 +238,9 @@ export function MessageTimeline({
               {showDateDivider && (
                 <DateSeparator label={formatFullDateLabel(post.create_at)} />
               )}
-              {editingId === post.id ? (
+              {isSystemPost(post) ? (
+                <SystemMessage post={post} userMap={userMap} />
+              ) : editingId === post.id ? (
                 <div className={`message message--editing${isCompact && !showDateDivider ? ' message--compact' : ''}`}>
                   <Composer
                     channelId={channel?.id || ''}

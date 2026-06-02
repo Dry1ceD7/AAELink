@@ -2,7 +2,7 @@
  * AAELink — Notification Types Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { ApiNotification } from '@/lib/notificationTypes'
+import type { ApiNotification } from '@/lib/notifications/notificationTypes'
 
 describe('NotificationTypes — ApiNotification shape', () => {
   it('accepts valid notification object', () => {

@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * POST /api/channels/leave — leave a channel.
@@ -68,13 +68,10 @@ async function _POST(req: NextRequest) {
 
   // Post system message
   try {
-    const { rows: uRows } = await pool.query<{ username: string }>(
-      `SELECT username FROM aaelink.users WHERE id = $1`, [uid]
-    )
     await pool.query(
-      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, '', $5, $5)`,
-      [randomUUID(), channelId, uid, `_${uRows[0]?.username || 'Someone'} left the channel_`, Date.now()]
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+       VALUES ($1, $2, $3, '', '', 'system_leave', $4, $4)`,
+      [randomUUID(), channelId, uid, Date.now()]
     )
   } catch { /* best-effort */ }
 

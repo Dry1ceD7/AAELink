@@ -15,7 +15,7 @@ describe('CsrfClient — CSRF_COOKIE constant', () => {
 describe('CsrfClient — readCsrfTokenFromDocument (SSR)', () => {
   it('returns empty string on server', async () => {
     // In test environment without document.cookie, should return empty
-    const mod = await import('@/lib/csrfClient')
+    const mod = await import('@/lib/auth/csrfClient')
     const result = mod.readCsrfTokenFromDocument()
     expect(result).toBe('')
   })

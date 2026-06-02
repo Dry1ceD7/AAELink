@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ChannelArchivalEngine,
   DEFAULT_ARCHIVAL_POLICY,
-} from '@/lib/channelArchival'
+} from '@/lib/channels/channelArchival'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const now = Date.now()

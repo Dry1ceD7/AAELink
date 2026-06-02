@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const MAX_BODY = 32_000
 

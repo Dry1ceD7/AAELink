@@ -1,9 +1,9 @@
 'use client'
 
 import { Menu, Search, Hash, Lock, Info, Pin, BellOff, Users } from 'lucide-react'
-import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
-import { ChannelTopicInline } from '@/app/components/chat/ChannelTopicInline'
-import { NotificationsBell } from '@/app/components/NotificationsBell'
+import { ChannelHeaderDropdown } from '@/components/chat/ChannelHeaderDropdown'
+import { ChannelTopicInline } from '@/components/chat/ChannelTopicInline'
+import { NotificationsBell } from '@/components/notifications/NotificationsBell'
 
 interface ChatHeaderProps {
   channel: { id: string; name: string; display_name: string; type?: string; purpose?: string } | null

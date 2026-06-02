@@ -2,7 +2,7 @@
  * AAELink — Slash Commands Parser & Registry Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { parseSlashCommand, getSlashCommands, executeSlashCommand } from '@/lib/slashCommands'
+import { parseSlashCommand, getSlashCommands, executeSlashCommand } from '@/lib/comms/slashCommands'
 
 // ── parseSlashCommand ───────────────────────────────────────────────
 

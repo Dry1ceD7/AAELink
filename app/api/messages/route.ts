@@ -1,13 +1,13 @@
 import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { NextResponse } from 'next/server'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { notifyChannelMentions } from '@/lib/notificationsServer'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { notifyChannelMentions } from '@/lib/notifications/notificationsServer'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -113,6 +113,7 @@ async function _GET(req: Request) {
       reply_count: string
     }>(
       `SELECT m.id, m.channel_id, m.user_id, m.body AS message, m.created_at AS create_at, m.updated_at, m.root_id,
+              COALESCE(m.type, '') AS type,
               ${replySubAround} AS reply_count
        FROM aaelink.messages m
        WHERE m.channel_id = $1 AND ${ROOT_FILTER} AND m.created_at <= $2::bigint
@@ -131,6 +132,7 @@ async function _GET(req: Request) {
       reply_count: string
     }>(
       `SELECT m.id, m.channel_id, m.user_id, m.body AS message, m.created_at AS create_at, m.updated_at, m.root_id,
+              COALESCE(m.type, '') AS type,
               ${replySubAround} AS reply_count
        FROM aaelink.messages m
        WHERE m.channel_id = $1 AND ${ROOT_FILTER} AND m.created_at > $2::bigint
@@ -339,6 +341,7 @@ async function _GET(req: Request) {
       reply_count: string
     }>(
       `SELECT m.id, m.channel_id, m.user_id, m.body AS message, m.created_at AS create_at, m.updated_at, m.root_id,
+              COALESCE(m.type, '') AS type,
               ${replySubOlder} AS reply_count
        FROM aaelink.messages m
        WHERE m.channel_id = $1 AND ${ROOT_FILTER}
@@ -371,11 +374,13 @@ async function _GET(req: Request) {
   }>(
     useIncremental
       ? `SELECT m.id, m.channel_id, m.user_id, m.body AS message, m.created_at AS create_at, m.updated_at, m.root_id,
+                COALESCE(m.type, '') AS type,
                 ${replySub} AS reply_count
          FROM aaelink.messages m
          WHERE m.channel_id = $1 AND ${ROOT_FILTER} AND (m.created_at > $2 OR m.updated_at > $2)
          ORDER BY GREATEST(m.created_at, m.updated_at) ASC LIMIT 200`
       : `SELECT m.id, m.channel_id, m.user_id, m.body AS message, m.created_at AS create_at, m.updated_at, m.root_id,
+                COALESCE(m.type, '') AS type,
                 ${replySub} AS reply_count
          FROM aaelink.messages m
          WHERE m.channel_id = $1 AND ${ROOT_FILTER}

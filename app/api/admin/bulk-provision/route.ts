@@ -1,14 +1,15 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextResponse } from 'next/server'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   BulkProvisionEngine,
   parseCsv,
   type BulkUserRecord,
-} from '@/lib/bulkProvision'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { hashPassword } from '@/lib/password'
+} from '@/lib/enterprise/bulkProvision'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { hashPassword } from '@/lib/auth/password'
 
 async function requireAdmin(): Promise<{ uid: string } | NextResponse> {
   const uid = await readSessionUserId()

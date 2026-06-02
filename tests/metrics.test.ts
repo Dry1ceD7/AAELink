@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   httpRequests, httpLatency, activeSSE, messagesSent,
   serializeMetrics, startRequestTimer,
-} from '@/lib/metrics'
+} from '@/lib/infra/metrics'
 
 describe('Metrics — Counter', () => {
   it('increments counter', () => {

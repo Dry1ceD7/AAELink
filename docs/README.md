@@ -2,7 +2,7 @@
 
 Internal documentation for the AAELink enterprise application.
 
-> **v0.0.7-alpha** — 176 API routes · 109 shipped features · 100% Slack/Mattermost parity
+> **v0.0.58-alpha** — 227+ API routes · 109+ shipped features · 100% Slack/Mattermost parity
 
 ## Guides
 

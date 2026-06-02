@@ -2,7 +2,7 @@
  * AAELink — Mention Parse Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { parseMentionUsernames } from '@/lib/mentionParse'
+import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
 
 describe('MentionParse — basic extraction', () => {
   it('extracts single mention', () => {

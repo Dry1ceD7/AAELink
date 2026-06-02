@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import { AlertCircle, Eye, EyeOff, Loader2, ShieldCheck, X } from 'lucide-react'
 
-import { RequestAccessFlow } from '../components/RequestAccessFlow'
+import { RequestAccessFlow } from '@/components/modals/RequestAccessFlow'
 
 const phone = process.env.NEXT_PUBLIC_AAELINK_IT_PHONE?.trim() || ''
 const email = process.env.NEXT_PUBLIC_AAELINK_IT_EMAIL?.trim() || ''

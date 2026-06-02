@@ -1,9 +1,10 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** GET /api/messages/reactions/users?message_id=&key= — list who reacted with a given key. */
 async function _GET(req: NextRequest) {

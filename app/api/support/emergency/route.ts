@@ -1,11 +1,11 @@
 import { randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { notifySupportEmergencyStaff } from '@/lib/notificationsServer'
-import { readSessionUserId } from '@/lib/session'
-import { readSupportVerifiedUserId } from '@/lib/supportSession'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { notifySupportEmergencyStaff } from '@/lib/notifications/notificationsServer'
+import { readSessionUserId } from '@/lib/auth/session'
+import { readSupportVerifiedUserId } from '@/lib/auth/supportSession'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const MAX_BODY = 4000
 

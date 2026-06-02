@@ -2,7 +2,7 @@
  * AAELink — DND Schedule Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { formatSchedule, getDndSchedule, type DndSchedule } from '@/lib/dndSchedule'
+import { formatSchedule, getDndSchedule, type DndSchedule } from '@/lib/comms/dndSchedule'
 
 // ── formatSchedule ──────────────────────────────────────────────────
 

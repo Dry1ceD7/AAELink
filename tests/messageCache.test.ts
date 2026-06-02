@@ -2,7 +2,7 @@
  * AAELink — Message Cache Type Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { CachedPost } from '@/lib/messageCache'
+import type { CachedPost } from '@/lib/messaging/messageCache'
 
 describe('MessageCache — CachedPost shape', () => {
   it('accepts valid cached post', () => {

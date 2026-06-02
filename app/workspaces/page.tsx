@@ -5,13 +5,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
-import { apiFetch } from '@/lib/apiClient'
+import { apiFetch } from '@/lib/api/apiClient'
 import {
   buildHomePathForTeam,
   clearRememberedWorkspaceTeam,
   readRememberedWorkspaceTeam,
   rememberWorkspaceTeam
-} from '@/lib/workspaceNav'
+} from '@/lib/workspace/workspaceNav'
 
 interface Team {
   id: string

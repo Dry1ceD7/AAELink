@@ -6,11 +6,11 @@ import {
   FEATURE_FLAGS,
   isFeatureEnabledSync,
   invalidateFeatureFlagCache,
-} from '@/lib/featureFlags'
+} from '@/lib/enterprise/featureFlags'
 import {
   parseSlashCommand as _parse,
   getSlashCommands as _getCommands,
-} from '@/lib/slashCommands'
+} from '@/lib/comms/slashCommands'
 
 // ── Feature Flag Definitions ─────────────────────────────────────────
 

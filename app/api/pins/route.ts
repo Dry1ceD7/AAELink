@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** GET /api/pins?channel_id=... — list pinned messages for a channel. */
 async function _GET(req: NextRequest) {
@@ -51,19 +51,29 @@ async function _POST(req: NextRequest) {
   const { channel_id, message_id } = body
   if (!channel_id || !message_id) return NextResponse.json({ error: 'channel_id_and_message_id_required' }, { status: 400 })
 
+  const now = Date.now()
   await pool.query(
     `INSERT INTO aaelink.pinned_messages (channel_id, message_id, pinned_by, pinned_at)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (channel_id, message_id) DO NOTHING`,
-    [channel_id, message_id, uid, Date.now()]
+    [channel_id, message_id, uid, now]
   )
+
+  // System message: "X pinned a message to this channel"
+  try {
+    await pool.query(
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+       VALUES ($1, $2, $3, '', '', 'system_pin', $4, $4)`,
+      [randomUUID(), channel_id, uid, now]
+    )
+  } catch { /* best-effort */ }
 
   // Audit log
   try {
     await pool.query(
       `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, meta, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [randomUUID(), uid, 'message.pin', 'message', message_id, JSON.stringify({ channel_id }), Date.now()]
+      [randomUUID(), uid, 'message.pin', 'message', message_id, JSON.stringify({ channel_id }), now]
     )
   } catch { /* best-effort */ }
 

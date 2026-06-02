@@ -2,7 +2,7 @@
  * AAELink — Slug Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { slugifySegment } from '@/lib/slug'
+import { slugifySegment } from '@/lib/ui/slug'
 
 describe('Slug — basic transformation', () => {
   it('lowercases input', () => {

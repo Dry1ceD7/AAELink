@@ -1,12 +1,12 @@
 import { randomBytes, randomInt } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { hashPassword } from '@/lib/password'
-import { readSessionUserId } from '@/lib/session'
-import { sendContactOtpEmail, sendContactOtpSms, contactOtpDeliveryStatus } from '@/lib/sendContactOtp'
-import { supportOtpRateLimitHit } from '@/lib/supportOtpRateLimit'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { hashPassword } from '@/lib/auth/password'
+import { readSessionUserId } from '@/lib/auth/session'
+import { sendContactOtpEmail, sendContactOtpSms, contactOtpDeliveryStatus } from '@/lib/auth/sendContactOtp'
+import { supportOtpRateLimitHit } from '@/lib/auth/supportOtpRateLimit'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const OTP_MS = 10 * 60 * 1000
 

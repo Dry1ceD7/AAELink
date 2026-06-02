@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import pkg from '../../../package.json' with { type: 'json' }
 
 /**
  * API Test — Slack api.test parity.
@@ -7,13 +8,16 @@ import { tracedRoute } from '@/lib/tracedRoute'
  * GET  /api/test — basic connectivity test
  * POST /api/test — echo test with request data
  *
- * Returns: { ok: true } — confirms API is reachable.
+ * Returns: { ok: true, version, timestamp } — confirms API is reachable.
+ *
+ * The version field is read from package.json so it stays in lockstep with
+ * release notes and never drifts the way it did before v0.0.22.
  */
 async function _GET() {
   return NextResponse.json({
     ok: true,
     api: 'AAELink',
-    version: 'v0.0.8-alpha',
+    version: `v${pkg.version}`,
     timestamp: Date.now(),
   })
 }

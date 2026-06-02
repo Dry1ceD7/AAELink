@@ -1,12 +1,13 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { getS3Client, getBucket, getObjectBytes, putObjectBytes } from '@/lib/s3'
-import { batchFindReplace, type FindReplaceRule } from '@/lib/templateEngine'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { getS3Client, getBucket, getObjectBytes, putObjectBytes } from '@/lib/infra/s3'
+import { batchFindReplace, type FindReplaceRule } from '@/lib/messaging/findReplace'
 import { randomUUID } from 'crypto'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * POST /api/documents/find-replace — batch find & replace across one or more documents.

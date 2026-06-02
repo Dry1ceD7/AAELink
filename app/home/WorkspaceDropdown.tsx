@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { UserPlus, Settings, Paintbrush, Keyboard, SmilePlus, Plus, ShieldAlert, LogOut } from 'lucide-react'
-import { apiFetch } from '@/lib/apiClient'
-import { isPlatformAdmin } from '@/lib/platformRole'
+import { apiFetch } from '@/lib/api/apiClient'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 
 interface WorkspaceDropdownProps {
   open: boolean

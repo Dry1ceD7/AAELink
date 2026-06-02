@@ -21,9 +21,9 @@
  * that shares the Redis Pub/Sub bus with the Next.js API tier.
  */
 
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
-import { getPubSub, channelTopic, type PubSubEvent } from '@/lib/redisPubSub'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { getPubSub, channelTopic, type PubSubEvent } from '@/lib/realtime/redisPubSub'
 
 // ── Types ────────────────────────────────────────────────────────────
 

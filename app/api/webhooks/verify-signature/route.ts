@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   verifySignature,
   generateSigningSecret,
   SIGNATURE_HEADER,
   TIMESTAMP_HEADER,
-} from '@/lib/webhookSigning'
+} from '@/lib/webhooks/webhookSigning'
 
 // ── POST — verify a webhook signature ────────────────────────────────
 async function _POST(req: Request) {

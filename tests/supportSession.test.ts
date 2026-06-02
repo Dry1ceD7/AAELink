@@ -2,7 +2,7 @@
  * AAELink — Support Session Constants Tests
  */
 import { describe, it, expect } from 'vitest'
-import { SUPPORT_SESSION_COOKIE, supportSessionCookieOptions } from '@/lib/supportSession'
+import { SUPPORT_SESSION_COOKIE, supportSessionCookieOptions } from '@/lib/auth/supportSession'
 
 describe('SupportSession — SUPPORT_SESSION_COOKIE', () => {
   it('is AAELINK_SUPPORT_SESSION', () => {

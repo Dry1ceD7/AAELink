@@ -282,9 +282,31 @@ Workspace Roles:
 |-----------|--------|----------|
 | **SOC 2 Type II** | 🟡 In Progress | Audit logging, access control, encryption |
 | **ISO 27001** | 🔲 Planned | Security controls mapped |
+| **ISO 27017** | 🔲 Planned | Cloud security controls (BLUEPRINT § 5.5 commitment) |
+| **ISO 27018** | 🔲 Planned | PII protection in cloud (BLUEPRINT § 5.5 commitment) |
 | **GDPR** | 🟡 Partial | Data retention, right-to-erasure API |
 | **HIPAA** | 🔲 Planned | BAA-ready architecture |
 | **FedRAMP** | 🔲 Planned | Air-gapped deployment path |
+| **FINRA 17a-4** | 🔲 Planned | Immutable retention with WORM storage (BLUEPRINT § 5.5) |
+| **SEC 17a-4** | 🔲 Planned | Broker-dealer record retention (BLUEPRINT § 5.5) |
+
+#### Vulnerability SLA (BLUEPRINT § 5.5)
+
+| Severity | Acknowledge | Patch ship |
+|----------|-------------|------------|
+| Critical | 1 hour | 24 hours |
+| High | 4 hours | 7 days |
+| Medium | 1 day | 30 days |
+| Low | 5 days | 90 days |
+
+A public bug bounty programme launches at GA per BLUEPRINT § 5.5.
+
+#### Data residency regions (BLUEPRINT § 5.5)
+
+Per-workspace residency pinning across **US, EU, UK, CA, AU, JP, IN, AE, SG**.
+Today (alpha) the deployment is single-region; the residency contract is the
+GA target. Migration tracked under audit finding **CHG-010**
+(`docs/ROADMAP.yaml` post-GA block).
 
 ### 4.6 Enterprise Compliance Features
 
@@ -511,9 +533,12 @@ v0.0.3-alpha (NOW)          v0.0.8-alpha             v0.1.0-beta              v1
 | Metric | Target |
 |--------|--------|
 | Uptime SLO | ≥ 99.99% (≤ 52 min/year) |
-| p95 message fan-out | ≤ 150 ms in-region |
+| p95 message fan-out (in-region) | ≤ 150 ms |
+| p95 message fan-out (cross-region) | ≤ 400 ms (BLUEPRINT § 1.3 commitment) |
 | Search satisfaction | ≥ 70% |
 | UI input-to-paint | ≤ 30 ms median |
+| Test coverage (services) | ≥ 80% (BLUEPRINT § 5.2 commitment) |
+| Test coverage (UI) | ≥ 70% (BLUEPRINT § 5.2 commitment) |
 | Accessibility | WCAG 2.2 AA certified |
 
 ---
@@ -556,4 +581,4 @@ v0.0.3-alpha (NOW)          v0.0.8-alpha             v0.1.0-beta              v1
 ---
 
 **End of Enterprise Blueprint v2.0**
-*This document supersedes BLUEPRINT.md v1.0 and serves as the canonical reference for all architectural, security, and deployment decisions.*
+*Companion document to `docs/BLUEPRINT.md` — BLUEPRINT remains the canonical north star (audit-2026-05-26 CRIT-004 reverted the prior supersession claim, which inverted the canonicality contract). Where this document and BLUEPRINT disagree, BLUEPRINT wins; the disagreements are tracked as 🎯 Goal Drift Flags in the audit run output.*

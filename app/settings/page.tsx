@@ -1,21 +1,12 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import Link from 'next/link'
-import { SettingsShell } from '../components/SettingsShell'
-
-export default function SettingsPage() {
-  return (
-    <main className="aae-auth-page">
-      <div className="aae-auth-card aae-auth-card--wide" style={{ margin: '0 auto' }}>
-        <div className="slack-card mm-settings-page-card">
-          <p className="mm-settings-page-back">
-            <Link href="/home" className="link-button">
-              Back to app
-            </Link>
-          </p>
-          <SettingsShell variant="page" />
-        </div>
-      </div>
-    </main>
-  )
+/**
+ * Legacy `/settings` route.
+ *
+ * AAELink consolidated to a single Preferences modal in v0.0.23 to match
+ * Slack's UX. This route now redirects to `/home?prefs=1` which auto-opens
+ * the modal on the home page.
+ */
+export default function SettingsRedirect() {
+  redirect('/home?prefs=1')
 }

@@ -1,13 +1,13 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { getAdminSession } from '@/lib/adminAuth'
-import { hashPassword } from '@/lib/password'
-import { isItAdmin, isSuperAdmin } from '@/lib/platformRole'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { getAdminSession } from '@/lib/auth/adminAuth'
+import { hashPassword } from '@/lib/auth/password'
+import { isItAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
-import { autoJoinDefaultChannels } from '@/lib/defaultChannel'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { autoJoinDefaultChannels } from '@/lib/channels/defaultChannel'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const ALLOWED_ROLES = new Set(['', 'employee', 'it_employee', 'it_admin'])
 

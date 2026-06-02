@@ -12,7 +12,7 @@ import {
   getPubSub,
   resetPubSub,
   type PubSubEvent,
-} from '@/lib/redisPubSub'
+} from '@/lib/realtime/redisPubSub'
 
 // ── Topic Helpers ────────────────────────────────────────────────────
 

@@ -1,0 +1,336 @@
+/**
+ * SLA Engine — configurable response/resolution times per priority level.
+ *
+ * Default SLA targets (in milliseconds):
+ *  - critical: 1h response / 4h resolution
+ *  - high:     2h response / 8h resolution   (was "urgent")
+ *  - medium:   4h response / 24h resolution
+ *  - low:      8h response / 72h resolution
+ */
+
+export type TicketPriority = 'low' | 'medium' | 'high' | 'critical'
+export type TicketStatus = 'open' | 'pending' | 'in_progress' | 'resolved' | 'closed'
+export type TicketCategory = 'general' | 'it_support' | 'hr' | 'finance' | 'sales' | 'facilities' | 'security'
+export type TicketSource = 'ui' | 'email' | 'chat' | 'api'
+
+const HOUR = 60 * 60 * 1000
+
+export interface SlaTarget {
+  response_ms: number
+  resolution_ms: number
+}
+
+const DEFAULT_SLA: Record<TicketPriority, SlaTarget> = {
+  critical: { response_ms: 1 * HOUR, resolution_ms: 4 * HOUR },
+  high:     { response_ms: 2 * HOUR, resolution_ms: 8 * HOUR },
+  medium:   { response_ms: 4 * HOUR, resolution_ms: 24 * HOUR },
+  low:      { response_ms: 8 * HOUR, resolution_ms: 72 * HOUR },
+}
+
+export function isTicketPriority(v: string): v is TicketPriority {
+  return v === 'low' || v === 'medium' || v === 'high' || v === 'critical'
+}
+
+export function isTicketStatus(v: string): v is TicketStatus {
+  return v === 'open' || v === 'pending' || v === 'in_progress' || v === 'resolved' || v === 'closed'
+}
+
+export function isTicketCategory(v: string): v is TicketCategory {
+  return ['general', 'it_support', 'hr', 'finance', 'sales', 'facilities', 'security'].includes(v)
+}
+
+export function isTicketSource(v: string): v is TicketSource {
+  return v === 'ui' || v === 'email' || v === 'chat' || v === 'api'
+}
+
+/** Get SLA target for a given priority. */
+export function getSlaTarget(priority: TicketPriority): SlaTarget {
+  return DEFAULT_SLA[priority] || DEFAULT_SLA.medium
+}
+
+/** Calculate the SLA due timestamp given ticket creation time and priority. */
+export function calculateSlaDue(createdAt: number, priority: TicketPriority): number {
+  const target = getSlaTarget(priority)
+  return createdAt + target.resolution_ms
+}
+
+/** Determine SLA status based on current time vs due time. */
+export function slaStatus(now: number, slaDueAt: number): 'ok' | 'warning' | 'breached' | 'none' {
+  if (!slaDueAt || slaDueAt <= 0) return 'none'
+  const remaining = slaDueAt - now
+  if (remaining <= 0) return 'breached'
+  // Warning when less than 25% of total time remains
+  const total = slaDueAt - (slaDueAt - getSlaTarget('medium').resolution_ms)
+  if (remaining < total * 0.25) return 'warning'
+  return 'ok'
+}
+
+/** Format remaining time as human-readable string. */
+export function formatSlaRemaining(now: number, slaDueAt: number): string {
+  if (!slaDueAt || slaDueAt <= 0) return '—'
+  const diff = slaDueAt - now
+  if (diff <= 0) {
+    const overdue = Math.abs(diff)
+    if (overdue < HOUR) return `${Math.ceil(overdue / 60_000)}m overdue`
+    if (overdue < 24 * HOUR) return `${Math.floor(overdue / HOUR)}h overdue`
+    return `${Math.floor(overdue / (24 * HOUR))}d overdue`
+  }
+  if (diff < HOUR) return `${Math.ceil(diff / 60_000)}m left`
+  if (diff < 24 * HOUR) return `${Math.floor(diff / HOUR)}h ${Math.ceil((diff % HOUR) / 60_000)}m left`
+  return `${Math.floor(diff / (24 * HOUR))}d ${Math.floor((diff % (24 * HOUR)) / HOUR)}h left`
+}
+
+/** Valid state transitions map. */
+const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
+  open:        ['pending', 'in_progress', 'closed'],
+  pending:     ['open', 'in_progress', 'closed'],
+  in_progress: ['pending', 'resolved', 'closed'],
+  resolved:    ['open', 'in_progress', 'closed'],
+  closed:      ['open'], // reopen
+}
+
+/** Check if a status transition is valid. */
+export function isValidTransition(from: TicketStatus, to: TicketStatus): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false
+}
+
+/** Category-specific custom field definitions. */
+export interface CustomFieldDef {
+  key: string
+  label: string
+  type: 'text' | 'select' | 'number' | 'date'
+  options?: string[]
+  required?: boolean
+}
+
+const CATEGORY_FIELDS: Record<string, CustomFieldDef[]> = {
+  it_support: [
+    { key: 'device_type', label: 'Device Type', type: 'select', options: ['Laptop', 'Desktop', 'Phone', 'Printer', 'Network', 'Other'] },
+    { key: 'os', label: 'Operating System', type: 'select', options: ['Windows', 'macOS', 'Linux', 'iOS', 'Android'] },
+    { key: 'asset_tag', label: 'Asset Tag / Serial', type: 'text' },
+  ],
+  hr: [
+    { key: 'request_type', label: 'Request Type', type: 'select', options: ['Leave', 'Benefits', 'Payroll', 'Onboarding', 'Offboarding', 'Other'] },
+    { key: 'employee_id', label: 'Employee ID', type: 'text' },
+  ],
+  finance: [
+    { key: 'amount', label: 'Amount', type: 'number' },
+    { key: 'currency', label: 'Currency', type: 'select', options: ['USD', 'EUR', 'GBP', 'THB', 'JPY'] },
+    { key: 'invoice_number', label: 'Invoice Number', type: 'text' },
+  ],
+  sales: [
+    { key: 'deal_value', label: 'Deal Value', type: 'number' },
+    { key: 'client_name', label: 'Client Name', type: 'text' },
+    { key: 'stage', label: 'Stage', type: 'select', options: ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'] },
+  ],
+  facilities: [
+    { key: 'location', label: 'Building / Floor', type: 'text' },
+    { key: 'urgency_reason', label: 'Urgency Reason', type: 'text' },
+  ],
+  security: [
+    { key: 'incident_type', label: 'Incident Type', type: 'select', options: ['Access Request', 'Data Breach', 'Phishing', 'Physical Security', 'Policy Violation', 'Other'] },
+    { key: 'affected_systems', label: 'Affected Systems', type: 'text' },
+  ],
+}
+
+/** Get custom fields for a ticket category. */
+export function getCustomFieldsForCategory(category: string): CustomFieldDef[] {
+  return CATEGORY_FIELDS[category] || []
+}
+
+/** Priority display configuration. */
+export const PRIORITY_CONFIG: Record<TicketPriority, { label: string; color: string; iconKey: string }> = {
+  critical: { label: 'Critical', color: '#dc2626', iconKey: 'alert-triangle' },
+  high:     { label: 'High',     color: '#ea580c', iconKey: 'arrow-up' },
+  medium:   { label: 'Medium',   color: '#ca8a04', iconKey: 'chevron-right' },
+  low:      { label: 'Low',      color: '#16a34a', iconKey: 'arrow-down' },
+}
+
+/** Status display configuration. */
+export const STATUS_CONFIG: Record<TicketStatus, { label: string; color: string }> = {
+  open:        { label: 'Open',        color: '#3b82f6' },
+  pending:     { label: 'Pending',     color: '#f59e0b' },
+  in_progress: { label: 'In Progress', color: '#8b5cf6' },
+  resolved:    { label: 'Resolved',    color: '#22c55e' },
+  closed:      { label: 'Closed',      color: '#6b7280' },
+}
+
+export const CATEGORY_CONFIG: Record<TicketCategory, { label: string; iconKey: string }> = {
+  general:    { label: 'General',    iconKey: 'clipboard-list' },
+  it_support: { label: 'IT Support', iconKey: 'monitor' },
+  hr:         { label: 'HR',         iconKey: 'users' },
+  finance:    { label: 'Finance',    iconKey: 'wallet' },
+  sales:      { label: 'Sales',      iconKey: 'trending-up' },
+  facilities: { label: 'Facilities', iconKey: 'building' },
+  security:   { label: 'Security',   iconKey: 'shield' },
+}
+
+// ── v0.1.0: SLA v2 — business hours + pausable clocks ────────────────────
+
+export interface SlaPolicy {
+  id: string
+  workspace_id: string
+  name: string
+  priority: TicketPriority
+  first_response_ms: number
+  resolution_ms: number
+  pause_on_status: TicketStatus[]
+  business_hours_id: string | null
+}
+
+export interface BusinessHoursWindow {
+  /** ISO weekday: 1=Mon ... 7=Sun. */
+  wday: number
+  /** Minute-of-day start (0..1439). */
+  start: number
+  /** Minute-of-day end (0..1440). */
+  end: number
+}
+
+export interface BusinessHours {
+  id: string
+  workspace_id: string
+  name: string
+  timezone: string
+  schedule: BusinessHoursWindow[]
+  /** YYYY-MM-DD strings, evaluated in `timezone`. */
+  holidays: string[]
+}
+
+/** Default 9-to-5 Mon-Fri schedule. */
+export const DEFAULT_BUSINESS_HOURS: BusinessHoursWindow[] = [
+  { wday: 1, start: 9 * 60, end: 17 * 60 },
+  { wday: 2, start: 9 * 60, end: 17 * 60 },
+  { wday: 3, start: 9 * 60, end: 17 * 60 },
+  { wday: 4, start: 9 * 60, end: 17 * 60 },
+  { wday: 5, start: 9 * 60, end: 17 * 60 },
+]
+
+interface ZonedParts { year: number; month: number; day: number; wday: number; minute: number }
+
+const PARTS_CACHE = new Map<string, Intl.DateTimeFormat>()
+function fmt(tz: string): Intl.DateTimeFormat {
+  let f = PARTS_CACHE.get(tz)
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+      weekday: 'short', hour12: false,
+    })
+    PARTS_CACHE.set(tz, f)
+  }
+  return f
+}
+
+const WDAY_MAP: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
+
+function toZoned(ms: number, tz: string): ZonedParts {
+  const parts = fmt(tz).formatToParts(new Date(ms))
+  let year = 0, month = 0, day = 0, hour = 0, minute = 0, wday = 1
+  for (const p of parts) {
+    if (p.type === 'year')    year = Number(p.value)
+    if (p.type === 'month')   month = Number(p.value)
+    if (p.type === 'day')     day = Number(p.value)
+    if (p.type === 'hour')    hour = Number(p.value) % 24
+    if (p.type === 'minute')  minute = Number(p.value)
+    if (p.type === 'weekday') wday = WDAY_MAP[p.value] ?? 1
+  }
+  return { year, month, day, wday, minute: hour * 60 + minute }
+}
+
+function ymd(p: ZonedParts): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`
+}
+
+/** Advance `startMs` by `budgetMs` of open business hours. Pure forward walk. */
+export function addBusinessMs(startMs: number, budgetMs: number, bh: BusinessHours): number {
+  if (budgetMs <= 0) return startMs
+  if (!bh.schedule.length) return startMs + budgetMs
+
+  const holidays = new Set(bh.holidays)
+  let cursor = startMs
+  let remaining = budgetMs
+  // Safety cap: walk at most ~2 years worth of minutes.
+  const SAFETY = 2 * 365 * 24 * 60
+  let iter = 0
+
+  while (remaining > 0 && iter++ < SAFETY) {
+    const z = toZoned(cursor, bh.timezone)
+    const dateKey = ymd(z)
+    const isHoliday = holidays.has(dateKey)
+    const windows = isHoliday ? [] : bh.schedule.filter(w => w.wday === z.wday)
+
+    let consumed = false
+    for (const w of windows) {
+      if (z.minute >= w.end) continue
+      const windowStartMs = w.start * 60_000
+      const windowEndMs = w.end * 60_000
+      const cursorMinuteMs = z.minute * 60_000
+      const effectiveStart = Math.max(cursorMinuteMs, windowStartMs)
+      const room = windowEndMs - effectiveStart
+      if (room <= 0) continue
+      if (effectiveStart > cursorMinuteMs) {
+        cursor += (effectiveStart - cursorMinuteMs)
+      }
+      if (remaining <= room) {
+        return cursor + remaining
+      }
+      cursor += room
+      remaining -= room
+      consumed = true
+      break
+    }
+
+    if (!consumed) {
+      // Jump to next day 00:00 local (minute-aligned, no ms slack).
+      const z2 = toZoned(cursor, bh.timezone)
+      const minutesUntilMidnight = (24 * 60) - z2.minute
+      // Safety: if already at exact midnight (minute=0) and still no window,
+      // advance a full day to guarantee forward progress.
+      cursor += (minutesUntilMidnight > 0 ? minutesUntilMidnight : 24 * 60) * 60_000
+    }
+  }
+  return cursor
+}
+
+/** Calculate SLA due using a policy + optional business hours. */
+export function calculateSlaDueV2(
+  startMs: number,
+  policy: SlaPolicy,
+  bh: BusinessHours | null
+): { first_response_due_at: number; resolution_due_at: number } {
+  if (!bh) {
+    return {
+      first_response_due_at: startMs + policy.first_response_ms,
+      resolution_due_at: startMs + policy.resolution_ms,
+    }
+  }
+  return {
+    first_response_due_at: addBusinessMs(startMs, policy.first_response_ms, bh),
+    resolution_due_at: addBusinessMs(startMs, policy.resolution_ms, bh),
+  }
+}
+
+/** Effective due time given pause history. */
+export function effectiveDue(originalDueAt: number, pausedTotalMs: number, pausedAt: number, now: number): number {
+  const pendingPause = pausedAt > 0 ? Math.max(0, now - pausedAt) : 0
+  return originalDueAt + pausedTotalMs + pendingPause
+}
+
+/** Default policy fallback when no DB-stored policy exists. */
+export function defaultPolicy(workspaceId: string, priority: TicketPriority): SlaPolicy {
+  const target = getSlaTarget(priority)
+  return {
+    id: `default-${priority}`,
+    workspace_id: workspaceId,
+    name: `Default ${priority}`,
+    priority,
+    first_response_ms: Math.max(15 * 60_000, Math.floor(target.resolution_ms / 4)),
+    resolution_ms: target.resolution_ms,
+    pause_on_status: ['pending'],
+    business_hours_id: null,
+  }
+}
+

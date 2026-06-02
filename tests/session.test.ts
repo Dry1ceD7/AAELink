@@ -2,7 +2,7 @@
  * AAELink — Session Constants Tests
  */
 import { describe, it, expect } from 'vitest'
-import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
+import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
 
 describe('Session — SESSION_COOKIE constant', () => {
   it('is AAELINK_SESSION', () => {

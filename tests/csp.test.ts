@@ -2,7 +2,7 @@
  * AAELink — CSP Policy Builder Tests
  */
 import { describe, it, expect } from 'vitest'
-import { generateNonce, buildCspPolicy, parseCspReport, type CspViolationReport } from '@/lib/csp'
+import { generateNonce, buildCspPolicy, parseCspReport, type CspViolationReport } from '@/lib/auth/csp'
 
 describe('CSP — generateNonce', () => {
   it('returns a base64 string', () => {

@@ -4,7 +4,7 @@
  * Validates key generation, hashing, scope checking, and format.
  */
 import { describe, it, expect } from 'vitest'
-import { generateApiKey, hashApiKey, keyPrefix, hasScope, type ValidatedKey } from '@/lib/apiKeys'
+import { generateApiKey, hashApiKey, keyPrefix, hasScope, type ValidatedKey } from '@/lib/api/apiKeys'
 
 // ── Key Generation ───────────────────────────────────────────────────
 

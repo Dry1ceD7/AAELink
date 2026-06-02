@@ -2,7 +2,7 @@
  * AAELink — Notification Stream Type Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { NotificationStreamPayload } from '@/lib/notificationStream'
+import type { NotificationStreamPayload } from '@/lib/notifications/notificationStream'
 
 describe('NotificationStream — NotificationStreamPayload', () => {
   it('accepts payload with unread_count', () => {

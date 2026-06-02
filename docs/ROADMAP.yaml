@@ -1,0 +1,491 @@
+# AAELink — Machine-readable roadmap
+#
+# Companion to docs/ROADMAP.md (narrative) and docs/BLUEPRINT.md (architecture).
+# Agents read this file to verify a proposed feature or story belongs to the
+# version milestone it claims. /aae-blueprint-align consults it during the
+# roadmap-version alignment check.
+#
+# Schema (informal):
+#   current_version: string                     # the version being worked on
+#   versions:
+#     <semver>:
+#       status: shipped | in-progress | planned
+#       theme: short string                     # one-liner for the milestone
+#       items:
+#         - id: kebab-case slug
+#           priority: P0 | P1 | P2
+#           title: short string
+#           description: longer string
+#           audit_section: string (optional)    # link back to audit-YYYY-MM-DD.md sections
+#           skills: [list of aaelink-* / bmad-* skill names that own this item]
+#           depends_on: [list of item ids]      # items in this or a prior version
+#
+# When a release ships, flip its status to `shipped` and add a `shipped_on`
+# date. Do not delete entries — history is part of the contract.
+
+schema_version: 1
+current_version: 0.0.58-alpha
+last_updated: 2026-05-20
+
+versions:
+  0.0.57-alpha:
+    status: shipped
+    shipped_on: 2026-05-19
+    theme: Versioned migration runner (Camp A, release 1 of 3)
+    items:
+      - id: migration-runner
+        priority: P0
+        title: ensureMigrations + synthetic baseline
+        description: lib/migrationRunner.ts with bookkeeping table, idempotent re-run, pg_advisory_lock concurrency guard, baseline detection for existing populated databases
+        skills: [aaelink-overview, aaelink-testing]
+
+  0.0.58-alpha:
+    status: in-progress
+    theme: BMAD Method dialect formalization
+    items:
+      - id: bmad-install
+        priority: P1
+        title: Install BMAD v6.7.1 BMM core
+        description: npx bmad-method install --modules bmm --tools claude-code; 44 BMAD skills land under .claude/skills/bmad-*
+        skills: [aaelink-overview]
+      - id: bmad-steering
+        priority: P1
+        title: BMAD steering file
+        description: .kiro/steering/bmad.md naming the BMAD ↔ AAELink mapping and pointing at the four newly-filled gaps
+        skills: [aaelink-overview]
+      - id: roadmap-yaml
+        priority: P1
+        title: Machine-readable roadmap
+        description: docs/ROADMAP.yaml (this file). Read by /aae-blueprint-align for roadmap-version alignment checks.
+        skills: [aaelink-blueprint]
+      - id: adr-register
+        priority: P1
+        title: ADR register + scaffolder
+        description: docs/ADR/ directory, ADR-0001 records BMAD adoption itself, /aae-adr-create slash command
+        skills: [aaelink-blueprint]
+      - id: skill-handoff-blocks
+        priority: P1
+        title: Handoff blocks on every aaelink-* skill
+        description: Each skill gets `## Handoff` (Triggers / Produces / Hands off to / Gate required) so multi-agent work has explicit signal-passing
+        skills: [aaelink-overview, aaelink-api-route, aaelink-blueprint, aaelink-compliance, aaelink-feature-parity, aaelink-rbac-audit, aaelink-realtime, aaelink-testing, aaelink-ui-component]
+      - id: aaelink-analyst-skill
+        priority: P1
+        title: Dedicated requirement-elicitation skill
+        description: aaelink-analyst auto-activates on any new feature request, runs structured Q&A (user / problem / non-goals / compliance), emits a mini-PRD before /aae-feature-plan. Closes the developer-absorbing-analyst-work BMAD anti-pattern.
+        skills: [aaelink-analyst]
+      - id: story-format
+        priority: P1
+        title: Story format + scaffolder
+        description: .kiro/stories/ convention, STORY_TEMPLATE.md, /aae-story-create command. Per-story DoD instead of project-only DoD.
+        skills: [aaelink-overview]
+      - id: blueprint-align-roadmap
+        priority: P1
+        title: /aae-blueprint-align roadmap-version check
+        description: Existing alignment check extended with a step that loads docs/ROADMAP.yaml and verifies the change targets the current milestone (or has an explicit out-of-band justification)
+        skills: [aaelink-blueprint]
+
+  0.0.43-alpha:
+    status: planned
+    theme: Inline-style cleanup round 2 + typing/presence WS migration
+    items:
+      - id: inline-style-round-2
+        priority: P1
+        title: WorkflowBuilder + LegalHoldPanel + EKMPanel + TicketingSettingsPanel inline-style sweep
+        description: Reduce remaining inline style={{...}} blocks in four largest offenders
+        audit_section: 1.2
+        skills: [aaelink-ui-component]
+      - id: typing-presence-ws
+        priority: P1
+        title: Migrate typing + presence to WebSocket
+        description: Typing is HTTP polling today; presence has its own SSE stream. Both move onto the unified WS gateway.
+        audit_section: 2.1
+        skills: [aaelink-realtime]
+      - id: home-shell-disable-presence-sse
+        priority: P1
+        title: Home shell skips legacy presence SSE / typing GET poll when WS gateway is active
+        description: Reshape <TypingIndicator> and usePresenceListener to accept injected subscribers; route home-shell typing/presence WS events through the v0.0.43 applyTypingEvent / applyPresenceEvent helpers; remove the EventSource and GET poll on the WS-enabled path. Closes the deferred half of typing-presence-ws.
+        audit_section: 2.1
+        depends_on: [typing-presence-ws]
+        skills: [aaelink-realtime, aaelink-ui-component]
+        status: shipped
+        shipped_on: 2026-05-20
+      - id: replay-skip-ephemeral-topics
+        priority: P1
+        title: Replay store skips ephemeral topics
+        description: Typing has an 8s TTL; replaying typing events on reconnect produces ghost typers. Add a topic-prefix or event-type filter to the replay store so typing events are not recorded.
+        audit_section: 2.1
+        depends_on: [typing-presence-ws]
+        skills: [aaelink-realtime]
+        status: shipped
+        shipped_on: 2026-05-20
+      - id: e2e-coverage-expansion
+        priority: P1
+        title: More E2E specs
+        description: read_state, channel_update, thread reply, file upload, slash commands, RBAC denial
+        audit_section: 1.3
+        skills: [aaelink-testing]
+      - id: migrate-monolith-split
+        priority: P2
+        title: lib/migrate.ts monolith → versioned migrations
+        description: 2,380-line lib/migrate.ts split into versioned files using v0.0.57's migrationRunner
+        audit_section: 2.2
+        skills: [aaelink-overview]
+      - id: styles-css-split
+        priority: P2
+        title: app/styles.css split
+        description: 17,696-line monolith → per-feature CSS files
+        audit_section: 2.4
+        skills: [aaelink-ui-component]
+      - id: zod-typed-bodies
+        priority: P2
+        title: Zod-typed bodies for OpenAPI
+        description: Generator captures method/path today; typed handler bodies enable richer schemas
+        audit_section: 2.5
+        skills: [aaelink-api-route]
+      - id: gateway-rate-limit
+        priority: P2
+        title: Gateway-side rate limiting + topic allowlist
+        description: Per-connection inbound frame rate limit, max-subscriptions cap, and topic allowlist on the WS gateway. Bounds a misbehaving client and prevents arbitrary topic subscribes (the topic field added in ADR-0002 was previously unbounded).
+        skills: [aaelink-realtime]
+        status: shipped
+        shipped_on: 2026-05-20
+
+  0.0.20-alpha:
+    status: planned
+    theme: Alerting, E2E testing, production hardening
+    items:
+      - id: alertmanager-rules
+        priority: P0
+        title: Alertmanager rules
+        description: Error rate > 5%, P99 latency > 500ms, DB pool exhaustion alerts
+        skills: [aaelink-overview]
+      - id: e2e-full-flow
+        priority: P0
+        title: Full Playwright flows
+        description: login → channel → message → thread → search end-to-end
+        skills: [aaelink-testing]
+      - id: mtls-federation
+        priority: P0
+        title: mTLS federation
+        description: Certificate-based auth for cross-org shared channels
+        skills: [aaelink-rbac-audit, aaelink-compliance]
+      - id: audit-log-streaming
+        priority: P1
+        title: Audit log streaming
+        description: Export audit events to SIEM (Splunk, Elastic, S3)
+        skills: [aaelink-rbac-audit, aaelink-compliance]
+      - id: rate-limit-dashboard
+        priority: P1
+        title: API rate limit dashboard
+        description: Real-time rate limit metrics per route/user/IP
+        skills: [aaelink-overview]
+      - id: ci-integration
+        priority: P2
+        title: CI integration test runner
+        description: Docker Compose-based CI pipeline with PostgreSQL + MinIO
+        skills: [aaelink-testing]
+      - id: openapi-richer
+        priority: P2
+        title: Richer OpenAPI schemas
+        description: Auto-generate OpenAPI 3.1 from typed handler bodies
+        depends_on: [zod-typed-bodies]
+        skills: [aaelink-api-route]
+
+  0.1.0-beta:
+    status: planned
+    theme: Production readiness
+    items:
+      - id: k8s-helm
+        priority: P0
+        title: Kubernetes production manifests
+        description: Helm chart with horizontal pod autoscaling, ingress, cert-manager
+        skills: [aaelink-overview]
+      - id: redis-fanout-scale
+        priority: P0
+        title: Redis pub/sub fan-out at scale
+        description: Replace Postgres NOTIFY for SSE at >500 concurrent connections
+        skills: [aaelink-realtime]
+      - id: elasticsearch
+        priority: P0
+        title: Elasticsearch / OpenSearch integration
+        description: Swap SQL full-text for Elasticsearch at scale
+        skills: [aaelink-overview]
+      - id: webrtc-media
+        priority: P1
+        title: WebRTC media server
+        description: Janus/mediasoup integration for real voice/video/screen share
+        skills: [aaelink-realtime]
+      - id: pwa-mobile
+        priority: P1
+        title: PWA shell
+        description: Progressive Web App with push notifications + offline cache
+        skills: [aaelink-ui-component]
+      - id: ldap-live
+        priority: P1
+        title: LDAP live connector
+        description: Real LDAP bind/search against Active Directory
+        skills: [aaelink-rbac-audit]
+      - id: clamav-integration
+        priority: P2
+        title: ClamAV integration
+        description: Connect file scan API to live ClamAV daemon
+        skills: [aaelink-compliance]
+      - id: hsm-kms
+        priority: P2
+        title: HSM/KMS integration
+        description: Connect EKM API to AWS KMS / Azure Key Vault / HashiCorp Vault
+        skills: [aaelink-compliance]
+
+  1.0.0:
+    status: planned
+    milestone: M8
+    theme: Enterprise GA
+    items:
+      - id: native-mobile
+        priority: P0
+        milestone: M8
+        title: Native React Native iOS/Android
+        description: Push proxy (APNS/FCM), parity with web shell
+        skills: [aaelink-ui-component]
+      - id: webrtc-full
+        priority: P0
+        milestone: M8
+        title: Full WebRTC voice/video/screen share
+        description: TURN/STUN servers, recording, transcription
+        depends_on: [webrtc-media]
+        skills: [aaelink-realtime]
+      - id: soc2
+        priority: P0
+        milestone: M8
+        title: SOC 2 Type II readiness
+        description: Compliance certification audit
+        skills: [aaelink-compliance]
+      - id: federation
+        priority: P1
+        milestone: M8
+        title: Federation protocol
+        description: Cross-org message relay for shared channels
+        depends_on: [mtls-federation]
+        skills: [aaelink-realtime, aaelink-compliance]
+      - id: plugin-sdk
+        priority: P1
+        milestone: M8
+        title: Plugin SDK
+        description: Developer SDK for building/distributing AAELink plugins
+        skills: [aaelink-overview]
+      - id: marketplace
+        priority: P2
+        milestone: M8
+        title: App marketplace
+        description: Third-party integration storefront
+        depends_on: [plugin-sdk]
+        skills: [aaelink-overview]
+      - id: ai-copilot
+        priority: P2
+        milestone: M8
+        title: Built-in AI assistant (BLUEPRINT § 4.7 contract)
+        description: Tenant-isolated, opt-in, disabled in regulated profiles. "No training on your data" guarantee per BLUEPRINT § 4.7. Logs scrubbed; per-workspace opt-out; continuous offline + online A/B with safety filter.
+        skills: [aaelink-compliance]
+
+  # ─────────────────────────────────────────────────────────────────────
+  # post_ga — BLUEPRINT § 4 / § 5 architectural targets the alpha line does
+  # not yet ship. Audit-2026-05-26 CHG-010 closes 11 of 26 DRIFT findings by
+  # registering these here. Each item gets an ADR for the foundational
+  # decision. M0..M8 milestones map to BLUEPRINT § 6.1 76-week plan.
+  # ─────────────────────────────────────────────────────────────────────
+  post-ga:
+    status: planned
+    milestone: M8+
+    theme: BLUEPRINT § 4 / § 5 architectural decomposition
+    items:
+      # Architectural drifts — DRIFT-002, 003, 004, 005, 006, 007, 008, 019
+      - id: messaging-svc-extraction
+        priority: P1
+        milestone: M5
+        title: Extract messaging-svc microservice (BLUEPRINT § 4.3)
+        description: First service extracted from the Next.js BFF monolith. Closes DRIFT-002 partially.
+        adr: docs/ADR/0009-postgres-to-scylla-messages-migration.md
+        skills: [aaelink-overview, aaelink-realtime]
+      - id: realtime-gw-extraction
+        priority: P1
+        milestone: M5
+        title: Extract Elixir/OTP realtime gateway (BLUEPRINT § 4.4)
+        description: Replace the Next.js /api/ws bridge with the Elixir/OTP gateway target — ≥ 2M concurrent WS / region, NATS option, Kafka per-workspace partitioning.
+        adr: docs/ADR/0011-elixir-otp-realtime-gateway.md
+        depends_on: [redis-fanout-scale]
+        skills: [aaelink-realtime]
+      - id: scylla-messages-migration
+        priority: P1
+        milestone: M6
+        title: Migrate messages store from Postgres to ScyllaDB (BLUEPRINT § 4.5)
+        description: Write-optimized, 1M+ ops/sec/node target. Closes DRIFT-004.
+        adr: docs/ADR/0009-postgres-to-scylla-messages-migration.md
+        depends_on: [messaging-svc-extraction]
+        skills: [aaelink-overview]
+      - id: kafka-redpanda-backbone
+        priority: P1
+        milestone: M5
+        title: Kafka / Redpanda event backbone (BLUEPRINT § 4.5)
+        description: Replace Redis pub/sub with Kafka for fanout, audit streaming, and per-workspace partitioning. Closes DRIFT-005.
+        adr: docs/ADR/0010-kafka-event-backbone.md
+        depends_on: [redis-fanout-scale]
+        skills: [aaelink-realtime]
+      - id: opensearch-vector-ltr
+        priority: P1
+        milestone: M5
+        title: OpenSearch + dense vectors + LightGBM LTR (BLUEPRINT § 4.6)
+        description: Replace `0.1.0-beta.elasticsearch` with the BLUEPRINT-mandated OpenSearch + vector + LTR + RRF stack. Closes DRIFT-006 / PARITY-002.
+        depends_on: [elasticsearch]
+        skills: [aaelink-overview]
+      - id: temporal-workflows
+        priority: P2
+        milestone: M6
+        title: Temporal for durable workflows (BLUEPRINT § 4.5)
+        description: Adopt Temporal for retries, sagas, scheduled work. Replaces ad-hoc job queue. Closes DRIFT-007.
+        skills: [aaelink-overview]
+      - id: neo4j-permissions-graph
+        priority: P2
+        milestone: M6
+        title: Neo4j permissions / entity graph (BLUEPRINT § 4.5)
+        description: Closes DRIFT-008 (graph store half).
+        skills: [aaelink-rbac-audit]
+      - id: clickhouse-analytics
+        priority: P2
+        milestone: M6
+        title: ClickHouse analytics store (BLUEPRINT § 4.5)
+        description: Real-time admin / usage dashboards. Closes DRIFT-008 (analytics half).
+        skills: [aaelink-overview]
+      - id: per-region-scale-targets
+        priority: P0
+        milestone: M7
+        title: Per-region scale targets (BLUEPRINT § 5.4)
+        description: 100k workspaces / region; 250k members / workspace; 50k WS / gateway pod; 5M WS / region; 250k messages / sec / region; 10 GB/s file upload throughput.
+        depends_on: [realtime-gw-extraction, kafka-redpanda-backbone]
+        skills: [aaelink-realtime]
+      # Authorization drifts — DRIFT-015, 020
+      - id: openfga-rebac
+        priority: P1
+        milestone: M6
+        title: OpenFGA (ReBAC) + ABAC overlays (BLUEPRINT § 4.3 / § 5.5)
+        description: Replace role-hierarchy strings with relationship-based access control plus attribute overlays.
+        adr: docs/ADR/0012-openfga-rebac.md
+        skills: [aaelink-rbac-audit]
+      - id: spiffe-mtls
+        priority: P1
+        milestone: M6
+        title: mTLS + SPIFFE service identities (BLUEPRINT § 5.5)
+        description: SPIFFE/SPIRE-based identities for every service-to-service hop.
+        skills: [aaelink-rbac-audit, aaelink-compliance]
+      - id: federation-dlp-egress
+        priority: P1
+        milestone: M7
+        title: Federation DLP egress at the org boundary (BLUEPRINT § 5.5)
+        description: DLP rules apply on outbound shared-channel messages.
+        depends_on: [federation]
+        skills: [aaelink-compliance]
+      - id: federation-ethical-walls
+        priority: P1
+        milestone: M7
+        title: Federation ethical walls (BLUEPRINT § 5.5)
+        description: Block traffic between groups regulators forbid mixing.
+        depends_on: [federation]
+        skills: [aaelink-compliance]
+      - id: federation-info-barriers
+        priority: P1
+        milestone: M7
+        title: Federation information barriers (BLUEPRINT § 5.5)
+        description: Information-barrier semantics extended across federated orgs.
+        depends_on: [federation]
+        skills: [aaelink-compliance]
+      - id: federation-external-markers
+        priority: P2
+        milestone: M7
+        title: "External" markers on federated content (BLUEPRINT § 5.5)
+        description: Visual + accessibility markers identifying messages from outside the org.
+        depends_on: [federation]
+        skills: [aaelink-compliance, aaelink-ui-component]
+      # Compliance drifts — DRIFT-012, 018
+      - id: iso-27001
+        priority: P0
+        milestone: M8
+        title: ISO 27001 certification (BLUEPRINT § 5.5)
+        skills: [aaelink-compliance]
+      - id: iso-27017
+        priority: P0
+        milestone: M8
+        title: ISO 27017 cloud-security extension (BLUEPRINT § 5.5)
+        depends_on: [iso-27001]
+        skills: [aaelink-compliance]
+      - id: iso-27018
+        priority: P0
+        milestone: M8
+        title: ISO 27018 cloud PII protection (BLUEPRINT § 5.5)
+        depends_on: [iso-27001]
+        skills: [aaelink-compliance]
+      - id: hipaa
+        priority: P0
+        milestone: M8
+        title: HIPAA readiness (BLUEPRINT § 5.5)
+        skills: [aaelink-compliance]
+      - id: gdpr-ratification
+        priority: P0
+        milestone: M8
+        title: GDPR full ratification (BLUEPRINT § 5.5)
+        description: Move from current `Partial` to fully certified. Article 30 + DPIA + DPA templates.
+        skills: [aaelink-compliance]
+      - id: fedramp-path
+        priority: P1
+        milestone: M8
+        title: FedRAMP path readiness (BLUEPRINT § 5.5)
+        skills: [aaelink-compliance]
+      - id: finra-17a4
+        priority: P1
+        milestone: M8
+        title: FINRA 17a-4 immutable retention with WORM (BLUEPRINT § 5.5)
+        skills: [aaelink-compliance]
+      - id: sec-17a4
+        priority: P1
+        milestone: M8
+        title: SEC 17a-4 broker-dealer retention (BLUEPRINT § 5.5)
+        skills: [aaelink-compliance]
+      - id: bug-bounty-public
+        priority: P1
+        milestone: M8
+        title: Public bug bounty programme (BLUEPRINT § 5.5)
+        description: Launch a public bounty at GA. SLA tiers per BLUEPRINT § 5.5.
+        skills: [aaelink-compliance]
+      # Desktop drift — DRIFT-011
+      - id: desktop-tauri-migration
+        priority: P2
+        milestone: M7
+        title: desktop/ Tauri migration (BLUEPRINT § 4.2)
+        description: Spike via UPG-005; full migration here. Reuses the web bundle.
+        adr: docs/ADR/0013-electron-to-tauri-desktop.md
+        skills: [aaelink-ui-component]
+
+vulnerability_sla:
+  # Audit-2026-05-26 DRIFT-018 — BLUEPRINT § 5.5 contract.
+  critical:
+    acknowledge: 1h
+    patch_ship: 24h
+  high:
+    acknowledge: 4h
+    patch_ship: 7d
+  medium:
+    acknowledge: 1d
+    patch_ship: 30d
+  low:
+    acknowledge: 5d
+    patch_ship: 90d
+
+scalability_targets:
+  # Audit-2026-05-26 DRIFT-019 — BLUEPRINT § 5.4 contract.
+  per_region_workspaces: 100000
+  per_workspace_members: 250000
+  per_gateway_pod_websockets: 50000
+  per_region_websockets: 5000000
+  per_region_messages_per_sec: 250000
+  per_region_file_upload_gbps: 10
+  p95_in_region_fanout_ms: 150
+  p95_cross_region_fanout_ms: 400
+

@@ -5,7 +5,7 @@
  * and execution logic.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { RetentionEngine, DEFAULT_RETENTION_POLICIES, type RetentionEntity } from '@/lib/retention'
+import { RetentionEngine, DEFAULT_RETENTION_POLICIES, type RetentionEntity } from '@/lib/enterprise/retention'
 
 describe('Data Retention Engine', () => {
   let engine: RetentionEngine

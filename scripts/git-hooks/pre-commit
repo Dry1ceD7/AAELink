@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# AAELink — pre-commit four-gates check.
+#
+# Runs the same gates the CI workflow runs, but locally before the commit:
+#
+#   1. tsc --noEmit       (type-check)
+#   2. eslint .           (lint)
+#   3. vitest run         (unit tests)
+#   4. next build         (production build)
+#
+# Activate with:
+#   git config core.hooksPath scripts/git-hooks
+#
+# Or copy a single hook in:
+#   ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
+#
+# Skip a single commit with `git commit --no-verify`.
+#
+# The CI workflow at `.github/workflows/ci.yml` runs the same gates so this
+# is purely a "fail faster on the laptop" optimization. If you don't run
+# the hook, CI catches the same problems on the PR.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+run_gate() {
+  local label="$1"
+  shift
+  printf '\n[pre-commit] %s\n' "$label"
+  if ! "$@"; then
+    printf '\n[pre-commit] %s FAILED — commit aborted.\n' "$label" >&2
+    printf '             run with --no-verify to bypass.\n' >&2
+    exit 1
+  fi
+}
+
+run_gate "type-check" npm run --silent type-check
+run_gate "lint"       npm run --silent lint
+run_gate "test"       npm run --silent test
+run_gate "build"      npm run --silent build
+
+printf '\n[pre-commit] all four gates green.\n'

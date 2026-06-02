@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { serializeMetrics } from '@/lib/metrics'
-import { readSessionUserId } from '@/lib/session'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { serializeMetrics } from '@/lib/infra/metrics'
+import { readSessionUserId } from '@/lib/auth/session'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Prometheus-compatible Metrics Endpoint

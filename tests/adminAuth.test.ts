@@ -2,7 +2,7 @@
  * AAELink — Admin Auth Type Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { AdminSession } from '@/lib/adminAuth'
+import type { AdminSession } from '@/lib/auth/adminAuth'
 
 describe('AdminAuth — AdminSession type', () => {
   it('accepts valid admin session', () => {

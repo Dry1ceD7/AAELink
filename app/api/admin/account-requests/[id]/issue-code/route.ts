@@ -1,10 +1,10 @@
 import { randomInt } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { getAdminSession } from '@/lib/adminAuth'
-import { hashPassword } from '@/lib/password'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { getAdminSession } from '@/lib/auth/adminAuth'
+import { hashPassword } from '@/lib/auth/password'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const OTP_MS = 30 * 60 * 1000
 

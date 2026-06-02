@@ -12,10 +12,10 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { getPool } from '../lib/db'
-import { ensureSchema } from '../lib/migrate'
-import { hashPassword } from '../lib/password'
-import { slugifySegment } from '../lib/slug'
+import { getPool } from '../lib/infra/db'
+import { ensureSchema } from '../lib/infra/migrate'
+import { hashPassword } from '../lib/auth/password'
+import { slugifySegment } from '../lib/ui/slug'
 
 function applyEnvFile(envPath: string) {
   if (!existsSync(envPath)) return

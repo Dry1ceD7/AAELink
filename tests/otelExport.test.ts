@@ -5,7 +5,7 @@
  * sampling, and shutdown.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { SpanBuffer, type OtelSpan, type ExportResult } from '@/lib/otelExport'
+import { SpanBuffer, type OtelSpan, type ExportResult } from '@/lib/infra/otelExport'
 
 function makeSpan(overrides: Partial<OtelSpan> = {}): OtelSpan {
   return {

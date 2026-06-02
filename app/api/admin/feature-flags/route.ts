@@ -1,15 +1,16 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import {
   FEATURE_FLAGS,
   getAllFeatureFlags,
   invalidateFeatureFlagCache
-} from '@/lib/featureFlags'
+} from '@/lib/enterprise/featureFlags'
 import { randomUUID } from 'crypto'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Feature Flags Admin API — GET/PUT /api/admin/feature-flags
@@ -60,7 +61,7 @@ async function _GET() {
   const resolved = await getAllFeatureFlags()
 
   // Also fetch raw DB overrides for display
-  let dbOverrides: Record<string, boolean> = {}
+  const dbOverrides: Record<string, boolean> = {}
   try {
     const { rows } = await pool.query<{ flag_name: string; enabled: boolean }>(
       `SELECT flag_name, enabled FROM aaelink.feature_flags WHERE deleted_at IS NULL`

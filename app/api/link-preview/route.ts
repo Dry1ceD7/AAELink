@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Link Preview (URL Unfurling) — GET /api/link-preview?url=...

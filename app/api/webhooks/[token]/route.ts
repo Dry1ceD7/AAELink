@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
+import { getPool } from '@/lib/infra/db'
 import { randomUUID } from 'crypto'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // Public receiver for Incoming Webhooks.
 // External systems (HR, Finance, Jira, etc.) POST to /api/webhooks/{secret_token}

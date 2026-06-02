@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** Advance read cursor for a channel (root messages only; uses max with server value). */
 async function _POST(req: NextRequest) {

@@ -14,9 +14,10 @@
  *   expect(res.status).toBe(200)
  */
 
-import { Pool } from 'pg'
+import type { Pool } from 'pg'
 import { randomUUID } from 'crypto'
 import { NextRequest } from 'next/server'
+import { getPool } from '@/lib/infra/db'
 
 // ── Test Context ─────────────────────────────────────────────────────
 
@@ -27,15 +28,28 @@ export interface TestContext {
 
 /**
  * Create a database-backed test context.
- * Uses the test database (or falls back to dev) with a randomized schema prefix
- * to allow parallel test execution.
+ *
+ * Audit-2026-05-26 CHG-007: this used to call `new Pool({ ... max: 5 })`
+ * directly, which created a parallel pool to `lib/db.ts#getPool()` and
+ * meant migration / RBAC / audit-log tests ran against a different
+ * connection profile than production code. The fix routes the helper
+ * through `getPool()` so production and test paths share one pool. Tests
+ * that need an isolated database point at it via `TEST_DATABASE_URL` and
+ * we set `DATABASE_URL` from that for the lifetime of the test before
+ * the first `getPool()` call.
  */
 export async function createTestContext(): Promise<TestContext> {
-  const url = process.env.TEST_DATABASE_URL
-    || process.env.DATABASE_URL
-    || `postgresql://aaelink:aaelink@127.0.0.1:25432/aaelink`
+  if (process.env.TEST_DATABASE_URL && !process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL
+  }
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = 'postgresql://aaelink:aaelink@127.0.0.1:25432/aaelink'
+  }
 
-  const pool = new Pool({ connectionString: url, max: 5 })
+  const pool = getPool()
+  if (!pool) {
+    throw new Error('createTestContext(): getPool() returned null. Set DATABASE_URL or TEST_DATABASE_URL.')
+  }
 
   // Verify connection
   await pool.query('SELECT 1')
@@ -47,7 +61,9 @@ export async function createTestContext(): Promise<TestContext> {
   return {
     pool,
     cleanup: async () => {
-      await pool.end()
+      // Do NOT call pool.end() here — the pool is the singleton from
+      // `lib/db.ts`. Closing it would break every other test in the suite
+      // and any same-process API code that runs after this test.
     },
   }
 }

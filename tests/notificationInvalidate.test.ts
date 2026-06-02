@@ -6,7 +6,7 @@ import {
   AAELINK_NOTIFICATIONS_INVALIDATE,
   AAELINK_NOTIFICATIONS_BC,
   type NotificationsInvalidatePayload,
-} from '@/lib/notificationInvalidate'
+} from '@/lib/notifications/notificationInvalidate'
 
 describe('NotificationInvalidate — Constants', () => {
   it('custom event name is defined', () => {

@@ -11,7 +11,7 @@ import {
   WebhookCircuitBreaker,
   WebhookDLQ,
   DEFAULT_DLQ_CONFIG,
-} from '@/lib/webhookDlq'
+} from '@/lib/webhooks/webhookDlq'
 
 // ── Backoff ──────────────────────────────────────────────────────────
 

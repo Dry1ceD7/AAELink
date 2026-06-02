@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { createRequestLogger, generateTraceId, getTraceId } from '@/lib/logger'
+import { createRequestLogger, generateTraceId, getTraceId } from '@/lib/infra/logger'
 
 function makeReq(headers: Record<string, string> = {}): NextRequest {
   return new NextRequest('http://localhost/api/test', { headers })

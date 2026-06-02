@@ -2,7 +2,7 @@
  * AAELink — Realtime Types Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { ChatPost, FileAttachment, CollabDeletion, CollabSsePayload } from '@/lib/realtime'
+import type { ChatPost, FileAttachment, CollabDeletion, CollabSsePayload } from '@/lib/realtime/realtime'
 
 describe('Realtime — FileAttachment type', () => {
   it('accepts valid attachment', () => {
