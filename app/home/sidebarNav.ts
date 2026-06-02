@@ -1,4 +1,4 @@
-import { Home, MessageSquare, PenLine, FolderOpen, Users, AppWindow, StickyNote, Headphones, Workflow, ListChecks, Sparkles, Link2, Package, Accessibility, Activity, ClipboardList, AlignLeft, FileText, CheckSquare, Book, Calendar, SmilePlus, Puzzle, ShieldAlert, FolderArchive, Shield, LockKeyhole, Key, Scale, Globe, Smartphone, Monitor, BarChart3, PackageOpen, Bell, Bookmark, MoreHorizontal } from 'lucide-react'
+import { Home, MessageSquare, PenLine, FolderOpen, Users, AppWindow, StickyNote, Headphones, Workflow, ListChecks, Link2, Package, Accessibility, Activity, ClipboardList, AlignLeft, FileText, CheckSquare, Book, Calendar, SmilePlus, Puzzle, ShieldAlert, FolderArchive, Shield, LockKeyhole, Key, Scale, Globe, Smartphone, Monitor, BarChart3, PackageOpen, Bell, Bookmark, MoreHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -27,7 +27,6 @@ export const MORE_NAV_ITEMS: NavItem[] = [
   { module: 'huddles', label: 'Huddles', icon: Headphones, altModules: ['huddle'] },
   { module: 'workflows', label: 'Automations', icon: Workflow },
   { module: 'lists', label: 'Lists', icon: ListChecks },
-  { module: 'ai', label: 'AAELink AI', icon: Sparkles },
   { module: 'connect', label: 'AAELink Connect', icon: Link2 },
   { module: 'marketplace', label: 'Marketplace', icon: Package },
   { module: 'accessibility', label: 'Accessibility', icon: Accessibility },

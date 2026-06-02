@@ -17,7 +17,6 @@ import PeopleDirectoryPanel from '@/components/user/PeopleDirectoryPanel'
 import HuddlePanel from '@/components/workspace/HuddlePanel'
 import CallHistoryPanel from '@/components/workspace/CallHistoryPanel'
 import CanvasEditor from '@/components/shared/CanvasEditor'
-import AISummaryPanel from '@/components/shared/AISummaryPanel'
 import DataRetentionSettings from '@/components/admin/DataRetentionSettings'
 import InformationBarriers from '@/components/admin/InformationBarriers'
 import DLPSettingsPanel from '@/components/admin/DLPSettingsPanel'
@@ -187,12 +186,6 @@ export function ModuleRenderer({
       return bare(<PeopleDirectoryPanel onClose={navigateHome} onStartDM={(uid) => openDm(uid)} />)
     case 'lists':
       return bare(<SlackListPanel channelName={channelTitle} onClose={navigateHome} />)
-    case 'ai':
-      return bare(
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <AISummaryPanel channelName={channelTitle} onClose={navigateHome} />
-        </div>,
-        { style: { display: 'flex' } })
     case 'workflows':
       return bare(<WorkflowBuilder onClose={navigateHome} />)
     case 'connect':
