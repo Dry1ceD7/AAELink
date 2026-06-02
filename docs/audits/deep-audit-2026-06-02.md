@@ -412,3 +412,39 @@ customer-managed keys/KMS (L) and data residency region pinning (L).
     unblock parity work.
 
 End of Stage A. Do not begin Stage B until this report is committed.
+
+---
+
+## Stage B — resolutions (2026-06-02)
+
+Gates after Stage B: tsc 0 errors, lint 0 errors (146 warnings), 1482 passed /
+3 skipped (1485 total), `docker compose config` parses. Each fix committed
+atomically.
+
+| ID | Status | Resolution |
+|----|--------|------------|
+| C2 | Resolved | Mid-reorg tree committed as clean baseline (`2b86b1bf`). |
+| C1 | Resolved | Removed `AISummaryPanel`, `/api/assistant`, `'ai'` nav → Deferred(AI) (`d8f62e6b`). |
+| C3 | Resolved | STATE.md rewritten from reality (`c5f14993`). |
+| H1 | Resolved | Redis added to docker-compose (port 26379) (`c9ae3057`). |
+| H2 | Resolved | Root `package-lock.json` removed; `bun.lock` tracked (`c9ae3057`). |
+| H3 | Resolved | `test:integration` / `test:all` scripts added (`58f2c62f`). |
+| H4 | Resolved | pg value imports → type-only + eslint ban rule (`7975f9d4`). |
+| H5 | Partial | 8 stale audits archived; blueprint/roadmap consolidation deferred to a human "which is canonical" decision (`c5f14993`). |
+| H6 | Deferred→Stage C | D4 FTS migration belongs to the D4 epic. |
+| H7 | Re-scoped | `infra/**` kustomize deploys **Mattermost, not AAELink**; no AAELink k8s manifest exists. Authoring real manifests is a Stage C infra epic; not deleted piecemeal (would break kustomization). |
+
+Medium items (tracked, not blockers):
+- M1 re-assessed: the four knip "orphans" (`FilePreviewModal`, `ContentFlagModal`,
+  `ModuleChrome`, `SlaCountdown`) are likely **unwired parity WIP**, not junk —
+  wire or remove per the relevant Stage C epic rather than delete now.
+- New: `tests/auditShape.test.ts` now skips by design (no `docs/audit-*.md` in
+  docs root after H5) and is **obsolete** — it mandates emoji pillar headers,
+  which the zero-emoji rule forbids, and references archived `.kiro` specs.
+  Recommend retiring it. Benign skip; suite stays green.
+- M3 (bun audit moderate), M4 (oversized files), M2 (ts-prune/knip.json),
+  M6–M9: unchanged, tracked in STATE.md.
+
+Stage B exit criteria met: gates green, compose valid, dependency tree clean
+(no AI deps; 1 documented advisory), legacy archived, no duplicate/legacy files
+live. Proceeding to Stage C.
