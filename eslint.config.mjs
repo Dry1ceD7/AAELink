@@ -76,4 +76,29 @@ export default [
     files: ['lib/log.ts', 'lib/logger.ts', 'lib/tracing.ts', 'lib/auditStream.ts'],
     rules: { 'no-console': 'off' },
   },
+  // ── deep-audit-2026-06-02 H4: never import `pg` directly ────────────────
+  // Hard rule: routes and lib code use getPool() from lib/infra/db.ts. Type-only
+  // imports (`import type { Pool } from 'pg'`) are allowed for annotations.
+  {
+    files: ['app/**/*.{ts,tsx}', 'lib/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'pg',
+              message: "Use getPool() from '@/lib/infra/db' instead of importing pg directly.",
+              allowTypeImports: true,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Carve-out: the singleton pool factory is the one legitimate pg value import.
+  {
+    files: ['lib/infra/db.ts'],
+    rules: { '@typescript-eslint/no-restricted-imports': 'off' },
+  },
 ]

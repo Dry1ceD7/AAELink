@@ -17,7 +17,7 @@
  *   }, userId)
  */
 
-import { Pool } from 'pg'
+import type { Pool } from 'pg'
 import { randomUUID, createHmac } from 'crypto'
 
 /** All supported webhook event types */

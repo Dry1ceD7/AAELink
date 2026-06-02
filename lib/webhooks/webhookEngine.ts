@@ -17,7 +17,7 @@
  *   })
  */
 
-import { Pool } from 'pg'
+import type { Pool } from 'pg'
 import { createHmac, randomUUID } from 'crypto'
 import { log } from '@/lib/infra/log'
 
