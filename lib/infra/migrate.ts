@@ -2734,6 +2734,23 @@ async function migration008DeviceEmm(pool: RunnerPool) {
   )
 }
 
+/**
+ * 009 — D2 Identity: org-scoped SCIM provisioning.
+ *
+ * A SCIM connection now belongs to an organization, so provisioning enrolls the
+ * created user into that org (org_members) and deprovisioning removes them
+ * (Slack org-scope SCIM). Existing connections keep org_id NULL and behave as
+ * before (global, no org enrollment). See app/api/scim/v2/Users/route.ts.
+ *
+ * Forward-only: one additive nullable column. Idempotent.
+ */
+async function migration009ScimOrgScope(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.scim_connections
+       ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES aaelink.organizations(id) ON DELETE CASCADE`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2743,4 +2760,5 @@ const MIGRATIONS: Migration[] = [
   { id: '006_shared_workspace_channels', up: migration006SharedWorkspaceChannels },
   { id: '007_domain_claiming', up: migration007DomainClaiming },
   { id: '008_device_emm', up: migration008DeviceEmm },
+  { id: '009_scim_org_scope', up: migration009ScimOrgScope },
 ]
