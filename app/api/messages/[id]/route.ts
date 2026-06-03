@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { recordMessageEdit } from '@/lib/messaging/messageEdits'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -106,8 +107,8 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return NextResponse.json({ error: 'message_too_long' }, { status: 400 })
   }
 
-  const found = await pool.query<{ channel_id: string; user_id: string }>(
-    `SELECT channel_id, user_id FROM aaelink.messages WHERE id = $1`,
+  const found = await pool.query<{ channel_id: string; user_id: string; body: string }>(
+    `SELECT channel_id, user_id, body FROM aaelink.messages WHERE id = $1`,
     [messageId]
   )
   const row = found.rows[0]
@@ -116,6 +117,7 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!(await userCanReadChannel(pool, uid, row.channel_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
+  const previousBody = row.body
 
   const now = Date.now()
   const { rows } = await pool.query<{
@@ -139,6 +141,17 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   )
   const u = rows[0]
   if (!u) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  // Capture the pre-edit body for the message's edit history (D3).
+  if (previousBody !== message) {
+    await recordMessageEdit(pool, {
+      messageId,
+      channelId: row.channel_id,
+      editorId: uid,
+      previousBody,
+      editedAt: now,
+    }).catch(() => { /* history is best-effort, never blocks the edit */ })
+  }
 
   const rx = await reactionSummariesForMessages(pool, uid, [u.id])
   const post = rowToPost(

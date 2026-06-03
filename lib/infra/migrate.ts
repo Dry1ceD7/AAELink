@@ -2778,6 +2778,32 @@ async function migration010SavedItems(pool: RunnerPool) {
   )
 }
 
+/**
+ * 011 — D3 Messaging: message edit history.
+ *
+ * Captures the prior body each time a message is edited, so the UI can show an
+ * "edited" indicator and an edit history. One row per edit, holding the body as
+ * it was BEFORE that edit. See lib/messaging/messageEdits.ts.
+ *
+ * Forward-only: a new table. Idempotent. Indexed for per-message history.
+ */
+async function migration011MessageEdits(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.message_edits (
+       id            TEXT PRIMARY KEY,
+       message_id    TEXT NOT NULL REFERENCES aaelink.messages(id) ON DELETE CASCADE,
+       channel_id    TEXT NOT NULL,
+       editor_id     TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       previous_body TEXT NOT NULL,
+       edited_at     BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_message_edits_message
+       ON aaelink.message_edits(message_id, edited_at DESC)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2789,4 +2815,5 @@ const MIGRATIONS: Migration[] = [
   { id: '008_device_emm', up: migration008DeviceEmm },
   { id: '009_scim_org_scope', up: migration009ScimOrgScope },
   { id: '010_saved_items', up: migration010SavedItems },
+  { id: '011_message_edits', up: migration011MessageEdits },
 ]
