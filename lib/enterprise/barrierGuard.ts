@@ -38,6 +38,28 @@ export async function getActiveBarriers(workspaceId: string): Promise<Informatio
 }
 
 /**
+ * Check if a DM between two users is blocked by ANY active barrier that has
+ * block_dm === true. Fixes the first-match bug in checkBarrier which ignored
+ * block_dm on subsequent barriers.
+ */
+export async function isDmBlocked(
+  userA: string,
+  userB: string,
+  workspaceId: string
+): Promise<boolean> {
+  const barriers = await getActiveBarriers(workspaceId)
+  for (const b of barriers) {
+    if (!b.block_dm) continue
+    const aInA = b.group_a_ids.includes(userA)
+    const aInB = b.group_b_ids.includes(userA)
+    const bInA = b.group_a_ids.includes(userB)
+    const bInB = b.group_b_ids.includes(userB)
+    if ((aInA && bInB) || (aInB && bInA)) return true
+  }
+  return false
+}
+
+/**
  * Check if communication between two users is blocked by any barrier.
  * Returns the blocking barrier or null if allowed.
  */

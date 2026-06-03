@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
@@ -47,6 +48,17 @@ async function _POST() {
 
   for (const msg of due) {
     try {
+      // DLP check before delivery — block by marking status='blocked', redact by inserting masked body.
+      const dlp = await applyDlpToMessage({ content: msg.body, userId: msg.user_id, channelId: msg.channel_id })
+      if (!dlp.allowed) {
+        await pool.query(
+          `UPDATE aaelink.scheduled_messages SET status = 'blocked' WHERE id = $1`,
+          [msg.id]
+        ).catch(() => { /* ignore */ })
+        continue
+      }
+      const deliverBody = dlp.content
+
       const messageId = randomUUID()
       const sendTime = Number(msg.send_at) || now
 
@@ -54,7 +66,7 @@ async function _POST() {
       await pool.query(
         `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-        [messageId, msg.channel_id, msg.user_id, msg.body, msg.root_id || '', sendTime]
+        [messageId, msg.channel_id, msg.user_id, deliverBody, msg.root_id || '', sendTime]
       )
 
       // Mark the scheduled message as sent

@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isDmBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * Conversations Open/Close API — Slack conversations.open / conversations.close parity.
@@ -41,6 +42,21 @@ async function _POST(req: NextRequest) {
 
     const isDM = userIds.length === 2
     const type = isDM ? 'D' : 'G'
+
+    // Information barrier: block if any pair of participants is separated by a
+    // block_dm barrier (covers both direct DMs and group conversations).
+    for (let i = 0; i < userIds.length; i++) {
+      for (let j = i + 1; j < userIds.length; j++) {
+        // workspace_id is resolved from the initiating user below; pass '' for
+        // global barriers (getActiveBarriers ignores workspaceId today).
+        if (await isDmBlocked(userIds[i], userIds[j], '')) {
+          return NextResponse.json(
+            { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+            { status: 403 }
+          )
+        }
+      }
+    }
 
     // Try to find existing DM/MPIM with exactly these users
     const { rows: existingChannels } = await pool.query<{ id: string }>(`

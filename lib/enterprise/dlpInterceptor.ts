@@ -11,6 +11,9 @@ import { log } from '@/lib/infra/log'
  * (block, redact, alert, quarantine) are executed synchronously.
  */
 
+/** Cap scanned input to bound catastrophic backtracking (ReDoS guard). */
+const DLP_MAX_SCAN_LEN = 16384
+
 export type DlpAction = 'block' | 'redact' | 'alert' | 'quarantine' | 'warn'
 
 export interface DlpRule {
@@ -77,12 +80,13 @@ export function matchDlpRules(
     }
 
     let matched = false
+    const scanWindow = content.slice(0, DLP_MAX_SCAN_LEN)
     try {
       if (rule.type === 'pattern_match' || rule.type === 'regex') {
         const re = new RegExp(rule.pattern, 'gi')
-        matched = re.test(content)
-      } else if (rule.type === 'keyword') {
-        matched = content.toLowerCase().includes(rule.pattern.toLowerCase())
+        matched = re.test(scanWindow)
+      } else if (rule.type === 'keyword' || rule.type === 'keyword_block') {
+        matched = scanWindow.toLowerCase().includes(rule.pattern.toLowerCase())
       }
     } catch {
       log.error(`[dlp] invalid pattern in rule ${rule.id}: ${rule.pattern}`)
@@ -125,11 +129,16 @@ export function redactContent(content: string, violations: DlpViolation[], rules
   for (const rule of rules) {
     if (!violatedRuleIds.has(rule.id)) continue
     try {
+      const capped = out.slice(0, DLP_MAX_SCAN_LEN)
+      let replaced: string
       if (rule.type === 'pattern_match' || rule.type === 'regex') {
-        out = out.replace(new RegExp(rule.pattern, 'gi'), '[REDACTED]')
-      } else if (rule.type === 'keyword') {
-        out = out.replace(new RegExp(escapeRegex(rule.pattern), 'gi'), '[REDACTED]')
+        replaced = capped.replace(new RegExp(rule.pattern, 'gi'), '[REDACTED]')
+      } else if (rule.type === 'keyword' || rule.type === 'keyword_block') {
+        replaced = capped.replace(new RegExp(escapeRegex(rule.pattern), 'gi'), '[REDACTED]')
+      } else {
+        continue
       }
+      out = replaced + out.slice(DLP_MAX_SCAN_LEN)
     } catch { /* invalid pattern already logged by matchDlpRules */ }
   }
   return out

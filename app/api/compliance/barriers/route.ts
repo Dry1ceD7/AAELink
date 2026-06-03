@@ -82,6 +82,19 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'both_group_a_and_group_b_required' }, { status: 400 })
   }
 
+  // Reject barrier types whose membership is resolved by org hierarchy (department/group):
+  // barrierGuard compares raw user IDs, so these types silently never match and give
+  // false assurance. Block creation until membership resolution is implemented.
+  if (body.type === 'department' || body.type === 'group') {
+    return NextResponse.json(
+      {
+        error: 'barrier_type_not_supported',
+        message: 'Only custom (user-id) barriers are enforced; department/group resolution is not yet implemented.',
+      },
+      { status: 400 }
+    )
+  }
+
   const id = randomUUID()
   const now = Date.now()
   const barrierType = ['department', 'group', 'custom'].includes(body.type || '') ? body.type! : 'custom'

@@ -1,6 +1,7 @@
 import { getPool } from '@/lib/infra/db'
 import { randomUUID } from 'crypto'
 import { log } from '@/lib/infra/log'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 
 /**
  * Scheduled Message Processor — sends messages that have reached their send_at time.
@@ -39,6 +40,18 @@ async function processScheduledMessages(): Promise<number> {
   let sent = 0
   for (const row of rows) {
     try {
+      // DLP check before delivery — block by marking status='blocked', redact by inserting masked body.
+      const dlp = await applyDlpToMessage({ content: row.body, userId: row.user_id, channelId: row.channel_id })
+      if (!dlp.allowed) {
+        await pool.query(
+          `UPDATE aaelink.scheduled_messages SET status = 'blocked' WHERE id = $1`,
+          [row.id]
+        )
+        log.error('[scheduledMessages] DLP blocked scheduled message', { id: row.id })
+        continue
+      }
+      const deliverBody = dlp.content
+
       const msgId = randomUUID()
       const createAt = Number(row.send_at)
 
@@ -46,7 +59,7 @@ async function processScheduledMessages(): Promise<number> {
       await pool.query(
         `INSERT INTO aaelink.messages (id, channel_id, user_id, body, created_at, updated_at, root_id)
          VALUES ($1, $2, $3, $4, $5, $5, $6)`,
-        [msgId, row.channel_id, row.user_id, row.body, createAt, row.root_id || '']
+        [msgId, row.channel_id, row.user_id, deliverBody, createAt, row.root_id || '']
       )
 
       // Update the channel's last_post_at

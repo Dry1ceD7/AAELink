@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { recordMessageEdit } from '@/lib/messaging/messageEdits'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -122,6 +123,11 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   }
   const previousBody = row.body
 
+  // DLP check on the new content before persisting the edit.
+  const dlp = await applyDlpToMessage({ content: message, userId: uid, channelId: row.channel_id })
+  if (!dlp.allowed) return NextResponse.json({ error: 'dlp_blocked' }, { status: 403 })
+  const safeMessage = dlp.content
+
   const now = Date.now()
   const { rows } = await pool.query<{
     id: string
@@ -140,13 +146,13 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
      SELECT u.*,
             (SELECT COUNT(*)::int FROM aaelink.messages r WHERE r.channel_id = u.channel_id AND r.root_id = u.id) AS reply_count
      FROM u`,
-    [messageId, message, now, uid]
+    [messageId, safeMessage, now, uid]
   )
   const u = rows[0]
   if (!u) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
   // Capture the pre-edit body for the message's edit history (D3).
-  if (previousBody !== message) {
+  if (previousBody !== safeMessage) {
     await recordMessageEdit(pool, {
       messageId,
       channelId: row.channel_id,

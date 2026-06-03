@@ -1,6 +1,7 @@
 // keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -92,6 +93,11 @@ async function _POST(req: NextRequest) {
     forwardedBody += `\n\n${comment}`
   }
 
+  // DLP check on the forwarded body before persisting.
+  const dlp = await applyDlpToMessage({ content: forwardedBody, userId: uid, channelId: targetChannelId })
+  if (!dlp.allowed) return NextResponse.json({ error: 'dlp_blocked' }, { status: 403 })
+  const safeBody = dlp.content
+
   // Create the forwarded message
   const newId = randomUUID()
   const now = Date.now()
@@ -99,7 +105,7 @@ async function _POST(req: NextRequest) {
   await pool.query(
     `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, '', $5, $5)`,
-    [newId, targetChannelId, uid, forwardedBody, now]
+    [newId, targetChannelId, uid, safeBody, now]
   )
 
   // Record in forwarding log for analytics
