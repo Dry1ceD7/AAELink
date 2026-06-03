@@ -49,8 +49,18 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
 - Repaired the __tests__/api integration harness (stale import, wrong users/
   sessions schema, wrong cookie, CI `--dir` no-op). Added
   vitest.integration.config.ts. See C6.
-- Shipped D1 workspace discovery (migration 003 access levels +
-  /api/workspaces/discover + lib + lib-layer test). D1 discovery Gap → Done.
+- Shipped D1 workspace discovery + owner-managed access levels (migration 003 +
+  /api/workspaces/discover + PATCH /api/workspaces/:id + lib + lib-layer test).
+  D1 discovery + access levels Gap/Partial → Done.
+- Validated D9/D10 enterprise modules with DB-backed lib-layer tests (7 files,
+  175 assertions, deterministic green on fresh DB): orgAdmin, orgMembers,
+  orgPolicies, customRoles, inviteRequests, barrierGuard, workspace discovery.
+  Surfaced + fixed 4 real bugs (all in code that was dead behind the C4 guard,
+  so never exercised): custom_roles permissions TEXT[] (JSON.stringify ->
+  malformed array), TIMESTAMPTZ-vs-BIGINT-ms mismatch (custom_roles/
+  role_assignments/invite_requests), invite_requests reviewed_by vs reviewer_id,
+  org delete blocked by missing ON DELETE SET NULL on workspaces.org_id.
+  D9 roles/invites/org-admin and D10 barriers/policies now verified-working.
 
 ## Next (Stage C — build in-scope parity gaps, phase order in the directive section 7)
 - Re-validate schema-dependent "Done" routes (D9/D10/org/roles) with DB-backed
@@ -70,6 +80,16 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
   scope. Cookie-auth routes can't be tested by direct invocation. Verify
   business logic at the lib layer (as D1 discovery does) or via a running server
   (Playwright). Needs a request-context shim or a documented testing standard.
+  Concrete impact: `bun run test:integration` runs all __tests__; 7 lib-layer
+  files are green, but ~17 legacy route-invocation files are red (C7). Next
+  harness epic: add a cookies request-context shim OR migrate those route tests
+  to the lib-layer pattern. The unit gate (`bun run test`, 1485) stays green.
+- Schema convention drift (partially fixed): the v0.0.44+ enterprise tables were
+  authored with UUID ids (fixed C5) and TIMESTAMPTZ timestamps while the rest of
+  the app uses TEXT ids + BIGINT epoch-ms. Fixed the timestamp columns the libs
+  write (custom_roles/role_assignments/invite_requests); organizations/
+  org_members/org_policies keep TIMESTAMPTZ (their libs don't write ms and tests
+  pass). Audit other enterprise tables before new code writes ms into them.
 - H7 (infra): `infra/k3s` and `infra/docker-desktop` kustomize deploy MATTERMOST
   (namespace `mattermost`, mattermost image, MATTERMOST_URL), not AAELink. There
   is no AAELink Kubernetes deployment manifest. Authoring real AAELink manifests
