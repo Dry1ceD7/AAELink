@@ -30,7 +30,7 @@ async function _POST(req: NextRequest) {
 
   // Upsert read state
   await pool.query(`
-    INSERT INTO aaelink.read_state (user_id, channel_id, last_read_at)
+    INSERT INTO aaelink.channel_read_state (user_id, channel_id, last_read_at)
     VALUES ($1, $2, $3)
     ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_at = $3
   `, [uid, body.channel, lastRead])

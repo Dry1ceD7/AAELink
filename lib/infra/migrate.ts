@@ -772,16 +772,6 @@ async function migration001InitialSchema(pool: RunnerPool) {
     CREATE INDEX IF NOT EXISTS idx_channel_categories_user ON aaelink.channel_categories(user_id);
   `)
 
-  // Read state table (separate from channel_read_state for mark-as-unread)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.read_state (
-      user_id      TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
-      channel_id   TEXT NOT NULL,
-      last_read_at BIGINT NOT NULL DEFAULT 0,
-      PRIMARY KEY (user_id, channel_id)
-    );
-  `)
-
   // ── v0.0.5-alpha additions ──────────────────────────────────────────
 
   // Default channel flag (channels that every new member auto-joins)
@@ -2188,17 +2178,6 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   `)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ugm_user ON aaelink.user_group_members(user_id)`)
 
-  // ── Read State (conversations.mark — compound key for last-read tracking) ──
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.read_state (
-      user_id      TEXT NOT NULL,
-      channel_id   TEXT NOT NULL,
-      last_read_at BIGINT NOT NULL DEFAULT 0,
-      PRIMARY KEY (user_id, channel_id)
-    )
-  `)
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_read_state_ch ON aaelink.read_state(channel_id)`)
-
   // ── Additive columns for v0.0.8 ──
   await pool.query(`ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false`)
   await pool.query(`ALTER TABLE aaelink.channels ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`)
@@ -3104,6 +3083,32 @@ async function migration026SamlIdpCerts(pool: RunnerPool) {
   `)
 }
 
+async function migration028UnifyReadState(pool: RunnerPool) {
+  // Two identical read-cursor tables drifted apart: writers split between
+  // `read_state` (mark-unread, conversations.mark) and `channel_read_state`
+  // (read-state advance, threads, channels) — marking a channel read in one
+  // path left it unread in the other. Unify on `channel_read_state`: merge any
+  // surviving `read_state` rows (keep the furthest-read cursor), then drop the
+  // orphan table. Guarded by to_regclass so fresh DBs (whose base schema no
+  // longer creates read_state) are a clean no-op.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF to_regclass('aaelink.read_state') IS NOT NULL THEN
+        INSERT INTO aaelink.channel_read_state (user_id, channel_id, last_read_at)
+        SELECT rs.user_id, rs.channel_id, rs.last_read_at
+          FROM aaelink.read_state rs
+         WHERE rs.channel_id IN (SELECT id FROM aaelink.channels)
+           AND rs.user_id   IN (SELECT id FROM aaelink.users)
+        ON CONFLICT (user_id, channel_id)
+          DO UPDATE SET last_read_at =
+            GREATEST(aaelink.channel_read_state.last_read_at, EXCLUDED.last_read_at);
+        DROP TABLE aaelink.read_state;
+      END IF;
+    END $$;
+  `)
+}
+
 async function migration027WebauthnPasskeys(pool: RunnerPool) {
   // Passkeys (WebAuthn/FIDO2) as an MFA factor (ADR 0016). One row per
   // registered credential; counter + backed_up are kept for replay defense and
@@ -3258,4 +3263,5 @@ const MIGRATIONS: Migration[] = [
   { id: '025_session_mfa_pending', up: migration025SessionMfaPending },
   { id: '026_saml_idp_certs', up: migration026SamlIdpCerts },
   { id: '027_webauthn_passkeys', up: migration027WebauthnPasskeys },
+  { id: '028_unify_read_state', up: migration028UnifyReadState },
 ]

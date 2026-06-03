@@ -58,7 +58,7 @@ async function _GET(req: NextRequest) {
       COALESCE(
         (SELECT COUNT(*)::text FROM aaelink.messages m
          WHERE m.channel_id = c.id
-           AND m.created_at > COALESCE((SELECT rs.last_read_at FROM aaelink.read_state rs WHERE rs.channel_id = c.id AND rs.user_id = $1), 0)
+           AND m.created_at > COALESCE((SELECT rs.last_read_at FROM aaelink.channel_read_state rs WHERE rs.channel_id = c.id AND rs.user_id = $1), 0)
            AND m.user_id <> $1),
         '0'
       ) AS unread_count

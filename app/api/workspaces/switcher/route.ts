@@ -68,7 +68,7 @@ async function _GET() {
         ORDER BY m2.created_at DESC
         LIMIT 50
       ) m ON true
-      LEFT JOIN aaelink.read_state rs ON rs.channel_id = c.id AND rs.user_id = $1
+      LEFT JOIN aaelink.channel_read_state rs ON rs.channel_id = c.id AND rs.user_id = $1
       LEFT JOIN aaelink.users u2 ON u2.id = $1
       WHERE cm.user_id = $1
     `, [uid, w.id])

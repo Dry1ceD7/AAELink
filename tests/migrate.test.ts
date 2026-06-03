@@ -51,7 +51,7 @@ describe('migrate — table inventory', () => {
     'kb_categories', 'kb_articles', 'calendar_events', 'calendar_attendees',
     'leave_requests', 'attendance_logs', 'apps', 'incoming_webhooks',
     'sso_configs', 'marketplace_plugins', 'installed_plugins',
-    'reminders', 'channel_categories', 'read_state', 'feature_flags',
+    'reminders', 'channel_categories', 'feature_flags',
     'webhook_deliveries', 'dnd_settings',
   ]
 

@@ -114,15 +114,8 @@ export const DEFAULT_RETENTION_POLICIES: RetentionPolicy[] = [
     table: 'aaelink.typing_indicators',
     timestampColumn: 'timestamp',
   },
-  {
-    entity: 'read_receipts',
-    retentionDays: 90,
-    respectLegalHolds: false,
-    enabled: true,
-    batchSize: 2000,
-    table: 'aaelink.read_state',
-    timestampColumn: 'updated_at',
-  },
+  // Note: read cursors (channel_read_state) are not time-series data and are
+  // purged via ON DELETE CASCADE when a user is removed — no age-based retention.
   {
     entity: 'webhook_deliveries',
     retentionDays: 30,
