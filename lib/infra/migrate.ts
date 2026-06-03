@@ -2751,6 +2751,33 @@ async function migration009ScimOrgScope(pool: RunnerPool) {
   )
 }
 
+/**
+ * 010 — D3 Messaging: saved / "Later" items per user.
+ *
+ * Slack lets a user save any message to a personal list and move it through
+ * states (saved -> in_progress -> completed -> archived). One row per
+ * (user, message); re-saving refreshes saved_at. See lib/messaging/savedItems.ts.
+ *
+ * Forward-only: a new table. Idempotent. Indexed for per-user listing by state.
+ */
+async function migration010SavedItems(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.saved_items (
+       user_id    TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       message_id TEXT NOT NULL REFERENCES aaelink.messages(id) ON DELETE CASCADE,
+       state      TEXT NOT NULL DEFAULT 'saved'
+                  CHECK (state IN ('saved','in_progress','completed','archived')),
+       note       TEXT NOT NULL DEFAULT '',
+       saved_at   BIGINT NOT NULL,
+       PRIMARY KEY (user_id, message_id)
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_saved_items_user_state
+       ON aaelink.saved_items(user_id, state, saved_at DESC)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2761,4 +2788,5 @@ const MIGRATIONS: Migration[] = [
   { id: '007_domain_claiming', up: migration007DomainClaiming },
   { id: '008_device_emm', up: migration008DeviceEmm },
   { id: '009_scim_org_scope', up: migration009ScimOrgScope },
+  { id: '010_saved_items', up: migration010SavedItems },
 ]
