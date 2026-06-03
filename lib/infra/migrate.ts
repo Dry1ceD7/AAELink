@@ -2936,6 +2936,26 @@ async function migration016ConnectAllowlist(pool: RunnerPool) {
   )
 }
 
+/**
+ * 017 — D11 Notifications: keyword highlights.
+ *
+ * A user registers words/phrases that should notify them when they appear in a
+ * message, even outside a direct mention (Slack keyword notifications). One row
+ * per (user, normalized keyword). See lib/notifications/keywords.ts.
+ *
+ * Forward-only: a new table. Idempotent.
+ */
+async function migration017NotificationKeywords(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.notification_keywords (
+       user_id    TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       keyword    TEXT NOT NULL,
+       created_at BIGINT NOT NULL,
+       PRIMARY KEY (user_id, keyword)
+     )`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2953,4 +2973,5 @@ const MIGRATIONS: Migration[] = [
   { id: '014_event_deliveries', up: migration014EventDeliveries },
   { id: '015_socket_connections', up: migration015SocketConnections },
   { id: '016_connect_allowlist', up: migration016ConnectAllowlist },
+  { id: '017_notification_keywords', up: migration017NotificationKeywords },
 ]
