@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { hashPassword } from '@/lib/auth/password'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { findCapturingOrg } from '@/lib/enterprise/domainClaiming'
 
 /** Self-service sign-up is only on when explicitly set to `1` (internal deployments usually leave it off). */
 function openRegistration(): boolean {
@@ -44,11 +45,21 @@ async function _POST(req: Request) {
        VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, 'employee')`,
       [id, username, email, password_hash, first_name, last_name, now]
     )
+    // D2 domain-based account capture: if the email's domain is verified by an
+    // org, enroll the new user as an org member (lib/enterprise/domainClaiming).
+    const capturedOrgId = await findCapturingOrg(pool, email)
+    if (capturedOrgId) {
+      await pool.query(
+        `INSERT INTO aaelink.org_members (org_id, user_id, role)
+         VALUES ($1, $2, 'member') ON CONFLICT (org_id, user_id) DO NOTHING`,
+        [capturedOrgId, id]
+      )
+    }
     const { rows } = await pool.query(
       `SELECT id, username, email, first_name, last_name, nickname, platform_role, avatar_url, job_title, phone, timezone, status_text, status_emoji FROM aaelink.users WHERE id = $1`,
       [id]
     )
-    return NextResponse.json({ user: rows[0] })
+    return NextResponse.json({ user: rows[0], captured_org_id: capturedOrgId ?? null })
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code
     if (code === '23505') {
