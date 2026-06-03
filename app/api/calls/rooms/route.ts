@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { turnConfigured } from '@/lib/calls/turnCredentials'
 
 /**
  * Calls & Huddles API — call signaling, room management, and screen share sessions.
@@ -52,8 +53,12 @@ async function _GET(req: NextRequest) {
       noise_suppression: true,
       screen_share_enabled: true,
       huddles_enabled: true,
-      turn_servers: [{ urls: 'turn:turn.aaelink.local:3478', username: '', credential: '' }],
-      stun_servers: ['stun:stun.l.google.com:19302'],
+      // Per-user ephemeral TURN credentials are issued at GET /api/calls/ice;
+      // this admin view reports the configured server URLs + whether a TURN
+      // shared secret is present, never static credentials.
+      turn_servers: (process.env.TURN_URLS || 'turn:turn.aaelink.local:3478').split(',').map(s => s.trim()).filter(Boolean),
+      turn_configured: turnConfigured(),
+      stun_servers: (process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',').map(s => s.trim()).filter(Boolean),
       ice_timeout_seconds: 30,
     }
     let config = defaultConfig
