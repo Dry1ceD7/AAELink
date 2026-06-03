@@ -2983,6 +2983,41 @@ async function migration018FilePublicLinks(pool: RunnerPool) {
   )
 }
 
+/**
+ * 019 — D11 Profiles: org-level custom profile fields.
+ *
+ * An org admin defines custom profile fields (text/select/etc.); members fill
+ * in values. org_profile_fields holds the definitions per org; user_profile_values
+ * holds each user's value per field. See lib/enterprise/customProfileFields.ts.
+ *
+ * Forward-only: two new tables. Idempotent.
+ */
+async function migration019OrgProfileFields(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.org_profile_fields (
+       id         TEXT PRIMARY KEY,
+       org_id     UUID NOT NULL REFERENCES aaelink.organizations(id) ON DELETE CASCADE,
+       field_key  TEXT NOT NULL,
+       label      TEXT NOT NULL,
+       field_type TEXT NOT NULL DEFAULT 'text'
+                  CHECK (field_type IN ('text','textarea','select','link','date')),
+       options    JSONB NOT NULL DEFAULT '[]',
+       position   INTEGER NOT NULL DEFAULT 0,
+       created_at BIGINT NOT NULL,
+       UNIQUE (org_id, field_key)
+     )`
+  )
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.user_profile_values (
+       field_id   TEXT NOT NULL REFERENCES aaelink.org_profile_fields(id) ON DELETE CASCADE,
+       user_id    TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       value      TEXT NOT NULL DEFAULT '',
+       updated_at BIGINT NOT NULL,
+       PRIMARY KEY (field_id, user_id)
+     )`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3002,4 +3037,5 @@ const MIGRATIONS: Migration[] = [
   { id: '016_connect_allowlist', up: migration016ConnectAllowlist },
   { id: '017_notification_keywords', up: migration017NotificationKeywords },
   { id: '018_file_public_links', up: migration018FilePublicLinks },
+  { id: '019_org_profile_fields', up: migration019OrgProfileFields },
 ]
