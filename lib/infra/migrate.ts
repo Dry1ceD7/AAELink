@@ -2708,6 +2708,32 @@ async function migration007DomainClaiming(pool: RunnerPool) {
   )
 }
 
+/**
+ * 008 — D2 Identity: EMM device controls + remote-wipe signaling.
+ *
+ * The devices table tracked devices but remote wipe was broken — the delete
+ * path filtered sessions by a `device_id` column that did not exist. This adds
+ * that link and a wipe signal a client polls: wipe_requested_at marks a pending
+ * wipe, wiped_at records the client's acknowledgement. See
+ * lib/enterprise/deviceManagement.ts.
+ *
+ * Forward-only: additive nullable/defaulted columns. Idempotent.
+ */
+async function migration008DeviceEmm(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.sessions ADD COLUMN IF NOT EXISTS device_id TEXT`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.devices ADD COLUMN IF NOT EXISTS wipe_requested_at BIGINT NOT NULL DEFAULT 0`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.devices ADD COLUMN IF NOT EXISTS wiped_at BIGINT NOT NULL DEFAULT 0`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_sessions_device ON aaelink.sessions(device_id)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2716,4 +2742,5 @@ const MIGRATIONS: Migration[] = [
   { id: '005_org_wide_channels', up: migration005OrgWideChannels },
   { id: '006_shared_workspace_channels', up: migration006SharedWorkspaceChannels },
   { id: '007_domain_claiming', up: migration007DomainClaiming },
+  { id: '008_device_emm', up: migration008DeviceEmm },
 ]
