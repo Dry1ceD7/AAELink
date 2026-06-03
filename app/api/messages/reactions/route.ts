@@ -6,6 +6,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { type ReactionSummary, isValidReactionKey } from '@/lib/messaging/reactions'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 async function summarizeForMessage(
   pool: Pool,
@@ -34,6 +35,8 @@ async function summarizeForMessage(
 
 /** Toggle a quick reaction on a message (add/remove). */
 async function _POST(req: Request) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()

@@ -1,5 +1,5 @@
 import { randomBytes, createHmac } from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
 /**
@@ -101,7 +101,7 @@ export async function setCsrfCookie(): Promise<string> {
  * Checks both cookie and header/body match.
  * Returns null if valid, or a NextResponse error if invalid.
  */
-export async function verifyCsrf(req: NextRequest): Promise<NextResponse | null> {
+export async function verifyCsrf(req: Request): Promise<NextResponse | null> {
   // Skip CSRF for non-mutating methods
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return null
 

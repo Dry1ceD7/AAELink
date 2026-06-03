@@ -5,6 +5,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 /**
  * Reactions API — Slack reactions.add / reactions.remove / reactions.get / reactions.list parity.
@@ -104,6 +105,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

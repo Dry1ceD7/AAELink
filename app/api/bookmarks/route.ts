@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 interface BookmarkRow {
   id: string
@@ -40,6 +41,8 @@ async function _GET(req: NextRequest) {
 
 /** POST /api/bookmarks — create a new bookmark.  Body: { channel_id, title, link_url, emoji? } */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -88,6 +91,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE /api/bookmarks?id=... — remove a bookmark. */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

@@ -8,6 +8,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { notifyChannelMentions, notifyDirectMessage } from '@/lib/notifications/notificationsServer'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -436,6 +437,8 @@ async function _GET(req: Request) {
 }
 
 async function _POST(req: Request) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()

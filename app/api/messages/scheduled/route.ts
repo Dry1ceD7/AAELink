@@ -5,6 +5,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 /**
  * Scheduled Messages API (Slack "Schedule send").
@@ -58,6 +59,8 @@ async function _GET(req: NextRequest) {
 
 /** POST — schedule a message for future delivery */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -126,6 +129,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE — cancel a scheduled message */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

@@ -6,6 +6,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 const MAX_BODY = 32_000
 
@@ -92,6 +93,8 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
 }
 
 async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -171,7 +174,9 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
 }
 
 /** Owner-only delete. Root posts remove all thread replies in this channel. */
-async function _DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()

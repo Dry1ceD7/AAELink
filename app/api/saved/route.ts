@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 /**
  * GET /api/saved — list saved/bookmarked messages for the current user.
@@ -74,6 +75,8 @@ async function _GET(req: NextRequest) {
 
 /** POST /api/saved — bookmark a message.  Body: { message_id, channel_id } */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -108,6 +111,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE /api/saved — remove a bookmark.  Body: { message_id } */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

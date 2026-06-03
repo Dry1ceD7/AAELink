@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
 /** GET /api/pins?channel_id=... — list pinned messages for a channel. */
 async function _GET(req: NextRequest) {
@@ -39,6 +40,8 @@ async function _GET(req: NextRequest) {
 
 /** POST /api/pins — pin a message.  Body: { channel_id, message_id } */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -82,6 +85,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE /api/pins — unpin a message.  Body: { channel_id, message_id } */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
