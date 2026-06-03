@@ -27,8 +27,6 @@ async function _GET(req: NextRequest) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  await ensureListsTables(pool)
-
   const listId = req.nextUrl.searchParams.get('list_id') || ''
   const channelId = req.nextUrl.searchParams.get('channel_id') || ''
 
@@ -36,7 +34,7 @@ async function _GET(req: NextRequest) {
   if (listId) {
     const { rows } = await pool.query<{
       id: string; name: string; description: string; columns: string;
-      channel_id: string; view: string; created_by: string; created_at: number;
+      channel_id: string; view_type: string; created_by: string; created_at: number;
     }>(`SELECT * FROM aaelink.lists WHERE id = $1`, [listId])
     if (!rows[0]) return NextResponse.json({ error: 'list_not_found' }, { status: 404 })
 
@@ -73,7 +71,7 @@ async function _GET(req: NextRequest) {
 
   const { rows } = await pool.query<{
     id: string; name: string; description: string; columns: string;
-    channel_id: string; view: string; created_by: string; created_at: number;
+    channel_id: string; view_type: string; created_by: string; created_at: number;
   }>(query, params)
   const lists = rows.map(r => ({
     ...r,
@@ -118,7 +116,7 @@ async function _POST(req: NextRequest) {
     ]
 
     await pool.query(`
-      INSERT INTO aaelink.lists (id, name, description, columns, channel_id, view, created_by, created_at)
+      INSERT INTO aaelink.lists (id, name, description, columns, channel_id, view_type, created_by, created_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `, [id, body.name, body.description || '', JSON.stringify(defaultColumns),
         body.channel_id || '', body.view || 'table', uid, now])
@@ -134,7 +132,7 @@ async function _POST(req: NextRequest) {
     if (body.name) { params.push(body.name); updates.push(`name = $${params.length}`) }
     if (body.description !== undefined) { params.push(body.description); updates.push(`description = $${params.length}`) }
     if (body.columns) { params.push(JSON.stringify(body.columns)); updates.push(`columns = $${params.length}`) }
-    if (body.view) { params.push(body.view); updates.push(`view = $${params.length}`) }
+    if (body.view) { params.push(body.view); updates.push(`view_type = $${params.length}`) }
 
     if (updates.length > 0) {
       params.push(body.list_id)
@@ -211,7 +209,7 @@ async function ensureListsTables(pool: Pool) {
       description TEXT NOT NULL DEFAULT '',
       columns     JSONB NOT NULL DEFAULT '[]',
       channel_id  TEXT NOT NULL DEFAULT '',
-      view        TEXT NOT NULL DEFAULT 'table',
+      view_type   TEXT NOT NULL DEFAULT 'table',
       created_by  TEXT NOT NULL DEFAULT '',
       created_at  BIGINT NOT NULL DEFAULT 0
     );

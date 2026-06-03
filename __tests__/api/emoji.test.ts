@@ -2,13 +2,14 @@
  * Integration tests for /api/emoji
  *
  * Tests:
- *   - GET  — list workspace emoji
- *   - POST — create custom emoji
+ *   - GET  — list workspace emoji (requires workspace_id query param)
+ *   - POST — create custom emoji (requires workspace_id + name + image_url in body)
  *   - DELETE — remove custom emoji
  *   - Auth guard
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'crypto'
 import {
   createTestContext, createTestUser, asRequest,
   expectSuccess, cleanupTestData,
@@ -17,16 +18,36 @@ import {
 
 let ctx: TestContext
 let user: TestUser
+let workspaceId: string
 const createdIds: string[] = []
 
 beforeAll(async () => {
   ctx = await createTestContext()
   user = await createTestUser(ctx.pool, { role: 'employee' })
   createdIds.push(user.id)
+
+  // Create a workspace and add user as member
+  workspaceId = randomUUID()
+  const now = Date.now()
+  await ctx.pool.query(
+    `INSERT INTO aaelink.workspaces (id, name, display_name, created_by, created_at, is_system)
+     VALUES ($1, $2, $3, $4, $5, false)`,
+    [workspaceId, `emoji-ws-${workspaceId.slice(0, 8)}`, 'Emoji Test WS', user.id, now]
+  )
+  await ctx.pool.query(
+    `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
+    [workspaceId, user.id]
+  )
 })
 
 afterAll(async () => {
   await cleanupTestData(ctx.pool, createdIds)
+  if (workspaceId) {
+    await ctx.pool.query(`DELETE FROM aaelink.custom_emoji WHERE workspace_id = $1`, [workspaceId])
+    await ctx.pool.query(`DELETE FROM aaelink.workspace_members WHERE workspace_id = $1`, [workspaceId])
+    await ctx.pool.query(`DELETE FROM aaelink.workspaces WHERE id = $1`, [workspaceId])
+  }
   await ctx.cleanup()
 })
 
@@ -40,7 +61,10 @@ describe('GET /api/emoji', () => {
 
   it('returns emoji list for authenticated user', async () => {
     const { GET } = await import('@/app/api/emoji/route')
-    const req = asRequest('GET', '/api/emoji', { cookie: user.sessionCookie })
+    const req = asRequest('GET', '/api/emoji', {
+      cookie: user.sessionCookie,
+      query: { workspace_id: workspaceId },
+    })
     const res = await GET(req)
     expect(res.status).toBe(200)
     const body = await expectSuccess<{ emoji: unknown[] }>(res)
@@ -57,6 +81,7 @@ describe('POST /api/emoji', () => {
     const req = asRequest('POST', '/api/emoji', {
       cookie: user.sessionCookie,
       body: {
+        workspace_id: workspaceId,
         name: 'test_rocket',
         image_url: 'https://example.com/rocket.png',
       },
@@ -73,6 +98,7 @@ describe('POST /api/emoji', () => {
     const req = asRequest('POST', '/api/emoji', {
       cookie: user.sessionCookie,
       body: {
+        workspace_id: workspaceId,
         name: 'test_rocket',
         image_url: 'https://example.com/rocket2.png',
       },

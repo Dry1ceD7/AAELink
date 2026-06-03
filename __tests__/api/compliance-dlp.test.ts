@@ -81,17 +81,16 @@ describe('POST /api/compliance/dlp', () => {
     ruleId = body.rule.id
   })
 
-  it('toggles a rule off', async () => {
-    const { POST } = await import('@/app/api/compliance/dlp/route')
-    const req = asRequest('POST', '/api/compliance/dlp', {
+  it('toggles a rule off (via PUT)', async () => {
+    const { PUT } = await import('@/app/api/compliance/dlp/route')
+    const req = asRequest('PUT', '/api/compliance/dlp', {
       cookie: admin.sessionCookie,
       body: {
-        action: 'toggle',
         rule_id: ruleId,
         is_active: false,
       },
     })
-    const res = await POST(req)
+    const res = await PUT(req)
     expect(res.status).toBe(200)
   })
 

@@ -3,10 +3,12 @@
  *
  * Tests:
  *   - GET  — list call rooms
- *   - POST — create a room
- *   - POST — join a room
- *   - POST — leave a room
+ *   - POST — create a room (returns 201)
+ *   - PUT  — join a room (action=join)
+ *   - PUT  — leave a room (action=leave)
  *   - Auth guard
+ *
+ * Note: join/leave are PUT operations, not POST. POST creates a new room (201).
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -53,45 +55,46 @@ describe('GET /api/calls/rooms', () => {
 describe('POST /api/calls/rooms', () => {
   let roomId: string
 
-  it('creates a call room', async () => {
+  it('creates a call room (201)', async () => {
     const { POST } = await import('@/app/api/calls/rooms/route')
     const req = asRequest('POST', '/api/calls/rooms', {
       cookie: user.sessionCookie,
       body: {
-        action: 'create',
-        name: 'Test Huddle Room',
+        call_type: 'voice',
+        title: 'Test Huddle Room',
       },
     })
     const res = await POST(req)
-    expect([200, 201]).toContain(res.status)
+    expect(res.status).toBe(201)
     const body = await expectSuccess<{ room: { id: string } }>(res)
     expect(body.room).toHaveProperty('id')
     roomId = body.room.id
   })
 
-  it('joins a call room', async () => {
-    const { POST } = await import('@/app/api/calls/rooms/route')
-    const req = asRequest('POST', '/api/calls/rooms', {
+  it('joins a call room (PUT action=join)', async () => {
+    const { PUT } = await import('@/app/api/calls/rooms/route')
+    const req = asRequest('PUT', '/api/calls/rooms', {
       cookie: user.sessionCookie,
       body: {
         action: 'join',
         room_id: roomId,
       },
     })
-    const res = await POST(req)
+    const res = await PUT(req)
+    // Creator is already in the room (inserted on create), ON CONFLICT DO NOTHING returns 200
     expect(res.status).toBe(200)
   })
 
-  it('leaves a call room', async () => {
-    const { POST } = await import('@/app/api/calls/rooms/route')
-    const req = asRequest('POST', '/api/calls/rooms', {
+  it('leaves a call room (PUT action=leave)', async () => {
+    const { PUT } = await import('@/app/api/calls/rooms/route')
+    const req = asRequest('PUT', '/api/calls/rooms', {
       cookie: user.sessionCookie,
       body: {
         action: 'leave',
         room_id: roomId,
       },
     })
-    const res = await POST(req)
+    const res = await PUT(req)
     expect(res.status).toBe(200)
   })
 })

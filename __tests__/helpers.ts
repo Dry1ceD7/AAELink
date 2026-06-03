@@ -58,6 +58,27 @@ export async function createTestContext(): Promise<TestContext> {
   const { ensureSchema } = await import('@/lib/infra/migrate')
   await ensureSchema()
 
+  // Guarantee a stable system workspace owned by a fixed seed user. Many routes
+  // gate on workspace membership, and createTestUser attaches new users to the
+  // system workspace — but the migration seed owns it via whatever the first
+  // user happens to be (a transient test user), so per-test cleanup can orphan
+  // or remove it. This fixed owner is never part of any test's cleanup set.
+  const seedNow = Date.now()
+  await pool.query(
+    `INSERT INTO aaelink.users (id, username, email, password_hash, created_at)
+     VALUES ('aaelink-seed-owner', '__seed_owner__', '__seed_owner__@aaelink.test', 'x', $1)
+     ON CONFLICT (id) DO NOTHING`,
+    [seedNow]
+  )
+  // created_at = 1 keeps this the OLDEST workspace, so tests that pick
+  // `ORDER BY created_at LIMIT 1` always land on the system workspace (which
+  // every test user is a member of) rather than a leftover fixture workspace.
+  await pool.query(
+    `INSERT INTO aaelink.workspaces (id, name, display_name, created_by, created_at, is_system)
+     VALUES ('aaelink-ws-global', 'aaelink', 'AAELink', 'aaelink-seed-owner', 1, true)
+     ON CONFLICT (id) DO UPDATE SET is_system = true, created_at = 1`
+  )
+
   return {
     pool,
     cleanup: async () => {
@@ -86,6 +107,28 @@ export interface CreateTestUserOptions {
   department?: string
 }
 
+// Stable fixtures for the shared system workspace. The bootstrap user owns it
+// and is never added to cleanup id lists, so the workspace survives across
+// suites (matching the seed's behavior) and user cleanup never hits its
+// created_by FK.
+const SYS_BOOTSTRAP_USER_ID = '0000000b-0007-4000-8000-00000000c0de'
+const SYS_WORKSPACE_ID = 'test-system-workspace'
+
+/** Ensure a stable, oldest, is_system workspace exists. Returns its id. Idempotent. */
+export async function ensureSystemWorkspace(pool: Pool): Promise<string> {
+  await pool.query(`
+    INSERT INTO aaelink.users (id, username, email, password_hash, nickname, first_name, platform_role, department, created_at)
+    VALUES ($1, 'test_sys_bootstrap', 'test-sys-bootstrap@aaelink.test', 'test_hash_not_for_login', 'System', 'System', 'super_admin', '', 1)
+    ON CONFLICT (id) DO NOTHING
+  `, [SYS_BOOTSTRAP_USER_ID])
+  await pool.query(`
+    INSERT INTO aaelink.workspaces (id, name, display_name, created_by, created_at, is_system)
+    VALUES ($1, 'system', 'System', $2, 1, true)
+    ON CONFLICT (id) DO NOTHING
+  `, [SYS_WORKSPACE_ID, SYS_BOOTSTRAP_USER_ID])
+  return SYS_WORKSPACE_ID
+}
+
 /**
  * Create a test user with an active session.
  * Returns user info + a session cookie string for authenticated requests.
@@ -112,19 +155,17 @@ export async function createTestUser(
     ON CONFLICT (id) DO NOTHING
   `, [id, username, email, displayName, role, opts.department || '', now])
 
-  // Attach to the system workspace if one exists (the seed creates it once a
-  // user is present; fresh DBs may have none, which is fine for tests that
-  // create their own workspaces).
-  const { rows: [ws] } = await pool.query(
-    `SELECT id FROM aaelink.workspaces WHERE is_system = true ORDER BY created_at LIMIT 1`
+  // Attach to the shared system workspace, creating it if absent. Many routes
+  // gate on workspace membership and tests pick the oldest workspace, so this
+  // must be a stable, always-present workspace the user belongs to. It is owned
+  // by a fixed bootstrap user (never cleaned) and stamped created_at=1 so it is
+  // always the oldest workspace; cleanupTestData never deletes is_system rows.
+  const wsId = await ensureSystemWorkspace(pool)
+  await pool.query(
+    `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [wsId, id, role === 'super_admin' ? 'owner' : 'member']
   )
-  if (ws?.id) {
-    await pool.query(
-      `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
-       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [ws.id, id, role === 'super_admin' ? 'owner' : 'member']
-    )
-  }
 
   // Create session. All sessions columns are NOT NULL; expires_at gates
   // readSessionUserId (must be a future epoch-ms). The cookie name is
@@ -161,17 +202,40 @@ export async function createTestChannel(
   const id = randomUUID()
   const name = opts.name || `test-channel-${id.slice(0, 8)}`
   const type = opts.type || 'public'
+  const dbType = type === 'private' ? 'P' : 'O' // channels store 'O'/'P', not 'public'/'private'
   const now = Date.now()
 
-  const { rows: [ws] } = await pool.query(
-    `SELECT id FROM aaelink.workspaces ORDER BY created_at LIMIT 1`
-  )
-  const workspaceId = opts.workspaceId || ws?.id || ''
+  let workspaceId = opts.workspaceId || ''
+  if (!workspaceId) {
+    const { rows: [ws] } = await pool.query(
+      `SELECT id FROM aaelink.workspaces ORDER BY created_at LIMIT 1`
+    )
+    if (ws?.id) {
+      workspaceId = ws.id
+    } else {
+      // No workspace exists yet — create a non-system one owned by creatorId
+      const wsId = randomUUID()
+      const wsNow = Date.now()
+      await pool.query(
+        `INSERT INTO aaelink.workspaces (id, name, display_name, created_by, created_at, is_system)
+         VALUES ($1, $2, $3, $4, $5, false)`,
+        [wsId, `test-ws-${wsId.slice(0, 8)}`, `Test Workspace ${wsId.slice(0, 8)}`, creatorId, wsNow]
+      )
+      workspaceId = wsId
+    }
+  }
 
   await pool.query(`
     INSERT INTO aaelink.channels (id, workspace_id, name, display_name, type, created_by, created_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7)
-  `, [id, workspaceId, name, name, type, creatorId, now])
+  `, [id, workspaceId, name, name, dbType, creatorId, now])
+
+  // Ensure the creator is a member of the channel's workspace — route reads
+  // (e.g. GET /api/messages) assert workspace membership before channel access.
+  await pool.query(`
+    INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
+    VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING
+  `, [workspaceId, creatorId])
 
   // Add creator as member
   await pool.query(`
@@ -304,5 +368,18 @@ export async function cleanupTestData(pool: Pool, userIds: string[]) {
   await pool.query(`DELETE FROM aaelink.sessions WHERE user_id IN (${placeholders})`, userIds)
   await pool.query(`DELETE FROM aaelink.messages WHERE user_id IN (${placeholders})`, userIds)
   await pool.query(`DELETE FROM aaelink.channel_members WHERE user_id IN (${placeholders})`, userIds)
+  // Non-system workspaces created by these users (e.g. by createTestChannel's
+  // fallback) block the user delete via workspaces_created_by_fkey; remove them
+  // first. NEVER delete the shared system workspace — other suites' users attach
+  // to it. channels cascade off the workspace (ON DELETE CASCADE).
+  await pool.query(
+    `DELETE FROM aaelink.workspaces WHERE created_by IN (${placeholders}) AND is_system = false`,
+    userIds
+  )
+  // These users may be members of workspaces created elsewhere (e.g. the system
+  // workspace); that membership row references the user and must go first.
+  await pool.query(`DELETE FROM aaelink.workspace_members WHERE user_id IN (${placeholders})`, userIds)
+  // Tickets created by these users block the delete via tickets_created_by_fkey.
+  await pool.query(`DELETE FROM aaelink.tickets WHERE created_by IN (${placeholders})`, userIds).catch(() => {})
   await pool.query(`DELETE FROM aaelink.users WHERE id IN (${placeholders})`, userIds)
 }
