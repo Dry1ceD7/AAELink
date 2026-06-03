@@ -55,7 +55,7 @@ export async function createTestContext(): Promise<TestContext> {
   await pool.query('SELECT 1')
 
   // Ensure schema exists (uses the main migration)
-  const { ensureSchema } = await import('@/lib/migrate')
+  const { ensureSchema } = await import('@/lib/infra/migrate')
   await ensureSchema()
 
   return {
@@ -97,34 +97,43 @@ export async function createTestUser(
   const id = randomUUID()
   const suffix = id.slice(0, 8)
   const email = opts.email || `test-${suffix}@aaelink.test`
+  const username = `test_${suffix}`
   const displayName = opts.displayName || `Test User ${suffix}`
   const role = opts.role || 'employee'
   const now = Date.now()
 
-  // Get default workspace + department
-  const { rows: [ws] } = await pool.query(
-    `SELECT id FROM aaelink.workspaces ORDER BY created_at LIMIT 1`
-  )
-  const workspaceId = ws?.id || ''
-
-  const { rows: [dept] } = await pool.query(
-    `SELECT id FROM aaelink.departments ORDER BY created_at LIMIT 1`
-  )
-  const departmentId = opts.department || dept?.id || ''
-
-  // Create user
+  // Create user. The users table uses username/nickname (no display_name,
+  // workspace_id, department_id, or status columns — those were refactored out).
+  // Required NOT NULL columns without defaults: id, username, email,
+  // password_hash, created_at.
   await pool.query(`
-    INSERT INTO aaelink.users (id, email, password_hash, display_name, platform_role, workspace_id, department_id, status, created_at)
-    VALUES ($1, $2, 'test_hash_not_for_login', $3, $4, $5, $6, 'active', $7)
+    INSERT INTO aaelink.users (id, username, email, password_hash, nickname, first_name, platform_role, department, created_at)
+    VALUES ($1, $2, $3, 'test_hash_not_for_login', $4, $4, $5, $6, $7)
     ON CONFLICT (id) DO NOTHING
-  `, [id, email, displayName, role, workspaceId, departmentId, now])
+  `, [id, username, email, displayName, role, opts.department || '', now])
 
-  // Create session
+  // Attach to the system workspace if one exists (the seed creates it once a
+  // user is present; fresh DBs may have none, which is fine for tests that
+  // create their own workspaces).
+  const { rows: [ws] } = await pool.query(
+    `SELECT id FROM aaelink.workspaces WHERE is_system = true ORDER BY created_at LIMIT 1`
+  )
+  if (ws?.id) {
+    await pool.query(
+      `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [ws.id, id, role === 'super_admin' ? 'owner' : 'member']
+    )
+  }
+
+  // Create session. All sessions columns are NOT NULL; expires_at gates
+  // readSessionUserId (must be a future epoch-ms). The cookie name is
+  // AAELINK_SESSION (see lib/auth/session.ts SESSION_COOKIE).
   const sessionId = randomUUID()
   await pool.query(`
-    INSERT INTO aaelink.sessions (id, user_id, created_at, device_type, user_agent)
-    VALUES ($1, $2, $3, 'test', 'vitest')
-  `, [sessionId, id, now])
+    INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
+    VALUES ($1, $2, $3, 'vitest', '127.0.0.1', $4, $4)
+  `, [sessionId, id, now + 86_400_000, now])
 
   return {
     id,
@@ -132,7 +141,7 @@ export async function createTestUser(
     display_name: displayName,
     platform_role: role,
     sessionId,
-    sessionCookie: `session=${sessionId}`,
+    sessionCookie: `AAELINK_SESSION=${sessionId}`,
   }
 }
 

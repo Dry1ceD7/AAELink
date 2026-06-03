@@ -1683,8 +1683,13 @@ async function migration001InitialSchema(pool: RunnerPool) {
 }
 
 async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
+  // D1 schema-integrity fix (deep-audit-2026-06-02): the seed below needs an
+  // owner user, but the extensive DDL further down does NOT. Previously a single
+  // `if (!users[0]) return` gated BOTH, so on a fresh database (no users yet)
+  // ~115 CREATE TABLE statements never ran — a clean deploy got 30 of 145 tables.
+  // Gate only the seed; let all schema DDL run unconditionally.
   const { rows: users } = await pool.query(`SELECT id FROM aaelink.users ORDER BY created_at ASC LIMIT 1`)
-  if (!users[0]) return
+  if (users[0]) {
   const ownerId = (users[0] as { id: string }).id
   const now = Date.now()
   let globalWsId = AAELINK_GLOBAL_WORKSPACE_ID
@@ -1764,6 +1769,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
       )
     }
   }
+  } // end seed guard (if users[0]) — DDL below runs unconditionally
 
   // ── Webhook delivery log ──
   // Note: the first migration already creates webhook_deliveries with `delivered_at`.
@@ -2418,7 +2424,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.org_members (
       org_id   UUID NOT NULL REFERENCES aaelink.organizations(id) ON DELETE CASCADE,
-      user_id  UUID NOT NULL,
+      user_id  TEXT NOT NULL,
       role     TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('org_owner','org_admin','member')),
       joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (org_id, user_id)
@@ -2433,7 +2439,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.audit_stream_configs (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      workspace_id    UUID NOT NULL,
+      workspace_id    TEXT NOT NULL,
       destination     TEXT NOT NULL CHECK (destination IN ('splunk','elasticsearch','s3','webhook','syslog')),
       endpoint_url    TEXT NOT NULL,
       auth_token      TEXT,
@@ -2448,12 +2454,12 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.dlp_scan_queue (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      message_id  UUID NOT NULL,
-      channel_id  UUID NOT NULL,
-      user_id     UUID NOT NULL,
+      message_id  TEXT NOT NULL,
+      channel_id  TEXT NOT NULL,
+      user_id     TEXT NOT NULL,
       content     TEXT NOT NULL,
       status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','scanning','clean','violation','error')),
-      rule_id     UUID,
+      rule_id     TEXT,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
       scanned_at  TIMESTAMPTZ
     )
@@ -2476,7 +2482,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.custom_roles (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      workspace_id  UUID NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
       name          TEXT NOT NULL,
       description   TEXT NOT NULL DEFAULT '',
       permissions   TEXT[] NOT NULL DEFAULT '{}',
@@ -2490,11 +2496,11 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
     CREATE TABLE IF NOT EXISTS aaelink.role_assignments (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       role_id       UUID NOT NULL REFERENCES aaelink.custom_roles(id) ON DELETE CASCADE,
-      user_id       UUID NOT NULL,
-      workspace_id  UUID NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      user_id       TEXT NOT NULL,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
       scope         TEXT NOT NULL DEFAULT 'workspace' CHECK (scope IN ('workspace','org','channel')),
-      scope_id      UUID,
-      assigned_by   UUID NOT NULL,
+      scope_id      TEXT,
+      assigned_by   TEXT NOT NULL,
       assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(role_id, user_id, workspace_id, scope, scope_id)
     )
@@ -2503,11 +2509,11 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.invite_requests (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      workspace_id  UUID NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
       email         TEXT NOT NULL,
-      requester_id  UUID NOT NULL,
+      requester_id  TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied','expired')),
-      reviewed_by   UUID,
+      reviewed_by   TEXT,
       reviewed_at   TIMESTAMPTZ,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -2536,6 +2542,59 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   await pool.query(`DROP INDEX IF EXISTS aaelink.idx_workspace_invites_token`)
 }
 
+/**
+ * 003 — D1 Enterprise Grid: workspace access levels + discovery.
+ *
+ * Adds `access_level` to workspaces so an org can mark a workspace
+ * `open` (any member of a sibling workspace in the same org may discover
+ * and join), `invite_only` (default — needs an invite), or `managed`
+ * (admin-provisioned only). Backs GET/POST /api/workspaces/discover.
+ *
+ * Runs after 002 backfill so `org_id` exists for the composite index.
+ * Forward-only: additive column with a safe default; existing workspaces
+ * become `invite_only` (no behavior change). Idempotent guards so a
+ * re-run on a partially-migrated DB is a no-op.
+ */
+async function migration003WorkspaceAccessLevels(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.workspaces
+       ADD COLUMN IF NOT EXISTS access_level TEXT NOT NULL DEFAULT 'invite_only'`
+  )
+  await pool.query(
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint WHERE conname = 'workspaces_access_level_chk'
+       ) THEN
+         ALTER TABLE aaelink.workspaces
+           ADD CONSTRAINT workspaces_access_level_chk
+           CHECK (access_level IN ('open','invite_only','managed'));
+       END IF;
+     END $$;`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_workspaces_org_access
+       ON aaelink.workspaces(org_id, access_level)`
+  )
+}
+
+/**
+ * 002 — Backfill the "extended schema" that was unreachable on fresh DBs.
+ *
+ * The ~115 CREATE TABLE/INDEX/ALTER statements inside
+ * `ensureGlobalWorkspaceAndDepartments` used to sit behind a
+ * `if (!users[0]) return` guard, so a clean install never created the
+ * organizations/compliance/document/list/etc. tables (deep-audit-2026-06-02
+ * critical finding). The guard is now seed-only; re-running the function as a
+ * registered migration backfills any database whose 001 ran before the fix.
+ * Every statement is idempotent (IF NOT EXISTS), so this is a no-op on
+ * databases that already have the tables.
+ */
+async function migration002BackfillExtendedSchema(pool: RunnerPool) {
+  await ensureGlobalWorkspaceAndDepartments(pool)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
+  { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
+  { id: '003_workspace_access_levels', up: migration003WorkspaceAccessLevels },
 ]
