@@ -54,17 +54,16 @@ export async function getDlpRulesForWorkspace(workspaceId: string): Promise<DlpR
 }
 
 /**
- * Scan message content against all active DLP rules.
- * Returns scan result with any violations found.
+ * Pure: match content against an in-memory rule set. No DB access — exported
+ * so the background worker (dlp_scan job) and unit tests can reuse the exact
+ * matching engine the synchronous interceptor uses.
  */
-export async function scanMessageContent(
+export function matchDlpRules(
   content: string,
-  workspaceId: string,
+  rules: DlpRule[],
   userId: string = '',
   channelId: string = ''
-): Promise<DlpScanResult> {
-  const rules = await getDlpRulesForWorkspace(workspaceId)
-
+): DlpScanResult {
   const violations: DlpViolation[] = []
   let highestAction: DlpAction | null = null
   const actionPriority: Record<DlpAction, number> = {
@@ -91,24 +90,28 @@ export async function scanMessageContent(
 
     if (matched) {
       const action = rule.action as DlpAction
-      violations.push({
-        ruleId: rule.id,
-        userId,
-        channelId,
-        snippet: content.slice(0, 200),
-        action,
-      })
+      violations.push({ ruleId: rule.id, userId, channelId, snippet: content.slice(0, 200), action })
       if (!highestAction || actionPriority[action] > actionPriority[highestAction]) {
         highestAction = action
       }
     }
   }
 
-  return {
-    clean: violations.length === 0,
-    violations,
-    action: highestAction,
-  }
+  return { clean: violations.length === 0, violations, action: highestAction }
+}
+
+/**
+ * Scan message content against all active DLP rules.
+ * Returns scan result with any violations found.
+ */
+export async function scanMessageContent(
+  content: string,
+  workspaceId: string,
+  userId: string = '',
+  channelId: string = ''
+): Promise<DlpScanResult> {
+  const rules = await getDlpRulesForWorkspace(workspaceId)
+  return matchDlpRules(content, rules, userId, channelId)
 }
 
 /** Record a DLP violation in the violations log. */

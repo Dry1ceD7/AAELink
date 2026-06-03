@@ -121,7 +121,7 @@ async function _POST(req: NextRequest) {
     await pool.query(`
       INSERT INTO aaelink.jobs
         (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
-      VALUES ($1, 'compliance_export', 'pending', 5, $2, $3, 3, 0, $4, $3)
+      VALUES ($1, 'clip_transcription', 'pending', 5, $2, $3, 3, 0, $4, $3)
     `, [randomUUID(), JSON.stringify({ clip_id: id, file_id: fileId, action: 'transcribe' }), now, uid])
   }
 

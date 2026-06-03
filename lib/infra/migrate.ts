@@ -461,6 +461,9 @@ async function migration001InitialSchema(pool: RunnerPool) {
   // Message body trigram index for global search (pg_trgm if available)
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_body_search ON aaelink.messages USING btree (channel_id, created_at DESC)`)
 
+  // Real full-text search lives in numbered migration 023_messages_fts so it
+  // applies to already-initialized DBs (inline base DDL is skipped on those).
+
   // ── Channel notification preferences (per-user, per-channel overrides) ──
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.channel_notification_prefs (
@@ -1113,7 +1116,7 @@ async function migration001InitialSchema(pool: RunnerPool) {
       type             TEXT NOT NULL,
       status           TEXT NOT NULL DEFAULT 'pending',
       priority         INTEGER NOT NULL DEFAULT 5,
-      payload          JSONB NOT NULL DEFAULT '{}',
+      payload          TEXT NOT NULL DEFAULT '{}',
       run_after        BIGINT NOT NULL DEFAULT 0,
       max_retries      INTEGER NOT NULL DEFAULT 3,
       attempts         INTEGER NOT NULL DEFAULT 0,
@@ -3018,6 +3021,151 @@ async function migration019OrgProfileFields(pool: RunnerPool) {
   )
 }
 
+// Retention policies — canonical DDL. Previously created lazily by
+// app/api/admin/retention/route.ts (ensureRetention), which meant the
+// `retention_enforce` worker job threw if it fired before that admin route
+// was ever hit. Moving the DDL here guarantees the table exists after schema
+// init. The route's ensureRetention call remains (idempotent, harmless).
+async function migration020RetentionPolicies(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.retention_policies (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      scope           TEXT NOT NULL UNIQUE CHECK (scope IN ('workspace','channel','dm','file')),
+      retention_days  INT NOT NULL DEFAULT 0,
+      enabled         BOOLEAN NOT NULL DEFAULT false,
+      delete_files    BOOLEAN NOT NULL DEFAULT false,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by      TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL
+    );
+  `)
+  // Seed default policies if empty (matches ensureRetention in the route).
+  await pool.query(`
+    INSERT INTO aaelink.retention_policies (scope, retention_days, enabled)
+    VALUES
+      ('workspace', 0, false),
+      ('channel', 0, false),
+      ('dm', 0, false),
+      ('file', 0, false)
+    ON CONFLICT (scope) DO NOTHING;
+  `)
+}
+
+// Saved searches — Slack-parity persisted search queries (name + query string
+// + optional filters), owned by a user within a workspace.
+async function migration023MessagesFts(pool: RunnerPool) {
+  // Stored tsvector generated from body + GIN index. Generated column backfills
+  // existing rows and stays in sync automatically (to_tsvector(regconfig,text) is immutable).
+  await pool.query(`
+    ALTER TABLE aaelink.messages
+      ADD COLUMN IF NOT EXISTS body_tsv tsvector
+      GENERATED ALWAYS AS (to_tsvector('english', coalesce(body, ''))) STORED
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_messages_body_tsv ON aaelink.messages USING gin (body_tsv)`)
+}
+
+async function migration024JobsPayloadText(pool: RunnerPool) {
+  // The job queue stores its payload as a serialized JSON STRING: the worker
+  // (lib/infra/worker.ts) and all readers do JSON.parse(String(payload)). When
+  // the column was JSONB, node-postgres returned an already-parsed object, so
+  // JSON.parse(String(obj)) === JSON.parse('[object Object]') threw and every
+  // job silently ran with an empty {} payload. Convert to TEXT to match the
+  // read-side contract. The USING clause re-serializes any existing JSONB rows.
+  // Inline base DDL is skipped on already-initialized DBs, so this migration is
+  // required to fix them (the base DDL is also updated to TEXT for fresh DBs).
+  await pool.query(`
+    ALTER TABLE aaelink.jobs
+      ALTER COLUMN payload TYPE TEXT USING payload::text,
+      ALTER COLUMN payload SET DEFAULT '{}'
+  `)
+}
+
+async function migration021SavedSearches(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.saved_searches (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      user_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      query         TEXT NOT NULL,
+      filters       JSONB NOT NULL DEFAULT '{}',
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_saved_searches_user_ws
+       ON aaelink.saved_searches(user_id, workspace_id);`
+  )
+}
+
+// Inbound SSO (Relying Party) — #2 enterprise parity gap.
+//
+// The pre-existing sso_providers table stored only a truncated, NON-recoverable
+// client_secret_hash, which cannot be used to perform the OIDC code exchange.
+// We add a recoverable, AES-256-GCM-encrypted secret column plus the discovery
+// fields the RP flow needs, an explicit default_workspace_id for JIT→workspace
+// mapping, and SAML idp_cert/entry_point. Two new tables back the flow:
+//   - sso_auth_requests: short-lived in-flight state/nonce/PKCE/RelayState rows,
+//     single-use, consumed on callback (replay protection).
+//   - sso_identity_links: stable IdP subject (sub / NameID) → AAELink user id,
+//     so re-logins resolve the same account even if the email later changes.
+async function migration022InboundSso(pool: RunnerPool) {
+  await pool.query(`
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS client_secret_enc   TEXT NOT NULL DEFAULT '';
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS default_workspace_id TEXT;
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS scopes              TEXT NOT NULL DEFAULT 'openid profile email';
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS saml_entry_point    TEXT NOT NULL DEFAULT '';
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS saml_idp_cert       TEXT NOT NULL DEFAULT '';
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS saml_audience       TEXT NOT NULL DEFAULT '';
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sso_auth_requests (
+      id             TEXT PRIMARY KEY,
+      provider_id    TEXT NOT NULL REFERENCES aaelink.sso_providers(id) ON DELETE CASCADE,
+      protocol       TEXT NOT NULL,
+      state          TEXT NOT NULL,
+      nonce          TEXT NOT NULL DEFAULT '',
+      code_verifier  TEXT NOT NULL DEFAULT '',
+      relay_state    TEXT NOT NULL DEFAULT '',
+      redirect_uri   TEXT NOT NULL DEFAULT '',
+      consumed_at    BIGINT NOT NULL DEFAULT 0,
+      expires_at     BIGINT NOT NULL,
+      created_at     BIGINT NOT NULL
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_sso_auth_requests_state
+       ON aaelink.sso_auth_requests(state);`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_sso_auth_requests_expires
+       ON aaelink.sso_auth_requests(expires_at);`
+  )
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sso_identity_links (
+      provider_id  TEXT NOT NULL REFERENCES aaelink.sso_providers(id) ON DELETE CASCADE,
+      subject      TEXT NOT NULL,
+      user_id      TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      created_at   BIGINT NOT NULL,
+      last_login_at BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (provider_id, subject)
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_sso_identity_links_user
+       ON aaelink.sso_identity_links(user_id);`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3038,4 +3186,9 @@ const MIGRATIONS: Migration[] = [
   { id: '017_notification_keywords', up: migration017NotificationKeywords },
   { id: '018_file_public_links', up: migration018FilePublicLinks },
   { id: '019_org_profile_fields', up: migration019OrgProfileFields },
+  { id: '020_retention_policies', up: migration020RetentionPolicies },
+  { id: '021_saved_searches', up: migration021SavedSearches },
+  { id: '022_inbound_sso', up: migration022InboundSso },
+  { id: '023_messages_fts', up: migration023MessagesFts },
+  { id: '024_jobs_payload_text', up: migration024JobsPayloadText },
 ]

@@ -114,25 +114,31 @@ const handlers: Record<string, JobHandler> = {
     await sleep(500)
   },
 
-  // Data retention enforcement
+  // Data retention enforcement — real deletes, respecting legal holds.
   retention_enforce: async (payload, pool) => {
     log.info(`🗑️ [retention_enforce]`, payload)
-    // In production: delete messages/files older than policy
-    await sleep(300)
+    const { runRetentionEnforcement } = await import('@/lib/enterprise/retentionJob')
+    const results = await runRetentionEnforcement(pool)
+    for (const r of results) {
+      log.info(`   🧹 ${r.scope}: ${r.messagesDeleted} msgs, ${r.filesDeleted} files purged (cutoff ${new Date(r.cutoffMs).toISOString()})`)
+    }
   },
 
-  // Compliance export
-  compliance_export: async (payload) => {
+  // Compliance export (eDiscovery) — generate artifact and store to S3.
+  compliance_export: async (payload, pool) => {
     log.info(`📦 [compliance_export]`, payload)
-    await sleep(1000)
+    const { runComplianceExport } = await import('@/lib/enterprise/complianceExportJob')
+    const out = await runComplianceExport(pool, payload as { export_id?: string })
+    log.info(`   ✅ Export ${out.exportId}: ${out.messageCount} msgs → ${out.downloadKey} (${out.sizeBytes} bytes)`)
   },
 
-  // File virus scan
-  file_scan: async (payload) => {
+  // File virus scan — real ClamAV INSTREAM path.
+  file_scan: async (payload, pool) => {
     const { file_id } = payload as { file_id: string }
     log.info(`🔍 [file_scan] File: ${file_id}`)
-    // In production: send to ClamAV socket
-    await sleep(300)
+    const { runFileScan } = await import('@/lib/files/fileScanJob')
+    const verdict = await runFileScan(pool, payload as { file_id?: string; scan_id?: string })
+    log.info(`   ${verdict.result === 'clean' ? '✅' : verdict.result === 'infected' ? '🦠' : '⏳'} verdict: ${verdict.result}${verdict.threatName ? ` (${verdict.threatName})` : ''}`)
   },
 
   // Clip transcription
@@ -164,18 +170,25 @@ const handlers: Record<string, JobHandler> = {
     log.info(`   ✅ Delivered`)
   },
 
-  // DLP content scan
-  dlp_scan: async (payload) => {
+  // DLP content scan — real rule matching + violation logging.
+  dlp_scan: async (payload, pool) => {
     log.info(`🛡️ [dlp_scan]`, payload)
-    await sleep(200)
+    const { runDlpScan } = await import('@/lib/enterprise/dlpScanJob')
+    const res = await runDlpScan(pool, payload as {
+      content?: string; message_id?: string; file_id?: string
+      channel_id?: string; user_id?: string
+    })
+    log.info(`   ${res.clean ? '✅ clean' : `🚨 ${res.violations} violation(s) → ${res.action}`}`)
   },
 
-  // Push notification delivery
-  push_deliver: async (payload) => {
-    const { user_id, title } = payload as { user_id: string; title: string }
-    log.info(`📱 [push_deliver] User: ${user_id} | Title: ${title}`)
-    // In production: send via APNS/FCM SDK
-    await sleep(100)
+  // Push notification delivery — real FCM HTTP v1 dispatch (+ APNS graceful path)
+  push_deliver: async (payload, pool) => {
+    const { deliverPush } = await import('@/lib/notifications/pushDelivery')
+    const p = payload as Parameters<typeof deliverPush>[1]
+    const target = p.user_id || (p.user_ids || []).join(',')
+    log.info(`📱 [push_deliver] User: ${target} | Title: ${p.title || ''}`)
+    const r = await deliverPush(pool, p)
+    log.info(`   ✅ sent:${r.sent} failed:${r.failed} stale:${r.stale} apns_skipped:${r.skipped_apns}${r.no_creds ? ' (fcm_unconfigured)' : ''}`)
   },
 
   // Webhook v2 deliver (from webhookEmitter)

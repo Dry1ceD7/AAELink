@@ -6,6 +6,7 @@ import { Search, X, Hash, MessageSquare, Loader2, User, Calendar, Paperclip, Pin
 import { apiFetch } from '@/lib/api/apiClient'
 import { MessageRichText } from '@/lib/messaging/messageRich'
 import { parseSearchFilters, type SearchFilters } from '@/lib/messaging/searchFilters'
+import { SavedSearches } from '@/components/search/SavedSearches'
 
 interface SearchResult {
   message_id: string
@@ -250,6 +251,15 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
             ))}
           </div>
         )}
+
+        {/* Saved searches */}
+        <SavedSearches
+          workspaceId={workspaceId}
+          open={open}
+          currentQuery={query}
+          currentFilters={filters as unknown as Record<string, unknown>}
+          onApply={q => { setQuery(q); setTimeout(() => inputRef.current?.focus(), 10) }}
+        />
 
         {/* Results */}
         <div className="global-search-results">

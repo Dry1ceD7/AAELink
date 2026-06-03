@@ -155,6 +155,8 @@ async function _POST(req: NextRequest) {
     if (userIds.length === 0) return NextResponse.json({ error: 'user_ids_required' }, { status: 400 })
 
     const priority = ['high', 'normal', 'low'].includes(body.priority || '') ? body.priority! : 'normal'
+    // Map push priority → job queue priority (lower runs first).
+    const jobPriority = priority === 'high' ? 2 : priority === 'low' ? 6 : 4
     const now = Date.now()
     let queued = 0
 
@@ -166,6 +168,24 @@ async function _POST(req: NextRequest) {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9)
       `, [logId, targetId, body.title || '', body.body_text || '', body.channel_id || '',
           priority, body.silent || false, body.badge_count || 0, now])
+
+      // Enqueue actual delivery via the worker job queue (push_deliver handler
+      // in lib/infra/worker.ts → lib/notifications/pushDelivery.ts). log_id lets
+      // the worker update this push_log row's status on completion.
+      await pool.query(`
+        INSERT INTO aaelink.jobs
+          (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
+        VALUES ($1, 'push_deliver', 'pending', $2, $3, $4, 3, 0, $5, $4)
+      `, [randomUUID(), jobPriority, JSON.stringify({
+        user_id: targetId,
+        title: body.title || '',
+        body: body.body_text || '',
+        channel_id: body.channel_id || '',
+        badge_count: body.badge_count || 0,
+        silent: body.silent || false,
+        priority,
+        log_id: logId,
+      }), now, uid])
       queued++
     }
 

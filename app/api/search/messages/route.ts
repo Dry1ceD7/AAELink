@@ -28,8 +28,9 @@ async function _GET(req: NextRequest) {
   const after    = req.nextUrl.searchParams.get('after') || ''
   const has      = req.nextUrl.searchParams.get('has') || ''
 
-  const pattern = `%${q}%`
-  const params: (string | number)[] = [uid, pattern]
+  // $2 is the raw query, fed to websearch_to_tsquery('english', $2) for the
+  // tsvector match and ts_rank scoring against the stored body_tsv column.
+  const params: (string | number)[] = [uid, q]
   let idx = 3
 
   // Build WHERE clauses
@@ -98,11 +99,12 @@ async function _GET(req: NextRequest) {
       u.id AS author_id,
       u.username AS author_username,
       u.first_name AS author_first_name,
-      u.last_name AS author_last_name
+      u.last_name AS author_last_name,
+      ts_rank(m.body_tsv, websearch_to_tsquery('english', $2)) AS rank
     FROM aaelink.messages m
     JOIN aaelink.channels c ON c.id = m.channel_id
     JOIN aaelink.users u ON u.id = m.user_id
-    WHERE m.body ILIKE $2
+    WHERE m.body_tsv @@ websearch_to_tsquery('english', $2)
       AND c.archived_at = 0
       AND (
         c.type = 'O'
@@ -113,7 +115,7 @@ async function _GET(req: NextRequest) {
         OR (c.type = 'D' AND (c.dm_user_a = $1 OR c.dm_user_b = $1))
       )
       ${extraFilters}
-    ORDER BY m.created_at DESC
+    ORDER BY rank DESC, m.created_at DESC
     LIMIT $${idx} OFFSET $${idx + 1}
   `
   params.push(limit, offset)
@@ -124,7 +126,7 @@ async function _GET(req: NextRequest) {
     FROM aaelink.messages m
     JOIN aaelink.channels c ON c.id = m.channel_id
     JOIN aaelink.users u ON u.id = m.user_id
-    WHERE m.body ILIKE $2
+    WHERE m.body_tsv @@ websearch_to_tsquery('english', $2)
       AND c.archived_at = 0
       AND (
         c.type = 'O'
