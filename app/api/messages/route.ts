@@ -532,7 +532,7 @@ async function _POST(req: Request) {
           body: message
         })
         // Keyword highlights for members (skip those already @mentioned).
-        await notifyKeywordMatches({
+        const keyworded = await notifyKeywordMatches({
           pool,
           workspaceId: ch.workspace_id,
           channelId: channel_id,
@@ -543,7 +543,8 @@ async function _POST(req: Request) {
           body: message,
           excludeUserIds: mentioned
         })
-        // Members who chose notification level 'all' get every message.
+        // Members who chose notification level 'all' get every message — skip
+        // anyone already alerted via mention or keyword (no duplicate alert).
         await notifyChannelLevelAll({
           pool,
           workspaceId: ch.workspace_id,
@@ -553,7 +554,7 @@ async function _POST(req: Request) {
           authorId: uid,
           authorLabel: authorLabel(ur),
           body: message,
-          excludeUserIds: mentioned
+          excludeUserIds: [...mentioned, ...keyworded]
         })
       }
     }
@@ -569,6 +570,12 @@ async function _POST(req: Request) {
        VALUES ($1, $2, $3, $4, $5, $6, $6)`,
       [broadcastId, channel_id, uid, message, '', now + 1]
     )
+    // Keep outgoing-webhook state consistent for the timeline-visible copy.
+    // (Recipients were already notified via the thread reply above; do NOT
+    // re-notify here or they would get a duplicate alert.)
+    try {
+      await emitMessageCreated(pool, { channel_id, message_id: broadcastId, user_id: uid, content: message })
+    } catch (e) { console.error('emitMessageCreated(broadcast)', e) }
   }
 
   const created = rowToPost({

@@ -5,7 +5,7 @@ import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { filterUsersForNotification } from '@/lib/notifications/notificationPrefs'
 import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
 import { matchKeywords } from '@/lib/notifications/keywords'
-import { selectPushTargets, enqueuePush, dropLevelNothing, channelMembersLevelAll } from '@/lib/notifications/pushTargeting'
+import { selectPushTargets, enqueuePush, dropLevelNothing, dropMuted, channelMembersLevelAll } from '@/lib/notifications/pushTargeting'
 
 export type NotificationInsertRow = {
   user_id: string
@@ -145,7 +145,7 @@ export async function notifyKeywordMatches(args: {
   authorLabel: string
   body: string
   excludeUserIds?: string[]
-}): Promise<void> {
+}): Promise<string[]> {
   const exclude = new Set([args.authorId, ...(args.excludeUserIds || [])])
 
   // Members of the channel (excluding author + already-notified) who have keywords.
@@ -156,7 +156,7 @@ export async function notifyKeywordMatches(args: {
          ON cm.user_id = nk.user_id AND cm.channel_id = $1`,
     [args.channelId]
   )
-  if (rows.length === 0) return
+  if (rows.length === 0) return []
 
   const byUser = new Map<string, string[]>()
   for (const r of rows) {
@@ -165,19 +165,19 @@ export async function notifyKeywordMatches(args: {
     list.push(r.keyword)
     byUser.set(r.user_id, list)
   }
-  if (byUser.size === 0) return
+  if (byUser.size === 0) return []
 
   let hits = [...byUser.entries()]
     .filter(([, keywords]) => matchKeywords(args.body, keywords).length > 0)
     .map(([userId]) => userId)
-  if (hits.length === 0) return
+  if (hits.length === 0) return []
 
   // Keyword highlights ride the 'mentions' notification preference.
   hits = await filterUsersForNotification(args.pool, hits, 'mentions')
-  if (hits.length === 0) return
+  if (hits.length === 0) return []
   // Respect a per-channel level of 'nothing' (notifications off).
   hits = await dropLevelNothing(args.pool, hits, args.channelId)
-  if (hits.length === 0) return
+  if (hits.length === 0) return []
 
   const title = `Keyword in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
@@ -203,6 +203,7 @@ export async function notifyKeywordMatches(args: {
       args.authorId
     )
   }
+  return hits
 }
 
 /**
@@ -225,7 +226,9 @@ export async function notifyChannelLevelAll(args: {
   const members = await channelMembersLevelAll(args.pool, args.channelId)
   if (members.length === 0) return
   const exclude = new Set([args.authorId, ...(args.excludeUserIds || [])])
-  const targets = members.filter(u => !exclude.has(u))
+  // Channel mute wins over level='all' for the in-app every-message alert too,
+  // not just push.
+  const targets = await dropMuted(args.pool, members.filter(u => !exclude.has(u)), args.channelId)
   if (targets.length === 0) return
 
   const title = `New message in ${args.channelLabel}`

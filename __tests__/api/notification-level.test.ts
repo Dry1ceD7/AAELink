@@ -17,6 +17,8 @@ let author: TestUser
 let allMember: TestUser
 let nothingMember: TestUser
 let defMember: TestUser
+let mutedAllMember: TestUser
+let kwAllMember: TestUser
 let channel: TestChannel
 let wsId: string
 const createdIds: string[] = []
@@ -56,19 +58,35 @@ beforeAll(async () => {
   allMember = await createTestUser(ctx.pool, { role: 'employee' })
   nothingMember = await createTestUser(ctx.pool, { role: 'employee' })
   defMember = await createTestUser(ctx.pool, { role: 'employee' })
-  createdIds.push(author.id, allMember.id, nothingMember.id, defMember.id)
+  mutedAllMember = await createTestUser(ctx.pool, { role: 'employee' })
+  kwAllMember = await createTestUser(ctx.pool, { role: 'employee' })
+  createdIds.push(author.id, allMember.id, nothingMember.id, defMember.id, mutedAllMember.id, kwAllMember.id)
   const { rows: [m] } = await ctx.pool.query<{ workspace_id: string }>(
     `SELECT workspace_id FROM aaelink.workspace_members WHERE user_id = $1 LIMIT 1`, [author.id]
   )
   wsId = m.workspace_id
   channel = await createTestChannel(ctx.pool, author.id, { workspaceId: wsId })
-  for (const u of [allMember, nothingMember, defMember]) await addMember(u.id)
+  for (const u of [allMember, nothingMember, defMember, mutedAllMember, kwAllMember]) await addMember(u.id)
   await setLevel(allMember.id, 'all')
   await setLevel(nothingMember.id, 'nothing')
   // defMember: no prefs row → default behavior
+  // mutedAllMember: level='all' AND muted=true → mute must win
+  await ctx.pool.query(
+    `INSERT INTO aaelink.channel_notification_prefs (user_id, channel_id, level, muted, updated_at)
+     VALUES ($1, $2, 'all', true, $3) ON CONFLICT (user_id, channel_id) DO UPDATE SET level='all', muted=true`,
+    [mutedAllMember.id, channel.id, Date.now()]
+  )
+  // kwAllMember: level='all' AND a keyword → must get exactly ONE alert
+  await setLevel(kwAllMember.id, 'all')
+  await ctx.pool.query(
+    `INSERT INTO aaelink.notification_keywords (user_id, keyword, created_at)
+     VALUES ($1, 'urgent', $2) ON CONFLICT DO NOTHING`,
+    [kwAllMember.id, Date.now()]
+  )
 })
 
 afterAll(async () => {
+  await ctx.pool.query(`DELETE FROM aaelink.notification_keywords WHERE user_id = ANY($1)`, [createdIds])
   await ctx.pool.query(`DELETE FROM aaelink.channel_notification_prefs WHERE user_id = ANY($1)`, [createdIds])
   await ctx.pool.query(`DELETE FROM aaelink.notifications WHERE user_id = ANY($1)`, [createdIds])
   await cleanupTestData(ctx.pool, createdIds)
@@ -91,5 +109,16 @@ describe('channel notification level', () => {
   it('default level still gets @mention notifications', async () => {
     const id = await post(`hey @${usernameOf(defMember)} look`)
     expect(await kinds(defMember.id, id)).toContain('mention')
+  })
+
+  it("channel mute wins over level='all' (no in-app row for a muted member)", async () => {
+    const id = await post('another plain message')
+    expect(await kinds(mutedAllMember.id, id)).toHaveLength(0)
+  })
+
+  it("a level='all' + keyword member gets exactly ONE alert, not two", async () => {
+    const id = await post('this is urgent everyone')
+    // keyword path claims the user; level-all excludes them → single notification.
+    expect(await kinds(kwAllMember.id, id)).toHaveLength(1)
   })
 })

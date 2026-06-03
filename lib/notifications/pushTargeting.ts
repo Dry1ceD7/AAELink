@@ -152,6 +152,28 @@ export async function dropLevelNothing(
 }
 
 /**
+ * Drop users who muted this channel (muted flag, a channel_mutes row, or level
+ * 'nothing'). For in-app notifications where a mute must win — e.g. level='all'
+ * every-message alerts should not appear in-app for a muted member.
+ */
+export async function dropMuted(
+  pool: Pool, userIds: string[], channelId: string,
+): Promise<string[]> {
+  const uniq = [...new Set(userIds.filter(Boolean))]
+  if (uniq.length === 0) return []
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_notification_prefs
+       WHERE channel_id = $2 AND user_id = ANY($1) AND (muted = true OR level = 'nothing')
+     UNION
+     SELECT user_id FROM aaelink.channel_mutes
+       WHERE channel_id = $2 AND user_id = ANY($1)`,
+    [uniq, channelId],
+  )
+  const off = new Set(rows.map(r => r.user_id))
+  return uniq.filter(u => !off.has(u))
+}
+
+/**
  * Channel members who set notification level 'all' — they want a notification
  * for every message, not just @mentions.
  */
