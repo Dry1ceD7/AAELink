@@ -3,7 +3,7 @@
 Read at session start. Update with /handoff before ending a session.
 Non-personal voice. No emojis.
 
-Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
+Last updated: 2026-06-03 (Stage C — D1 workspace lifecycle + dev-boot fixes).
 
 ## Source of truth
 - Parity scope: `docs/SLACK-PARITY-DIRECTIVE.md` (12 domains; AI/ML out of scope).
@@ -62,12 +62,37 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
   org delete blocked by missing ON DELETE SET NULL on workspaces.org_id.
   D9 roles/invites/org-admin and D10 barriers/policies now verified-working.
 
+## Stage C progress (2026-06-03 session)
+- D1 workspace move/archive lifecycle shipped (migration 004 + lib +
+  routes + lib-layer test). `workspaces.archived_at` (BIGINT epoch-ms, 0 =
+  active — mirrors `channels.archived_at`) + `archived_by`.
+  `lib/workspace/workspaceLifecycle.ts`: archiveWorkspace / unarchiveWorkspace
+  (owner-only, system workspace guarded, already_archived/not_archived guards) +
+  moveWorkspaceToOrg (owner-only org reassignment; moving INTO an org requires
+  caller standing in a sibling workspace, mirroring joinOpenWorkspace; UUID-guards
+  the org id; detach-to-null supported). Routes: POST/DELETE
+  `/api/workspaces/:id/archive`, POST `/api/workspaces/:id/move` (traced + CSRF +
+  audit: workspace.archive/unarchive/move). Discovery now excludes archived
+  workspaces (`archived_at = 0`) and joinOpenWorkspace rejects archived ('archived');
+  switcher exposes `is_archived`. Test: `__tests__/api/workspace-lifecycle.test.ts`
+  (14 lib-layer assertions, green on fresh DB). D1 move/archive lifecycle Gap -> Done.
+- Dev-boot blocker fixed (was breaking `next dev` for everyone): `middleware.ts`
+  runs on the Edge runtime and imported `lib/auth/csp.ts`, which used Node's
+  `crypto.randomBytes` — unsupported on Edge, so every route 500'd at startup.
+  Switched `generateNonce()` to Web Crypto (`crypto.getRandomValues` + `btoa`).
+  Also made `lib/api/rateLimitStore.ts`'s optional `import('ioredis')` use a
+  runtime-variable specifier so Turbopack stops emitting a hard Edge
+  "Module not found" for the intentionally-absent optional dep.
+- Gates: tsc 0 errors, lint 0 errors (152 warnings, none in changed files),
+  unit 1482 passed / 3 skipped (1485), integration workspace-lifecycle 14/14 +
+  workspaces-discover 11/11 green.
+
 ## Next (Stage C — build in-scope parity gaps, phase order in the directive section 7)
 - Re-validate schema-dependent "Done" routes (D9/D10/org/roles) with DB-backed
   lib-layer tests now that the schema actually builds (their "Done" was
   unverified — see C4 correction note at the top of the audit).
-- Phase 1 (D1): org-wide channels, workspace discovery, access levels, enterprise
-  identity cross-workspace verification, workspace move/archive lifecycle.
+- Phase 1 (D1): org-wide channels, enterprise identity cross-workspace
+  verification. (workspace discovery, access levels, move/archive lifecycle: Done.)
 - Phase 2 (D2): domain claiming, SAML signed-response + owner bypass, session
   duration enforcement, MFA/EMM cascade, single-channel guest mgmt.
 - Phase 3 (D3+D4): user-group mentions, edit-history, download-all; D4 migrate
@@ -75,6 +100,17 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
 - See `docs/audits/deep-audit-2026-06-02.md` section A1b for the full ordered list.
 
 ## Watch / tracked follow-ups
+- ENV (dev-boot, needs human): the repo `.env` `DATABASE_URL` points the running
+  app at a Postgres that accepts then drops the connection ("Connection terminated
+  unexpectedly" → /api/health 503, all DB routes 500). The correct local DB is the
+  docker postgres on host port 25432:
+  `DATABASE_URL=postgresql://aaelink:aaelink@127.0.0.1:25432/aaelink`. Verified:
+  launching `bun run dev:localhost` with that value gives health 200 + switcher 401.
+  `.env` is permission-protected (secret) so it was not edited; fix the value in
+  `.env` (or export it) to run the app/desktop shell against a working DB.
+- MCP (doctor): removed the broken `caveman-shrink` local MCP server (npx package
+  did not exist → "Failed to connect"). `context7`/`playwright`/`filesystem` MCPs
+  remain "pending approval" — approve interactively via `claude` if wanted.
 - TEST HARNESS GAP (audit C7): route handlers invoked directly under vitest 500
   because readSessionUserId() calls cookies() (next/headers) outside a request
   scope. Cookie-auth routes can't be tested by direct invocation. Verify

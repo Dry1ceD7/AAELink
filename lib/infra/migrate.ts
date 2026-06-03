@@ -2593,8 +2593,37 @@ async function migration002BackfillExtendedSchema(pool: RunnerPool) {
   await ensureGlobalWorkspaceAndDepartments(pool)
 }
 
+/**
+ * 004 — D1 Enterprise Grid: workspace archive + move lifecycle.
+ *
+ * Adds `archived_at` (BIGINT epoch-ms, 0 = active — same convention as
+ * `channels.archived_at`) and `archived_by` (the actor who archived it) to
+ * workspaces. An owner can archive/unarchive a workspace and move it between
+ * organizations; archived workspaces are excluded from discovery and flagged
+ * in the switcher. See lib/workspace/workspaceLifecycle.ts.
+ *
+ * Forward-only: additive columns with safe defaults (existing workspaces stay
+ * active, archived_at = 0). Idempotent (ADD COLUMN IF NOT EXISTS). The index
+ * supports the active/archived split used by discovery and the switcher.
+ */
+async function migration004WorkspaceLifecycle(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.workspaces
+       ADD COLUMN IF NOT EXISTS archived_at BIGINT NOT NULL DEFAULT 0`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.workspaces
+       ADD COLUMN IF NOT EXISTS archived_by TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_workspaces_archived
+       ON aaelink.workspaces(archived_at)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
   { id: '003_workspace_access_levels', up: migration003WorkspaceAccessLevels },
+  { id: '004_workspace_lifecycle', up: migration004WorkspaceLifecycle },
 ]

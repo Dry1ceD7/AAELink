@@ -32,12 +32,13 @@ async function _GET() {
     display_name: string
     is_system: boolean
     created_at: string
+    archived_at: string
     role: string
     member_count: string
     channel_count: string
   }>(`
     SELECT
-      w.id, w.name, w.display_name, w.is_system, w.created_at::text,
+      w.id, w.name, w.display_name, w.is_system, w.created_at::text, w.archived_at::text,
       wm.role,
       (SELECT COUNT(*)::text FROM aaelink.workspace_members wm2 WHERE wm2.workspace_id = w.id) AS member_count,
       (SELECT COUNT(*)::text FROM aaelink.channels c WHERE c.workspace_id = w.id AND c.archived_at = 0) AS channel_count
@@ -78,6 +79,7 @@ async function _GET() {
       display_name: w.display_name,
       is_system: w.is_system,
       created_at: Number(w.created_at),
+      is_archived: Number(w.archived_at) > 0,
       role: w.role,
       member_count: Number(w.member_count),
       channel_count: Number(w.channel_count),

@@ -66,7 +66,7 @@ export interface DiscoverableWorkspace {
 
 export type JoinResult =
   | { ok: true; workspaceId: string; channelId: string | null }
-  | { ok: false; code: 'not_found' | 'not_open' | 'already_member' | 'not_in_org' }
+  | { ok: false; code: 'not_found' | 'not_open' | 'already_member' | 'not_in_org' | 'archived' }
 
 /**
  * List `open` workspaces in the same org(s) as the user that the user has
@@ -83,6 +83,7 @@ export async function listDiscoverableWorkspaces(
               WHERE wm.workspace_id = w.id) AS member_count
        FROM aaelink.workspaces w
       WHERE w.access_level = 'open'
+        AND w.archived_at = 0
         AND w.org_id IS NOT NULL
         AND w.org_id IN (
           SELECT DISTINCT w2.org_id
@@ -111,12 +112,13 @@ export async function joinOpenWorkspace(
   uid: string,
   workspaceId: string
 ): Promise<JoinResult> {
-  const { rows } = await pool.query<{ access_level: string; org_id: string | null }>(
-    `SELECT access_level, org_id FROM aaelink.workspaces WHERE id = $1`,
+  const { rows } = await pool.query<{ access_level: string; org_id: string | null; archived_at: string }>(
+    `SELECT access_level, org_id, archived_at::text FROM aaelink.workspaces WHERE id = $1`,
     [workspaceId]
   )
   const ws = rows[0]
   if (!ws) return { ok: false, code: 'not_found' }
+  if (Number(ws.archived_at) > 0) return { ok: false, code: 'archived' }
   if (ws.access_level !== 'open') return { ok: false, code: 'not_open' }
   if (!ws.org_id) return { ok: false, code: 'not_in_org' }
 
