@@ -81,11 +81,14 @@ async function ensureRedis(): Promise<IoredisLike | null> {
     try {
       // Lazy import so the dependency stays optional. The `ioredis` package
       // is not in `dependencies`; production deployments add it explicitly.
-      // The dynamic import path uses a constant string but the resolution is
-      // intentionally optional — `tsc` cannot resolve `ioredis` at type-check
-      // time and that is fine.
+      // The specifier is held in a runtime variable so the bundler (Turbopack)
+      // treats it as an external expression instead of trying to statically
+      // resolve it — otherwise the Edge build emits a hard "Module not found"
+      // for a dependency that is intentionally optional and absent in dev.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mod = await (import('ioredis' as any).catch(() => null) as Promise<any>)
+      const ioredisSpecifier = 'ioredis' as any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mod = await (import(ioredisSpecifier).catch(() => null) as Promise<any>)
       if (!mod) {
         console.warn('[rateLimitStore.ensureRedis] redis disabled (ioredis not installed)')
         redisProbed = true

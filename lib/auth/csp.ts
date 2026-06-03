@@ -12,7 +12,6 @@
  *   - Configurable policy per environment
  */
 
-import { randomBytes } from 'crypto'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -61,9 +60,18 @@ const DEFAULT_CONFIG: Required<CspConfig> = {
 
 // ── Nonce ─────────────────────────────────────────────────────────────
 
-/** Generate a cryptographically random nonce */
+/** Generate a cryptographically random nonce.
+ *
+ * Uses the Web Crypto API (`crypto.getRandomValues`) rather than Node's
+ * `crypto.randomBytes` so this runs in the Edge runtime — `middleware.ts`
+ * (which calls this) executes on Edge, where Node's `crypto` module is
+ * unavailable. Web Crypto + `btoa` are globals in both Edge and Node. */
 export function generateNonce(): string {
-  return randomBytes(16).toString('base64')
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
 }
 
 // ── Policy Builder ───────────────────────────────────────────────────
