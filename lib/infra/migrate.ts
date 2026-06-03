@@ -2676,6 +2676,38 @@ async function migration006SharedWorkspaceChannels(pool: RunnerPool) {
   )
 }
 
+/**
+ * 007 — D2 Identity: domain claiming + domain-based account capture.
+ *
+ * An org claims a DNS domain and proves ownership via a TXT record carrying a
+ * per-claim verification token. Once verified, accounts whose email is under
+ * that domain are captured into the claiming org (Slack domain claiming). A
+ * domain may be verified by at most one org; the partial unique index enforces
+ * that while still allowing multiple orgs to hold competing pending claims.
+ * See lib/enterprise/domainClaiming.ts.
+ *
+ * Forward-only: a new table, no changes to existing rows. Idempotent.
+ */
+async function migration007DomainClaiming(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.org_domains (
+       org_id             UUID NOT NULL REFERENCES aaelink.organizations(id) ON DELETE CASCADE,
+       domain             TEXT NOT NULL,
+       verification_token TEXT NOT NULL,
+       verified           BOOLEAN NOT NULL DEFAULT false,
+       verified_at        BIGINT NOT NULL DEFAULT 0,
+       created_by         TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       created_at         BIGINT NOT NULL,
+       PRIMARY KEY (org_id, domain)
+     )`
+  )
+  // At most one org may hold a verified claim on a given domain.
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_org_domains_verified_unique
+       ON aaelink.org_domains(domain) WHERE verified = true`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2683,4 +2715,5 @@ const MIGRATIONS: Migration[] = [
   { id: '004_workspace_lifecycle', up: migration004WorkspaceLifecycle },
   { id: '005_org_wide_channels', up: migration005OrgWideChannels },
   { id: '006_shared_workspace_channels', up: migration006SharedWorkspaceChannels },
+  { id: '007_domain_claiming', up: migration007DomainClaiming },
 ]
