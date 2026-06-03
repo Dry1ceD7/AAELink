@@ -3,6 +3,7 @@ import { randomUUID, createHmac } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { getMfaPolicy, updateMfaPolicy, validateMfaPatch, type MfaPolicy } from '@/lib/auth/mfaPolicy'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
@@ -41,18 +42,7 @@ async function _GET(req: NextRequest) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
 
-    const { rows: cfgRows } = await pool.query<{ value: string }>(
-      `SELECT value FROM aaelink.system_config WHERE key = 'mfa_policy'`
-    )
-    const defaultPolicy = {
-      enforcement: 'optional' as string,
-      grace_period_days: 14,
-      allowed_methods: ['totp', 'backup_codes', 'sso_mfa'],
-      remember_device_days: 30,
-      require_on_password_change: true,
-    }
-    let policy = defaultPolicy
-    if (cfgRows[0]?.value) { try { policy = { ...defaultPolicy, ...JSON.parse(cfgRows[0].value) } } catch { /**/ } }
+    const policy = await getMfaPolicy(pool)
 
     // Enrollment stats
     const { rows: [stats] } = await pool.query<{
@@ -213,27 +203,14 @@ async function _PUT(req: NextRequest) {
     return NextResponse.json({ error: 'super_admin_only' }, { status: 403 })
   }
 
-  const body = (await req.json().catch(() => ({}))) as {
-    enforcement?: string; grace_period_days?: number
-    allowed_methods?: string[]; remember_device_days?: number
-    require_on_password_change?: boolean
+  const body = (await req.json().catch(() => ({}))) as Partial<MfaPolicy>
+  const violation = validateMfaPatch(body)
+  if (violation) {
+    return NextResponse.json({ error: `${violation.field}_${violation.message}` }, { status: 400 })
   }
 
-  const { rows: cfgRows } = await pool.query<{ value: string }>(
-    `SELECT value FROM aaelink.system_config WHERE key = 'mfa_policy'`
-  )
-  let current: Record<string, unknown> = {}
-  if (cfgRows[0]?.value) { try { current = JSON.parse(cfgRows[0].value) } catch { /**/ } }
-
-  const updated = { ...current, ...body }
   const now = Date.now()
-
-  await pool.query(`
-    INSERT INTO aaelink.system_config (key, value, updated_at)
-    VALUES ('mfa_policy', $1, $2)
-    ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = $2
-  `, [JSON.stringify(updated), now])
-
+  const updated = await updateMfaPolicy(pool, body, now)
   return NextResponse.json({ policy: updated, updated_at: now })
 }
 

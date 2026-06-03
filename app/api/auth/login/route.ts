@@ -5,6 +5,8 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { verifyPassword } from '@/lib/auth/password'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
 import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
+import { getMfaPolicy, mfaEnrollmentRequired, userHasActiveMfa } from '@/lib/auth/mfaPolicy'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // ── Rate limiting (in-memory per IP) ─────────────────────────────────────────
@@ -91,8 +93,8 @@ async function _POST(req: Request) {
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
     }
 
-    const { rows } = await pool.query<{ id: string; password_hash: string }>(
-      `SELECT id, password_hash FROM aaelink.users
+    const { rows } = await pool.query<{ id: string; password_hash: string; platform_role: string; created_at: string }>(
+      `SELECT id, password_hash, platform_role, created_at::text FROM aaelink.users
        WHERE lower(username) = lower($1) OR lower(email) = lower($1) LIMIT 1`,
       [String(login_id).trim()]
     )
@@ -117,6 +119,17 @@ async function _POST(req: Request) {
         )
       } catch { /* best-effort */ }
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
+    }
+
+    // MFA enforcement (D2): if policy requires MFA for this user and the grace
+    // window has elapsed, block sign-in until they enroll. Default policy is
+    // 'optional', so this never fires unless an admin turns it on.
+    const mfaPolicy = await getMfaPolicy(pool)
+    const accountAgeMs = Date.now() - Number(row.created_at || 0)
+    if (mfaEnrollmentRequired(mfaPolicy, { isAdmin: isPlatformAdmin(row.platform_role || ''), accountAgeMs })) {
+      if (!(await userHasActiveMfa(pool, row.id))) {
+        return NextResponse.json({ error: 'mfa_enrollment_required' }, { status: 403 })
+      }
     }
 
     const sessionId = randomUUID()
