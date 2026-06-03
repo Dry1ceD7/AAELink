@@ -103,7 +103,7 @@ async function _POST(req: Request) {
       // Audit failed login
       try {
         await pool.query(
-          `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, ip_address, user_agent, meta, created_at)
+          `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, ip_address, user_agent, metadata, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             randomUUID(),
@@ -153,7 +153,7 @@ async function _POST(req: Request) {
     // Audit successful login
     try {
       await pool.query(
-        `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, ip_address, user_agent, meta, created_at)
+        `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, ip_address, user_agent, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [randomUUID(), row.id, 'user.login', 'user', row.id, ipAddress, userAgent, JSON.stringify({ session_id: sessionId }), now]
       )

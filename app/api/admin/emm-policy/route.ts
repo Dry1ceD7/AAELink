@@ -51,7 +51,7 @@ async function _PUT(req: NextRequest) {
 
   const policy = await updateEmmPolicy(pool, body)
   await pool.query(
-    `INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, meta, created_at)
+    `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, metadata, created_at)
      VALUES ($1, $2, 'emm_policy_updated', 'system', $3, $4)`,
     [randomUUID(), uid, JSON.stringify({ changes: body }), Date.now()]
   ).catch(() => { /* best-effort */ })

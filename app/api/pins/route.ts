@@ -71,7 +71,7 @@ async function _POST(req: NextRequest) {
   // Audit log
   try {
     await pool.query(
-      `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, meta, created_at)
+      `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [randomUUID(), uid, 'message.pin', 'message', message_id, JSON.stringify({ channel_id }), now]
     )
@@ -101,7 +101,7 @@ async function _DELETE(req: NextRequest) {
   // Audit log
   try {
     await pool.query(
-      `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, meta, created_at)
+      `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [randomUUID(), uid, 'message.unpin', 'message', body.message_id, JSON.stringify({ channel_id: body.channel_id }), Date.now()]
     )

@@ -109,7 +109,7 @@ async function _PUT(req: NextRequest) {
 
   // Audit log
   await pool.query(
-    `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+    `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
      VALUES ($1, 'retention.update', 'policy', $2, $3)`,
     [uid, rows[0]?.id || scope, JSON.stringify({ scope, retention_days, enabled })]
   ).catch(() => {})

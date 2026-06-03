@@ -180,7 +180,7 @@ async function _PUT(req: NextRequest) {
   `, [JSON.stringify(updated), now])
 
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'cluster_config_updated', 'system', 'cluster', $3, $4)
   `, [randomUUID(), uid, JSON.stringify({ mode: updated.mode }), now])
 

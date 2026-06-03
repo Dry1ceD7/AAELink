@@ -119,7 +119,7 @@ async function _POST(req: NextRequest) {
     )
     // Log the revocation
     await pool.query(
-      `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+      `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
        VALUES ($1, 'session.revoke', 'session', $2, '{}')`,
       [uid, session_id]
     ).catch(() => { /* audit_log table may not exist yet */ })
@@ -133,7 +133,7 @@ async function _POST(req: NextRequest) {
       [user_id, session_id || '00000000-0000-0000-0000-000000000000']
     )
     await pool.query(
-      `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+      `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
        VALUES ($1, 'session.revoke_all', 'user', $2, $3)`,
       [uid, user_id, JSON.stringify({ count: rowCount })]
     ).catch(() => {})

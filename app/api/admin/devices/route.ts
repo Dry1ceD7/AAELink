@@ -188,7 +188,7 @@ async function _DELETE(req: NextRequest) {
 
   // Audit
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, created_at)
     VALUES ($1, $2, 'device_wiped', 'device', $3, $4)
   `, [randomUUID(), uid, deviceId, Date.now()])
 

@@ -111,7 +111,7 @@ async function _POST(req: NextRequest) {
 
   // Log export request
   await pool.query(
-    `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+    `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
      VALUES ($1, 'export.create', 'export', $2, $3)`,
     [uid, rows[0].id, JSON.stringify({ type })]
   ).catch(() => {})

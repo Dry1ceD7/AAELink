@@ -115,7 +115,7 @@ async function _PUT(req: NextRequest) {
         `sha256:${randomUUID().slice(0, 16)}`, now, now + (90 * 86400000)])
 
     await pool.query(`
-      INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+      INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
       VALUES ($1, $2, 'encryption_key_created', 'encryption', $3, $4, $5)
     `, [randomUUID(), uid, id, JSON.stringify({ alias }), now])
 

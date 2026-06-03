@@ -168,7 +168,7 @@ async function _PATCH(req: NextRequest) {
   if (!rowCount) return NextResponse.json({ error: 'plugin_not_found' }, { status: 404 })
 
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, $3, 'plugin', $4, $5, $6)
   `, [randomUUID(), uid, `plugin_${body.action}d`, pluginId,
       JSON.stringify({ new_status: newStatus }), now])

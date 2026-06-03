@@ -145,7 +145,7 @@ async function _PATCH(req: NextRequest) {
     if (typeof body.purpose === 'string') changes.push('purpose')
     if (typeof body.header === 'string') changes.push('header')
     await pool.query(
-      `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, meta, created_at)
+      `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         randomUUID(),
