@@ -125,7 +125,7 @@ async function _POST(req: NextRequest) {
   ])
 
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'sso_provider_created', 'sso', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({ name, type }), now])
 

@@ -232,6 +232,11 @@ export function asRequest(
   if (options.cookie) headers.set('cookie', options.cookie)
   if (options.body) headers.set('content-type', 'application/json')
 
+  // Expose the cookie to the mocked next/headers cookies() (see
+  // __tests__/_setup/nextHeaders.ts) so readSessionUserId() authenticates the
+  // request. Cleared when no cookie is supplied to avoid leaking across calls.
+  ;(globalThis as { __TEST_COOKIE_HEADER__?: string }).__TEST_COOKIE_HEADER__ = options.cookie ?? ''
+
   return new NextRequest(url, {
     method,
     headers,

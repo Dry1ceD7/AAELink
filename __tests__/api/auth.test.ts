@@ -85,12 +85,9 @@ describe('POST /api/auth/sso', () => {
     const req = asRequest('POST', '/api/auth/sso', {
       cookie: admin.sessionCookie,
       body: {
-        action: 'create',
-        provider_type: 'saml',
         name: 'Test SSO Provider',
-        entity_id: 'https://idp.test/saml',
-        sso_url: 'https://idp.test/sso',
-        certificate: 'MIIBtest...',
+        type: 'saml',
+        metadata_url: 'https://idp.test/saml/metadata',
       },
     })
     const res = await POST(req)
@@ -103,12 +100,13 @@ describe('POST /api/auth/mfa', () => {
     const { POST } = await import('@/app/api/auth/mfa/route')
     const req = asRequest('POST', '/api/auth/mfa', {
       cookie: employee.sessionCookie,
-      body: { action: 'enroll', method: 'totp' },
+      body: { action: 'enroll_totp' },
     })
     const res = await POST(req)
     expect([200, 201]).toContain(res.status)
-    const body = await expectSuccess<{ enrollment: Record<string, unknown> }>(res)
-    expect(body.enrollment).toHaveProperty('secret')
-    expect(body.enrollment).toHaveProperty('qr_uri')
+    const body = await expectSuccess<{ enrollment: Record<string, unknown>; setup: Record<string, unknown> }>(res)
+    expect(body.enrollment).toHaveProperty('id')
+    expect(body.setup).toHaveProperty('secret')
+    expect(body.setup).toHaveProperty('otpauth_uri')
   })
 })

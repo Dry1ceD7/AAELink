@@ -15,6 +15,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Mocks next/headers so cookie-authenticated route handlers work when
+    // invoked directly (see __tests__/_setup/nextHeaders.ts).
+    setupFiles: ['__tests__/_setup/nextHeaders.ts'],
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.test.tsx'],
     testTimeout: 15000,
     hookTimeout: 15000,

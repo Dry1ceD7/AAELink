@@ -42,7 +42,7 @@ export async function requestRemoteWipe(
   )
 
   await pool.query(
-    `INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, created_at)
+    `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, created_at)
      VALUES (gen_random_uuid()::text, $1, 'device_wipe_requested', 'device', $2, $3)`,
     [actorId, deviceId, now]
   ).catch(() => { /* audit is best-effort */ })
