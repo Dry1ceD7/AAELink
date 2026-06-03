@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
@@ -31,7 +32,7 @@ async function _GET(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role || '')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -65,7 +66,7 @@ async function _POST(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role || '')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 

@@ -5,6 +5,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Slack Lists API — structured data lists (spreadsheet-like) within channels.
@@ -39,6 +40,11 @@ async function _GET(req: NextRequest) {
     if (!rows[0]) return NextResponse.json({ error: 'list_not_found' }, { status: 404 })
 
     const list = rows[0]
+    // A list is visible to its creator, or to anyone who can read its channel.
+    const canRead = list.created_by === uid ||
+      (Boolean(list.channel_id) && await userCanReadChannel(pool, uid, list.channel_id))
+    if (!canRead) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
     const { rows: items } = await pool.query<{
       id: string; list_id: string; values: string;
       position: number; created_by: string; created_at: number;
@@ -58,13 +64,20 @@ async function _GET(req: NextRequest) {
     })
   }
 
-  // List all lists
+  // List many lists. Scoped to a channel the user can read, otherwise only the
+  // user's own lists — never an unfiltered dump of every workspace's lists.
   let query = `SELECT * FROM aaelink.lists WHERE 1=1`
   const params: unknown[] = []
 
   if (channelId) {
+    if (!(await userCanReadChannel(pool, uid, channelId))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     params.push(channelId)
     query += ` AND channel_id = $${params.length}`
+  } else {
+    params.push(uid)
+    query += ` AND created_by = $${params.length}`
   }
 
   query += ` ORDER BY created_at DESC LIMIT 100`

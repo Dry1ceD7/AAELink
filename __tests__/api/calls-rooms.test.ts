@@ -20,12 +20,14 @@ import {
 
 let ctx: TestContext
 let user: TestUser
+let other: TestUser
 const createdIds: string[] = []
 
 beforeAll(async () => {
   ctx = await createTestContext()
   user = await createTestUser(ctx.pool, { role: 'employee' })
-  createdIds.push(user.id)
+  other = await createTestUser(ctx.pool, { role: 'employee' })
+  createdIds.push(user.id, other.id)
 })
 
 afterAll(async () => {
@@ -96,5 +98,25 @@ describe('POST /api/calls/rooms', () => {
     })
     const res = await PUT(req)
     expect(res.status).toBe(200)
+  })
+
+  it('forbids a non-host participant from ending the room, allows the host', async () => {
+    const { POST, PUT } = await import('@/app/api/calls/rooms/route')
+    const created = await POST(asRequest('POST', '/api/calls/rooms', {
+      cookie: user.sessionCookie, body: { call_type: 'voice', title: 'Host Test' },
+    }))
+    const { room } = await expectSuccess<{ room: { id: string } }>(created)
+
+    // a non-host participant cannot end
+    const denied = await PUT(asRequest('PUT', '/api/calls/rooms', {
+      cookie: other.sessionCookie, body: { action: 'end', room_id: room.id },
+    }))
+    expect(denied.status).toBe(403)
+
+    // the host (creator) can
+    const ok = await PUT(asRequest('PUT', '/api/calls/rooms', {
+      cookie: user.sessionCookie, body: { action: 'end', room_id: room.id },
+    }))
+    expect(ok.status).toBe(200)
   })
 })

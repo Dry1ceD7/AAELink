@@ -228,6 +228,19 @@ async function _PUT(req: NextRequest) {
   }
 
   if (body.action === 'end') {
+    // Only the room creator (host) or a super_admin may end a call for everyone.
+    const { rows: roomRows } = await pool.query<{ created_by: string }>(
+      `SELECT created_by FROM aaelink.call_rooms WHERE id = $1`, [roomId]
+    )
+    if (!roomRows[0]) return NextResponse.json({ error: 'room_not_found' }, { status: 404 })
+    if (roomRows[0].created_by !== uid) {
+      const { rows: uRows } = await pool.query<{ platform_role: string }>(
+        `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
+      )
+      if (uRows[0]?.platform_role !== 'super_admin') {
+        return NextResponse.json({ error: 'host_or_admin_only' }, { status: 403 })
+      }
+    }
     await pool.query(`UPDATE aaelink.call_rooms SET status = 'ended', ended_at = $1 WHERE id = $2`, [now, roomId])
     await pool.query(`UPDATE aaelink.call_participants SET left_at = $1 WHERE room_id = $2 AND left_at = 0`, [now, roomId])
     return NextResponse.json({ ok: true, ended_at: now })

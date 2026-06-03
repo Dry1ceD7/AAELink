@@ -22,12 +22,14 @@ import {
 
 let ctx: TestContext
 let user: TestUser
+let other: TestUser
 const createdIds: string[] = []
 
 beforeAll(async () => {
   ctx = await createTestContext()
   user = await createTestUser(ctx.pool, { role: 'employee' })
-  createdIds.push(user.id)
+  other = await createTestUser(ctx.pool, { role: 'employee' })
+  createdIds.push(user.id, other.id)
 })
 
 afterAll(async () => {
@@ -116,5 +118,28 @@ describe('POST /api/lists', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(200)
+  })
+
+  it('forbids a non-creator from reading another user\'s personal list', async () => {
+    const { POST, GET } = await import('@/app/api/lists/route')
+    const created = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie, body: { action: 'create_list', name: 'Private List' },
+    }))
+    const { list } = await expectSuccess<{ list: { id: string } }>(created)
+
+    // creator can read it
+    const ownRes = await GET(asRequest('GET', '/api/lists', { cookie: user.sessionCookie, query: { list_id: list.id } }))
+    expect(ownRes.status).toBe(200)
+
+    // a different user cannot
+    const otherRes = await GET(asRequest('GET', '/api/lists', { cookie: other.sessionCookie, query: { list_id: list.id } }))
+    expect(otherRes.status).toBe(403)
+  })
+
+  it('list-all returns only the caller\'s own lists, not everyone\'s', async () => {
+    const { GET } = await import('@/app/api/lists/route')
+    const res = await GET(asRequest('GET', '/api/lists', { cookie: other.sessionCookie }))
+    const body = await expectSuccess<{ lists: Array<{ created_by: string }> }>(res)
+    expect(body.lists.every(l => l.created_by === other.id)).toBe(true)
   })
 })

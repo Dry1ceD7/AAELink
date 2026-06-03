@@ -18,13 +18,15 @@ import {
 let ctx: TestContext
 let admin: TestUser
 let employee: TestUser
+let itAdmin: TestUser
 const createdIds: string[] = []
 
 beforeAll(async () => {
   ctx = await createTestContext()
   admin = await createTestUser(ctx.pool, { role: 'super_admin' })
   employee = await createTestUser(ctx.pool, { role: 'employee' })
-  createdIds.push(admin.id, employee.id)
+  itAdmin = await createTestUser(ctx.pool, { role: 'it_admin' })
+  createdIds.push(admin.id, employee.id, itAdmin.id)
 })
 
 afterAll(async () => {
@@ -55,6 +57,13 @@ describe('GET /api/compliance/dlp', () => {
     const body = await expectSuccess<{ rules: unknown[] }>(res)
     expect(body).toHaveProperty('rules')
     expect(Array.isArray(body.rules)).toBe(true)
+  })
+
+  it('allows it_admin (platform admin tier) — was locked out by the platform_admin role-name bug', async () => {
+    const { GET } = await import('@/app/api/compliance/dlp/route')
+    const req = asRequest('GET', '/api/compliance/dlp', { cookie: itAdmin.sessionCookie })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
   })
 })
 

@@ -3,6 +3,19 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { writeAuditLog } from '@/lib/enterprise/auditLog'
+
+/** True if the user authored the article or is a platform admin. */
+async function canManageArticle(
+  pool: import('pg').Pool, userId: string, authorId: string
+): Promise<boolean> {
+  if (authorId === userId) return true
+  const { rows } = await pool.query<{ platform_role: string }>(
+    `SELECT platform_role FROM aaelink.users WHERE id = $1`, [userId]
+  )
+  return isPlatformAdmin(rows[0]?.platform_role || '')
+}
 
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await ensureSchema()
@@ -47,11 +60,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   const { title, content, category_id, is_published } = await req.json().catch(() => ({}))
 
   try {
-    const { rows } = await pool.query(`SELECT author_id FROM aaelink.kb_articles WHERE id = $1`, [id])
+    const { rows } = await pool.query<{ author_id: string }>(`SELECT author_id FROM aaelink.kb_articles WHERE id = $1`, [id])
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    
-    // Simplification: assume either author or admin can edit. For alpha, we just allow the author or any platform user for simplicity.
-    // In reality, we might want role checks.
+
+    // Only the author or a platform admin may edit a KB article.
+    if (!(await canManageArticle(pool, userId, rows[0].author_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
 
     const updates = []
     const values = []
@@ -72,6 +87,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       `UPDATE aaelink.kb_articles SET ${updates.join(', ')} WHERE id = $${i}`,
       values
     )
+    writeAuditLog({ pool, actorId: userId, action: 'kb.article.update', resourceKind: 'kb_article', resourceId: id })
     return NextResponse.json({ success: true })
   } catch (err: unknown) {
     console.error('Error updating KB article:', err)
@@ -90,8 +106,14 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
   const { id } = await params
 
   try {
-    const { rowCount } = await pool.query(`DELETE FROM aaelink.kb_articles WHERE id = $1`, [id])
-    if (rowCount === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const { rows } = await pool.query<{ author_id: string }>(`SELECT author_id FROM aaelink.kb_articles WHERE id = $1`, [id])
+    if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!(await canManageArticle(pool, userId, rows[0].author_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
+    await pool.query(`DELETE FROM aaelink.kb_articles WHERE id = $1`, [id])
+    writeAuditLog({ pool, actorId: userId, action: 'kb.article.delete', resourceKind: 'kb_article', resourceId: id })
     return NextResponse.json({ success: true })
   } catch (err: unknown) {
     console.error('Error deleting KB article:', err)
