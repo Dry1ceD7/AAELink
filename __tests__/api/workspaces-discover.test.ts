@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'crypto'
 import { createTestContext, createTestUser, TestContext, TestUser } from '../helpers'
-import { listDiscoverableWorkspaces, joinOpenWorkspace } from '@/lib/workspace/workspaceDiscovery'
+import { listDiscoverableWorkspaces, joinOpenWorkspace, setWorkspaceAccessLevel } from '@/lib/workspace/workspaceDiscovery'
 
 let ctx: TestContext
 let user: TestUser
@@ -164,5 +164,40 @@ describe('joinOpenWorkspace', () => {
     // once joined, it no longer appears in discovery
     const rows = await listDiscoverableWorkspaces(ctx.pool, user.id)
     expect(rows.map(w => w.id)).not.toContain(openWs)
+  })
+})
+
+describe('setWorkspaceAccessLevel', () => {
+  it('rejects an invalid level', async () => {
+    const r = await setWorkspaceAccessLevel(ctx.pool, user.id, homeWs, 'public')
+    expect(r).toEqual({ ok: false, code: 'invalid_level' })
+  })
+
+  it('rejects a non-member (not_found, no existence leak)', async () => {
+    const stranger = await createTestUser(ctx.pool, { role: 'employee' })
+    userIds.push(stranger.id)
+    const r = await setWorkspaceAccessLevel(ctx.pool, stranger.id, homeWs, 'open')
+    expect(r).toEqual({ ok: false, code: 'not_found' })
+  })
+
+  it('rejects a non-owner member (forbidden)', async () => {
+    // user is a 'member' of homeWs (added in beforeAll), not owner
+    const r = await setWorkspaceAccessLevel(ctx.pool, user.id, homeWs, 'open')
+    expect(r).toEqual({ ok: false, code: 'forbidden' })
+  })
+
+  it('lets an owner set the access level and makes it discoverable', async () => {
+    const ownedWs = await mkWorkspace({ orgId: orgA, access: 'invite_only' })
+    await ctx.pool.query(
+      `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`,
+      [ownedWs, user.id]
+    )
+    const r = await setWorkspaceAccessLevel(ctx.pool, user.id, ownedWs, 'open')
+    expect(r).toEqual({ ok: true, workspaceId: ownedWs, accessLevel: 'open' })
+
+    const { rows } = await ctx.pool.query<{ access_level: string }>(
+      `SELECT access_level FROM aaelink.workspaces WHERE id = $1`, [ownedWs]
+    )
+    expect(rows[0]?.access_level).toBe('open')
   })
 })

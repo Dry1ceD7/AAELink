@@ -16,6 +16,46 @@
 import type { Pool } from 'pg'
 import { randomUUID } from 'crypto'
 
+export const WORKSPACE_ACCESS_LEVELS = ['open', 'invite_only', 'managed'] as const
+export type WorkspaceAccessLevel = typeof WORKSPACE_ACCESS_LEVELS[number]
+
+export function isWorkspaceAccessLevel(v: string): v is WorkspaceAccessLevel {
+  return (WORKSPACE_ACCESS_LEVELS as readonly string[]).includes(v)
+}
+
+export type SetAccessLevelResult =
+  | { ok: true; workspaceId: string; accessLevel: WorkspaceAccessLevel }
+  | { ok: false; code: 'not_found' | 'forbidden' | 'invalid_level' }
+
+/**
+ * Set a workspace's access level. Only the workspace owner may change it
+ * (consistent with workspace delete). Returns not_found when the caller is not
+ * a member of the target (avoids leaking existence to non-members).
+ */
+export async function setWorkspaceAccessLevel(
+  pool: Pool,
+  uid: string,
+  workspaceId: string,
+  level: string
+): Promise<SetAccessLevelResult> {
+  if (!isWorkspaceAccessLevel(level)) return { ok: false, code: 'invalid_level' }
+  const { rows } = await pool.query<{ role: string }>(
+    `SELECT m.role
+       FROM aaelink.workspaces w
+       JOIN aaelink.workspace_members m ON m.workspace_id = w.id AND m.user_id = $1
+      WHERE w.id = $2`,
+    [uid, workspaceId]
+  )
+  const row = rows[0]
+  if (!row) return { ok: false, code: 'not_found' }
+  if (row.role !== 'owner') return { ok: false, code: 'forbidden' }
+  await pool.query(
+    `UPDATE aaelink.workspaces SET access_level = $1 WHERE id = $2`,
+    [level, workspaceId]
+  )
+  return { ok: true, workspaceId, accessLevel: level }
+}
+
 export interface DiscoverableWorkspace {
   id: string
   name: string
