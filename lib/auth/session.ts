@@ -1,8 +1,36 @@
 import { cookies } from 'next/headers'
+import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
+import { getSessionPolicy, isIdleExpired } from '@/lib/auth/sessionPolicy'
 
 export const SESSION_COOKIE = 'AAELINK_SESSION'
+
+/**
+ * Validate a session row against the active session policy and apply the
+ * debounced last-active touch. Returns the user id, or null when the session is
+ * idle-expired (D2 idle timeout, off by default). expires_at is already enforced
+ * by the SQL filter at the call site.
+ */
+async function resolveActiveSession(
+  pool: Pool,
+  sid: string,
+  row: { user_id: string; last_active_at: number; created_at: number } | undefined
+): Promise<string | null> {
+  if (!row) return null
+  const now = Date.now()
+  const policy = await getSessionPolicy(pool, now)
+  if (isIdleExpired(policy, row.last_active_at ?? 0, now, row.created_at ?? 0)) return null
+
+  // Debounced touch: only update last_active_at if it's been > 5 minutes.
+  if (now - (row.last_active_at ?? 0) > 300_000) {
+    pool.query(
+      `UPDATE aaelink.sessions SET last_active_at = $1 WHERE id = $2`,
+      [now, sid]
+    ).catch(() => { /* non-critical */ })
+  }
+  return row.user_id
+}
 
 /**
  * Use `Secure` session cookies when the public URL is HTTPS (dev LAN HTTPS or production).
@@ -23,22 +51,11 @@ export async function readSessionUserId(): Promise<string | null> {
   const pool = getPool()
   if (!pool) return null
   await ensureSchema()
-  const { rows } = await pool.query<{ user_id: string; last_active_at: number }>(
-    `SELECT user_id, last_active_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
+  const { rows } = await pool.query<{ user_id: string; last_active_at: number; created_at: number }>(
+    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
     [sid, Date.now()]
   )
-  const uid = rows[0]?.user_id ?? null
-  if (uid) {
-    // Debounced touch: only update last_active_at if it's been > 5 minutes
-    const last = rows[0]?.last_active_at ?? 0
-    if (Date.now() - last > 300_000) {
-      pool.query(
-        `UPDATE aaelink.sessions SET last_active_at = $1 WHERE id = $2`,
-        [Date.now(), sid]
-      ).catch(() => { /* non-critical */ })
-    }
-  }
-  return uid
+  return resolveActiveSession(pool, sid, rows[0])
 }
 
 /**
@@ -55,21 +72,11 @@ export async function readSessionUserIdFromCookieHeader(
   const pool = getPool()
   if (!pool) return null
   await ensureSchema()
-  const { rows } = await pool.query<{ user_id: string; last_active_at: number }>(
-    `SELECT user_id, last_active_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
+  const { rows } = await pool.query<{ user_id: string; last_active_at: number; created_at: number }>(
+    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
     [sid, Date.now()]
   )
-  const uid = rows[0]?.user_id ?? null
-  if (uid) {
-    const last = rows[0]?.last_active_at ?? 0
-    if (Date.now() - last > 300_000) {
-      pool.query(
-        `UPDATE aaelink.sessions SET last_active_at = $1 WHERE id = $2`,
-        [Date.now(), sid]
-      ).catch(() => { /* non-critical */ })
-    }
-  }
-  return uid
+  return resolveActiveSession(pool, sid, rows[0])
 }
 
 /** Pull a single cookie value out of an HTTP `Cookie:` header. Returns null when absent. */

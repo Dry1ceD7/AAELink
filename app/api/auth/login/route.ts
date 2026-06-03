@@ -4,9 +4,8 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { verifyPassword } from '@/lib/auth/password'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
 import { tracedRoute } from '@/lib/api/tracedRoute'
-
-const SESSION_MS = 30 * 24 * 60 * 60 * 1000
 
 // ── Rate limiting (in-memory per IP) ─────────────────────────────────────────
 const loginAttempts = new Map<string, { count: number; windowStart: number }>()
@@ -122,10 +121,13 @@ async function _POST(req: Request) {
 
     const sessionId = randomUUID()
     const now = Date.now()
-    const expiresAt = now + SESSION_MS
+    // Session lifetime is driven by the admin session policy (D2); the default
+    // policy preserves the prior 30-day behavior.
+    const sessionMs = sessionTtlMs(await getSessionPolicy(pool, now), 'web')
+    const expiresAt = now + sessionMs
     await pool.query(
-      `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)`,
       [sessionId, row.id, expiresAt, userAgent, ipAddress, now]
     )
     // Mark user as online + track login activity
@@ -158,7 +160,7 @@ async function _POST(req: Request) {
       sameSite: 'lax',
       secure: sessionCookieSecure(),
       path: '/',
-      maxAge: Math.floor(SESSION_MS / 1000)
+      maxAge: Math.floor(sessionMs / 1000)
     })
     return res
   } catch (e) {
