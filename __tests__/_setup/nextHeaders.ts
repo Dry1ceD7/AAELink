@@ -14,6 +14,10 @@
  */
 import { vi } from 'vitest'
 
+// Deterministic CSRF secret so asRequest's auto-attached token verifies against
+// lib/auth/csrf (verifyCsrf is fail-closed for authenticated mutating requests).
+process.env.CSRF_SECRET = process.env.CSRF_SECRET || 'test-csrf-secret'
+
 function readCookie(name: string): { name: string; value: string } | undefined {
   const header = (globalThis as { __TEST_COOKIE_HEADER__?: string }).__TEST_COOKIE_HEADER__ || ''
   for (const part of header.split(/;\s*/)) {

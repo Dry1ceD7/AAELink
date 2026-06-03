@@ -1,9 +1,14 @@
 /**
  * Integration test: CSRF double-submit enforcement on message mutations.
  *
- * verifyCsrf only enforces once an AAELINK_CSRF cookie exists (the cookie is set
- * on page load), so requests without it are unaffected — but when the cookie IS
- * present, the x-csrf-token header must be present, signed, and match.
+ * verifyCsrf is FAIL-CLOSED for authenticated sessions: once an AAELINK_SESSION
+ * cookie is present, a mutating request must carry a signed AAELINK_CSRF cookie
+ * AND a matching x-csrf-token header (login mints the cookie via
+ * attachCsrfCookie). Unauthenticated/first-contact requests are exempt.
+ *
+ * These tests pass noAutoCsrf so the harness does not auto-attach a token — they
+ * drive the cookie/header by hand. The final test proves the harness auto-attach
+ * keeps ordinary authenticated mutations working.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createHmac } from 'crypto'
@@ -27,6 +32,11 @@ let ctx: TestContext
 let user: TestUser
 const createdIds: string[] = []
 
+async function isCsrfError(res: Response): Promise<boolean> {
+  const body = await res.json().catch(() => ({})) as { error?: string }
+  return /^csrf_/.test(String(body.error || ''))
+}
+
 beforeAll(async () => {
   process.env.CSRF_SECRET = SECRET
   __resetCsrfSecretForTests()
@@ -43,11 +53,19 @@ afterAll(async () => {
   await ctx.cleanup()
 })
 
-describe('CSRF enforcement on POST /api/messages', () => {
-  it('rejects when a CSRF cookie is present but the header is missing', async () => {
+describe('CSRF enforcement on POST /api/messages (fail-closed)', () => {
+  it('rejects an authenticated mutation with NO csrf cookie/header at all', async () => {
     const { POST } = await import('@/app/api/messages/route')
     const res = await POST(asRequest('POST', '/api/messages', {
-      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`,
+      cookie: user.sessionCookie, noAutoCsrf: true, body: { channel_id: 'x', message: 'hi' },
+    }))
+    await expectError(res, 403, 'csrf_token_invalid')
+  })
+
+  it('rejects when the csrf cookie is present but the header is missing', async () => {
+    const { POST } = await import('@/app/api/messages/route')
+    const res = await POST(asRequest('POST', '/api/messages', {
+      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`, noAutoCsrf: true,
       body: { channel_id: 'x', message: 'hi' },
     }))
     await expectError(res, 403, 'csrf_token_missing')
@@ -56,9 +74,8 @@ describe('CSRF enforcement on POST /api/messages', () => {
   it('rejects when the header does not match the cookie', async () => {
     const { POST } = await import('@/app/api/messages/route')
     const res = await POST(asRequest('POST', '/api/messages', {
-      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`,
-      headers: { 'x-csrf-token': 'wrong.token' },
-      body: { channel_id: 'x', message: 'hi' },
+      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`, noAutoCsrf: true,
+      headers: { 'x-csrf-token': 'wrong.token' }, body: { channel_id: 'x', message: 'hi' },
     }))
     await expectError(res, 403, 'csrf_token_mismatch')
   })
@@ -66,22 +83,25 @@ describe('CSRF enforcement on POST /api/messages', () => {
   it('passes the CSRF gate when cookie and header match a valid token', async () => {
     const { POST } = await import('@/app/api/messages/route')
     const res = await POST(asRequest('POST', '/api/messages', {
-      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`,
-      headers: { 'x-csrf-token': TOKEN },
-      body: {}, // missing channel_id/message → fails LATER with invalid_input, not a CSRF error
+      cookie: `${user.sessionCookie}; AAELINK_CSRF=${TOKEN}`, noAutoCsrf: true,
+      headers: { 'x-csrf-token': TOKEN }, body: {}, // → invalid_input, not a CSRF error
     }))
-    // Past the CSRF guard: the failure must not be a csrf_* error.
-    const body = await res.json().catch(() => ({})) as { error?: string }
-    expect(String(body.error || '')).not.toMatch(/^csrf_/)
+    expect(await isCsrfError(res)).toBe(false)
   })
 
-  it('is a no-op when no CSRF cookie is set (header-less clients unaffected)', async () => {
+  it('does NOT require CSRF for an unauthenticated request (no session cookie)', async () => {
+    const { POST } = await import('@/app/api/messages/route')
+    const res = await POST(asRequest('POST', '/api/messages', { noAutoCsrf: true, body: {} }))
+    // verifyCsrf skips (no session); handler then rejects as unauthorized.
+    expect(res.status).toBe(401)
+    expect(await isCsrfError(res)).toBe(false)
+  })
+
+  it('harness auto-attaches CSRF so ordinary authenticated mutations pass the gate', async () => {
     const { POST } = await import('@/app/api/messages/route')
     const res = await POST(asRequest('POST', '/api/messages', {
-      cookie: user.sessionCookie,
-      body: {}, // no CSRF cookie → guard skips → normal validation
+      cookie: user.sessionCookie, body: {}, // no manual CSRF → harness adds it
     }))
-    const body = await res.json().catch(() => ({})) as { error?: string }
-    expect(String(body.error || '')).not.toMatch(/^csrf_/)
+    expect(await isCsrfError(res)).toBe(false)
   })
 })

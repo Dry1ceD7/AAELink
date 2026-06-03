@@ -18,6 +18,9 @@ import { cookies } from 'next/headers'
 
 const CSRF_COOKIE = 'AAELINK_CSRF'
 const CSRF_HEADER = 'x-csrf-token'
+// Mirrors SESSION_COOKIE in lib/auth/session.ts; duplicated as a literal to keep
+// this module free of a session import. CSRF is only enforced when this is present.
+const SESSION_COOKIE = 'AAELINK_SESSION'
 
 /**
  * CSRF signing secret. MUST be provided via the `CSRF_SECRET` environment
@@ -97,6 +100,24 @@ export async function setCsrfCookie(): Promise<string> {
 }
 
 /**
+ * Mint + attach the readable CSRF cookie to a NextResponse. MUST be called
+ * wherever a session cookie is established (login / SSO / passkey) so an
+ * authenticated session always carries a token for the double-submit check —
+ * otherwise verifyCsrf would have nothing to validate against.
+ */
+export function attachCsrfCookie(res: NextResponse): string {
+  const token = generateToken()
+  res.cookies.set(CSRF_COOKIE, token, {
+    httpOnly: false,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 4,
+  })
+  return token
+}
+
+/**
  * Verify the CSRF token from the request.
  * Checks both cookie and header/body match.
  * Returns null if valid, or a NextResponse error if invalid.
@@ -122,8 +143,21 @@ export async function verifyCsrf(req: Request): Promise<NextResponse | null> {
   const cookieToken = jar.get(CSRF_COOKIE)?.value?.trim() || ''
   const headerToken = req.headers.get(CSRF_HEADER)?.trim() || ''
 
-  // If no CSRF cookie is set yet, skip (first request)
-  if (!cookieToken) return null
+  // Enforce only for authenticated sessions. An unauthenticated / first-contact
+  // request has no session to forge against, and login itself mints the CSRF
+  // cookie alongside the session cookie (attachCsrfCookie). For an authenticated
+  // mutating request the guard is FAIL-CLOSED — a missing or invalid cookie is
+  // rejected, never waved through (the prior `!cookieToken → allow` skip made
+  // CSRF a global no-op because the cookie was never minted).
+  const hasSession = Boolean(jar.get(SESSION_COOKIE)?.value?.trim())
+  if (!hasSession) return null
+
+  if (!cookieToken || !verifySignature(cookieToken)) {
+    return NextResponse.json(
+      { error: 'csrf_token_invalid', message: 'A valid CSRF cookie is required for mutating requests' },
+      { status: 403 }
+    )
+  }
 
   if (!headerToken) {
     return NextResponse.json(
@@ -132,15 +166,6 @@ export async function verifyCsrf(req: Request): Promise<NextResponse | null> {
     )
   }
 
-  // Verify cookie signature
-  if (!verifySignature(cookieToken)) {
-    return NextResponse.json(
-      { error: 'csrf_token_invalid', message: 'CSRF cookie signature is invalid' },
-      { status: 403 }
-    )
-  }
-
-  // Verify header matches cookie
   if (cookieToken !== headerToken) {
     return NextResponse.json(
       { error: 'csrf_token_mismatch', message: 'CSRF token does not match' },

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { SESSION_COOKIE, sessionCookieSecure, createSession } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { clientMeta } from '@/lib/auth/ssoRouteHelpers'
 import { beginPasswordlessLogin, finishPasswordlessLogin } from '@/lib/auth/webauthn'
@@ -67,6 +68,7 @@ async function _POST(req: Request) {
       httpOnly: true, sameSite: 'lax', secure: sessionCookieSecure(), path: '/',
       maxAge: Math.floor(sessionMs / 1000),
     })
+    attachCsrfCookie(res)
     res.cookies.set(CHALLENGE_COOKIE, '', { path: '/', maxAge: 0 })
     return res
   }

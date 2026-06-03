@@ -2,6 +2,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { loadActiveProvider } from '@/lib/auth/ssoProvider'
 import { completeOidcAuthz } from '@/lib/auth/ssoOidcClient'
 import { consumeAuthRequest } from '@/lib/auth/ssoAuthRequest'
@@ -75,6 +76,7 @@ async function _GET(req: Request) {
       path: '/',
       maxAge: Math.floor(result.sessionMs / 1000),
     })
+    attachCsrfCookie(res)
     return res
   } catch {
     auditSsoFailure(pool, { providerId, protocol: 'oidc', reason: 'exchange_failed', ...meta })

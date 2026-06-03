@@ -15,9 +15,19 @@
  */
 
 import type { Pool } from 'pg'
-import { randomUUID } from 'crypto'
+import { randomUUID, createHmac } from 'crypto'
 import { NextRequest } from 'next/server'
 import { getPool } from '@/lib/infra/db'
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** Mint a CSRF token signed with the test CSRF_SECRET (matches lib/auth/csrf). */
+function testCsrfToken(): string {
+  const secret = process.env.CSRF_SECRET || 'test-csrf-secret'
+  const raw = randomUUID().replace(/-/g, '')
+  const sig = createHmac('sha256', secret).update(raw).digest('hex').slice(0, 16)
+  return `${raw}.${sig}`
+}
 
 // ── Test Context ─────────────────────────────────────────────────────
 
@@ -283,6 +293,8 @@ export function asRequest(
     body?: Record<string, unknown>
     query?: Record<string, string>
     headers?: Record<string, string>
+    /** Skip the automatic CSRF cookie+header for tests that exercise CSRF directly. */
+    noAutoCsrf?: boolean
   } = {}
 ): NextRequest {
   const url = new URL(path, 'http://localhost:3040')
@@ -293,13 +305,31 @@ export function asRequest(
   }
 
   const headers = new Headers(options.headers || {})
-  if (options.cookie) headers.set('cookie', options.cookie)
+  let cookie = options.cookie ?? ''
+
+  // Auto-attach a valid CSRF cookie + matching header for authenticated mutating
+  // requests, mirroring a real browser that received AAELINK_CSRF at login —
+  // verifyCsrf is fail-closed for authenticated sessions. Tests that assert CSRF
+  // behaviour pass noAutoCsrf and control the cookie/header themselves.
+  if (
+    !options.noAutoCsrf &&
+    MUTATING_METHODS.has(method.toUpperCase()) &&
+    cookie.includes('AAELINK_SESSION=') &&
+    !/(?:^|;\s*)AAELINK_CSRF=/.test(cookie) &&
+    !headers.has('x-csrf-token')
+  ) {
+    const token = testCsrfToken()
+    cookie = cookie ? `${cookie}; AAELINK_CSRF=${token}` : `AAELINK_CSRF=${token}`
+    headers.set('x-csrf-token', token)
+  }
+
+  if (cookie) headers.set('cookie', cookie)
   if (options.body) headers.set('content-type', 'application/json')
 
   // Expose the cookie to the mocked next/headers cookies() (see
   // __tests__/_setup/nextHeaders.ts) so readSessionUserId() authenticates the
   // request. Cleared when no cookie is supplied to avoid leaking across calls.
-  ;(globalThis as { __TEST_COOKIE_HEADER__?: string }).__TEST_COOKIE_HEADER__ = options.cookie ?? ''
+  ;(globalThis as { __TEST_COOKIE_HEADER__?: string }).__TEST_COOKIE_HEADER__ = cookie
 
   return new NextRequest(url, {
     method,

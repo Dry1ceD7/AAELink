@@ -2,6 +2,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { loadActiveProvider } from '@/lib/auth/ssoProvider'
 import { validateSamlResponse } from '@/lib/auth/ssoSamlClient'
 import { consumeAuthRequest } from '@/lib/auth/ssoAuthRequest'
@@ -90,6 +91,7 @@ async function _POST(req: Request) {
       path: '/',
       maxAge: Math.floor(result.sessionMs / 1000),
     })
+    attachCsrfCookie(res)
     return res
   } catch {
     auditSsoFailure(pool, { providerId, protocol: 'saml', reason: 'assertion_invalid', ...meta })

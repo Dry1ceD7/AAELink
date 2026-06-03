@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { randomUUID } from 'crypto'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const AUTHORITY = 'https://login.microsoftonline.com'
@@ -114,6 +115,7 @@ async function _GET(req: NextRequest) {
         path: '/',
         maxAge: Math.floor(SESSION_EXPIRY_MS / 1000)
       })
+      attachCsrfCookie(response)
       return response
     }
 

@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { verifyPassword } from '@/lib/auth/password'
 import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
 import { getMfaPolicy, mfaEnrollmentRequired, userHasActiveMfa } from '@/lib/auth/mfaPolicy'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
@@ -175,6 +176,7 @@ async function _POST(req: Request) {
       path: '/',
       maxAge: Math.floor(sessionMs / 1000)
     })
+    attachCsrfCookie(res)
     return res
   } catch (e) {
     console.error('[auth/login]', e)
