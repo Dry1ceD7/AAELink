@@ -2886,6 +2886,33 @@ async function migration014EventDeliveries(pool: RunnerPool) {
   )
 }
 
+/**
+ * 015 — D7 Developer platform: socket-mode connections.
+ *
+ * Socket mode lets an app receive events over a WebSocket instead of a public
+ * request URL. The app authenticates with its bot token to open a connection
+ * and gets a short-lived ticket + WSS URL; the gateway validates the ticket on
+ * connect. Tickets are ephemeral (a few minutes). See lib/apps/socketMode.ts.
+ *
+ * Forward-only: a new table. Idempotent.
+ */
+async function migration015SocketConnections(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.socket_connections (
+       id          TEXT PRIMARY KEY,
+       bot_id      TEXT NOT NULL REFERENCES aaelink.bot_users(id) ON DELETE CASCADE,
+       ticket      TEXT NOT NULL UNIQUE,
+       status      TEXT NOT NULL DEFAULT 'open',
+       expires_at  BIGINT NOT NULL,
+       created_at  BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_socket_connections_bot
+       ON aaelink.socket_connections(bot_id, created_at DESC)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2901,4 +2928,5 @@ const MIGRATIONS: Migration[] = [
   { id: '012_call_signals', up: migration012CallSignals },
   { id: '013_list_item_comments', up: migration013ListItemComments },
   { id: '014_event_deliveries', up: migration014EventDeliveries },
+  { id: '015_socket_connections', up: migration015SocketConnections },
 ]
