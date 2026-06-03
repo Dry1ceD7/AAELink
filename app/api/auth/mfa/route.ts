@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { getMfaPolicy, updateMfaPolicy, validateMfaPatch, type MfaPolicy } from '@/lib/auth/mfaPolicy'
+import { generateTotpSecret, verifyTotp, otpauthUri } from '@/lib/auth/totp'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
@@ -99,33 +100,26 @@ async function _POST(req: NextRequest) {
   }
 
   if (body.action === 'enroll_totp') {
-    // Generate TOTP secret
-    const secret = randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()
+    // Real RFC 6238 secret; stored so the code can actually be verified.
+    const base32Secret = generateTotpSecret()
     const id = randomUUID()
     const now = Date.now()
-
-    // Base32 encode for authenticator apps
-    const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-    const base32Secret = Array.from(secret).map(c => base32Chars[c.charCodeAt(0) % 32]).join('')
 
     await pool.query(`
       INSERT INTO aaelink.mfa_enrollments
         (id, user_id, method, secret_hash, is_active, is_verified, created_at, last_used_at)
       VALUES ($1, $2, 'totp', $3, false, false, $4, 0)
-    `, [id, uid, `sha256:${createHmac('sha256', 'mfa').update(secret).digest('hex').slice(0, 16)}`, now])
+    `, [id, uid, base32Secret, now])
 
-    // Get user email for provisioning URI
     const { rows: [user] } = await pool.query<{ email: string }>(
       `SELECT email FROM aaelink.users WHERE id = $1`, [uid]
     )
-
-    const otpauthUri = `otpauth://totp/AAELink:${user?.email || 'user'}?secret=${base32Secret}&issuer=AAELink&digits=6&period=30`
 
     return NextResponse.json({
       enrollment: { id, method: 'totp', is_verified: false },
       setup: {
         secret: base32Secret,
-        otpauth_uri: otpauthUri,
+        otpauth_uri: otpauthUri(base32Secret, user?.email || 'user'),
         instructions: 'Scan the QR code or enter the secret manually in your authenticator app. Then verify with a code.',
       }
     }, { status: 201 })
@@ -138,15 +132,23 @@ async function _POST(req: NextRequest) {
       return NextResponse.json({ error: 'enrollment_id and 6-digit code required' }, { status: 400 })
     }
 
-    // In production: validate TOTP code against secret using time-based algorithm
-    // For now: activate the enrollment
+    // Load the secret and verify the code (±1 step drift) before activating.
+    const { rows: [enrollment] } = await pool.query<{ secret_hash: string }>(
+      `SELECT secret_hash FROM aaelink.mfa_enrollments
+       WHERE id = $1 AND user_id = $2 AND method = 'totp'`,
+      [enrollmentId, uid]
+    )
+    if (!enrollment) return NextResponse.json({ error: 'enrollment_not_found' }, { status: 404 })
+    if (!verifyTotp(enrollment.secret_hash, code)) {
+      return NextResponse.json({ error: 'invalid_code' }, { status: 400 })
+    }
+
     const now = Date.now()
-    const { rowCount } = await pool.query(
+    await pool.query(
       `UPDATE aaelink.mfa_enrollments SET is_active = true, is_verified = true, last_used_at = $1
        WHERE id = $2 AND user_id = $3 AND method = 'totp'`,
       [now, enrollmentId, uid]
     )
-    if (!rowCount) return NextResponse.json({ error: 'enrollment_not_found' }, { status: 404 })
 
     return NextResponse.json({ ok: true, mfa_enabled: true, verified_at: now })
   }
