@@ -2804,6 +2804,35 @@ async function migration011MessageEdits(pool: RunnerPool) {
   )
 }
 
+/**
+ * 012 — D5 Calls: WebRTC signaling relay.
+ *
+ * The call control plane (rooms/participants) existed, but peers had no server
+ * channel to exchange SDP offers/answers and ICE candidates. This is that relay:
+ * a monotonic `seq` lets a client poll for signals addressed to it (or broadcast)
+ * since its last cursor. Ephemeral control-plane data. See lib/calls/signaling.ts.
+ *
+ * Forward-only: a new table. Idempotent. Indexed for per-room cursor scans.
+ */
+async function migration012CallSignals(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.call_signals (
+       seq        BIGSERIAL PRIMARY KEY,
+       id         TEXT NOT NULL,
+       room_id    TEXT NOT NULL REFERENCES aaelink.call_rooms(id) ON DELETE CASCADE,
+       from_user  TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       to_user    TEXT NOT NULL DEFAULT '',
+       kind       TEXT NOT NULL,
+       payload    JSONB NOT NULL DEFAULT '{}',
+       created_at BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_call_signals_room_seq
+       ON aaelink.call_signals(room_id, seq)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2816,4 +2845,5 @@ const MIGRATIONS: Migration[] = [
   { id: '009_scim_org_scope', up: migration009ScimOrgScope },
   { id: '010_saved_items', up: migration010SavedItems },
   { id: '011_message_edits', up: migration011MessageEdits },
+  { id: '012_call_signals', up: migration012CallSignals },
 ]
