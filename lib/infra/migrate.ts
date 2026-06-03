@@ -2913,6 +2913,29 @@ async function migration015SocketConnections(pool: RunnerPool) {
   )
 }
 
+/**
+ * 016 — D8 Connect: external partner allowlist.
+ *
+ * Cross-org Connect is governed: an org admin allowlists the partner domains it
+ * will federate with (or blocks one), and the share-invite path checks it before
+ * a channel can be shared externally. Default-deny — a domain not on the list is
+ * not an approved partner. See lib/enterprise/connectAllowlist.ts.
+ *
+ * Forward-only: a new table. Idempotent.
+ */
+async function migration016ConnectAllowlist(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.connect_allowlist (
+       org_id         UUID NOT NULL REFERENCES aaelink.organizations(id) ON DELETE CASCADE,
+       partner_domain TEXT NOT NULL,
+       status         TEXT NOT NULL DEFAULT 'allowed' CHECK (status IN ('allowed','blocked')),
+       added_by       TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       added_at       BIGINT NOT NULL,
+       PRIMARY KEY (org_id, partner_domain)
+     )`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2929,4 +2952,5 @@ const MIGRATIONS: Migration[] = [
   { id: '013_list_item_comments', up: migration013ListItemComments },
   { id: '014_event_deliveries', up: migration014EventDeliveries },
   { id: '015_socket_connections', up: migration015SocketConnections },
+  { id: '016_connect_allowlist', up: migration016ConnectAllowlist },
 ]
