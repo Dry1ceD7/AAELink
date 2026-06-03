@@ -19,6 +19,10 @@ export default defineConfig({
     testTimeout: 15000,
     hookTimeout: 15000,
     reporters: ['default'],
+    // Integration tests share one Postgres. Run files sequentially so
+    // cross-file fixtures (orgs, workspaces, global tables like
+    // information_barriers) can't collide and make assertions flaky.
+    fileParallelism: false,
   },
   resolve: {
     alias: {

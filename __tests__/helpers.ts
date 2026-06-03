@@ -169,9 +169,9 @@ export async function createTestChannel(
   const workspaceId = opts.workspaceId || ws?.id || ''
 
   await pool.query(`
-    INSERT INTO aaelink.channels (id, workspace_id, name, type, created_by, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6)
-  `, [id, workspaceId, name, type, creatorId, now])
+    INSERT INTO aaelink.channels (id, workspace_id, name, display_name, type, created_by, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+  `, [id, workspaceId, name, name, type, creatorId, now])
 
   // Add creator as member
   await pool.query(`
@@ -195,8 +195,8 @@ export async function createTestMessage(
   const now = Date.now()
 
   await pool.query(`
-    INSERT INTO aaelink.messages (id, channel_id, user_id, content, created_at)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO aaelink.messages (id, channel_id, user_id, body, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $5)
   `, [id, channelId, userId, content, now])
 
   return id
