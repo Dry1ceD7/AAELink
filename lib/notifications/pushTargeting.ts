@@ -37,9 +37,11 @@ export async function selectPushTargets(
   const uniq = [...new Set(userIds.filter(Boolean))]
   if (uniq.length === 0) return []
 
+  // Suppressed = channel muted, an explicit mute row, OR notification level
+  // 'nothing' (the user turned this channel's notifications off entirely).
   const { rows: muted } = await pool.query<{ user_id: string }>(
     `SELECT user_id FROM aaelink.channel_notification_prefs
-       WHERE channel_id = $2 AND user_id = ANY($1) AND muted = true
+       WHERE channel_id = $2 AND user_id = ANY($1) AND (muted = true OR level = 'nothing')
      UNION
      SELECT user_id FROM aaelink.channel_mutes
        WHERE channel_id = $2 AND user_id = ANY($1)`,
@@ -128,4 +130,38 @@ export async function enqueuePush(
     queued++
   }
   return queued
+}
+
+/**
+ * Drop users who set this channel's notification level to 'nothing' (off).
+ * Applied to in-app notification targets — selectPushTargets handles the push
+ * side; this stops the in-app row too.
+ */
+export async function dropLevelNothing(
+  pool: Pool, userIds: string[], channelId: string,
+): Promise<string[]> {
+  const uniq = [...new Set(userIds.filter(Boolean))]
+  if (uniq.length === 0) return []
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_notification_prefs
+       WHERE channel_id = $2 AND user_id = ANY($1) AND level = 'nothing'`,
+    [uniq, channelId],
+  )
+  const off = new Set(rows.map(r => r.user_id))
+  return uniq.filter(u => !off.has(u))
+}
+
+/**
+ * Channel members who set notification level 'all' — they want a notification
+ * for every message, not just @mentions.
+ */
+export async function channelMembersLevelAll(pool: Pool, channelId: string): Promise<string[]> {
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT cm.user_id FROM aaelink.channel_members cm
+       INNER JOIN aaelink.channel_notification_prefs p
+         ON p.user_id = cm.user_id AND p.channel_id = cm.channel_id
+      WHERE cm.channel_id = $1 AND p.level = 'all'`,
+    [channelId],
+  )
+  return rows.map(r => r.user_id)
 }

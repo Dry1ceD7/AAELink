@@ -5,7 +5,7 @@ import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { filterUsersForNotification } from '@/lib/notifications/notificationPrefs'
 import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
 import { matchKeywords } from '@/lib/notifications/keywords'
-import { selectPushTargets, enqueuePush } from '@/lib/notifications/pushTargeting'
+import { selectPushTargets, enqueuePush, dropLevelNothing, channelMembersLevelAll } from '@/lib/notifications/pushTargeting'
 
 export type NotificationInsertRow = {
   user_id: string
@@ -97,6 +97,8 @@ export async function notifyChannelMentions(args: {
     if (await userCanReadChannel(args.pool, t, args.channelId)) allowed.push(t)
   }
   targets = allowed
+  // Respect a per-channel level of 'nothing' (notifications off).
+  targets = await dropLevelNothing(args.pool, targets, args.channelId)
   if (targets.length === 0) return []
   const title = `Mention in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
@@ -173,6 +175,9 @@ export async function notifyKeywordMatches(args: {
   // Keyword highlights ride the 'mentions' notification preference.
   hits = await filterUsersForNotification(args.pool, hits, 'mentions')
   if (hits.length === 0) return
+  // Respect a per-channel level of 'nothing' (notifications off).
+  hits = await dropLevelNothing(args.pool, hits, args.channelId)
+  if (hits.length === 0) return
 
   const title = `Keyword in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
@@ -195,6 +200,55 @@ export async function notifyKeywordMatches(args: {
     await enqueuePush(
       args.pool,
       { userIds: pushable, title, body, channelId: args.channelId, priority: 'high' },
+      args.authorId
+    )
+  }
+}
+
+/**
+ * Notify channel members who set notification level 'all' — they want an alert
+ * for every message, not just @mentions/keywords. Author and already-notified
+ * (mentioned/keyword) users are excluded to avoid duplicate alerts. Push is
+ * gated by selectPushTargets (which also drops 'nothing'/muted/DND).
+ */
+export async function notifyChannelLevelAll(args: {
+  pool: Pool
+  workspaceId: string
+  channelId: string
+  channelLabel: string
+  messageId: string
+  authorId: string
+  authorLabel: string
+  body: string
+  excludeUserIds?: string[]
+}): Promise<void> {
+  const members = await channelMembersLevelAll(args.pool, args.channelId)
+  if (members.length === 0) return
+  const exclude = new Set([args.authorId, ...(args.excludeUserIds || [])])
+  const targets = members.filter(u => !exclude.has(u))
+  if (targets.length === 0) return
+
+  const title = `New message in ${args.channelLabel}`
+  const body = `${args.authorLabel}: ${snippet(args.body)}`
+  await insertNotifications(
+    args.pool,
+    targets.map(user_id => ({
+      user_id,
+      kind: 'channel_message',
+      title,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: args.channelId,
+      message_id: args.messageId,
+      ticket_id: null
+    }))
+  )
+
+  const pushable = await selectPushTargets(args.pool, targets, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      { userIds: pushable, title, body, channelId: args.channelId, priority: 'normal' },
       args.authorId
     )
   }

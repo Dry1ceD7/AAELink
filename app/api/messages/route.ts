@@ -5,7 +5,7 @@ import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
-import { notifyChannelMentions, notifyDirectMessage, notifyKeywordMatches } from '@/lib/notifications/notificationsServer'
+import { notifyChannelMentions, notifyDirectMessage, notifyKeywordMatches, notifyChannelLevelAll } from '@/lib/notifications/notificationsServer'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
@@ -533,6 +533,18 @@ async function _POST(req: Request) {
         })
         // Keyword highlights for members (skip those already @mentioned).
         await notifyKeywordMatches({
+          pool,
+          workspaceId: ch.workspace_id,
+          channelId: channel_id,
+          channelLabel,
+          messageId: id,
+          authorId: uid,
+          authorLabel: authorLabel(ur),
+          body: message,
+          excludeUserIds: mentioned
+        })
+        // Members who chose notification level 'all' get every message.
+        await notifyChannelLevelAll({
           pool,
           workspaceId: ch.workspace_id,
           channelId: channel_id,
