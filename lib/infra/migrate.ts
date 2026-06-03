@@ -2858,6 +2858,34 @@ async function migration013ListItemComments(pool: RunnerPool) {
   )
 }
 
+/**
+ * 014 — D7 Events API: delivery dedup ledger.
+ *
+ * Grid hazard: a message in a multi-workspace shared channel (D1) can emit the
+ * same logical event once per sharing workspace. A subscriber must receive it
+ * once. This ledger collapses re-emits: a unique dedup_key per (subscription,
+ * event_type, channel, event_ts) is claimed atomically before delivery; a second
+ * claim is a no-op. See lib/events/eventDedup.ts.
+ *
+ * Forward-only: a new table. Idempotent.
+ */
+async function migration014EventDeliveries(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.event_deliveries (
+       dedup_key       TEXT PRIMARY KEY,
+       subscription_id TEXT NOT NULL,
+       event_type      TEXT NOT NULL,
+       channel_key     TEXT NOT NULL DEFAULT '',
+       event_ts        BIGINT NOT NULL DEFAULT 0,
+       created_at      BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_event_deliveries_sub
+       ON aaelink.event_deliveries(subscription_id, created_at DESC)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2872,4 +2900,5 @@ const MIGRATIONS: Migration[] = [
   { id: '011_message_edits', up: migration011MessageEdits },
   { id: '012_call_signals', up: migration012CallSignals },
   { id: '013_list_item_comments', up: migration013ListItemComments },
+  { id: '014_event_deliveries', up: migration014EventDeliveries },
 ]
