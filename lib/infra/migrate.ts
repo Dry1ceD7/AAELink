@@ -2956,6 +2956,33 @@ async function migration017NotificationKeywords(pool: RunnerPool) {
   )
 }
 
+/**
+ * 018 — D12 Files: public share links.
+ *
+ * A file's uploader can mint a tokenized public link for external sharing, and
+ * revoke it. Whether public links are allowed at all is an org control (stored
+ * in system_config), so an admin can disable external file sharing entirely.
+ * See lib/files/publicLinks.ts.
+ *
+ * Forward-only: a new table. Idempotent.
+ */
+async function migration018FilePublicLinks(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.file_public_links (
+       id         TEXT PRIMARY KEY,
+       file_id    TEXT NOT NULL REFERENCES aaelink.file_attachments(id) ON DELETE CASCADE,
+       token      TEXT NOT NULL UNIQUE,
+       enabled    BOOLEAN NOT NULL DEFAULT true,
+       created_by TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       created_at BIGINT NOT NULL,
+       revoked_at BIGINT NOT NULL DEFAULT 0
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_file_public_links_file ON aaelink.file_public_links(file_id)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2974,4 +3001,5 @@ const MIGRATIONS: Migration[] = [
   { id: '015_socket_connections', up: migration015SocketConnections },
   { id: '016_connect_allowlist', up: migration016ConnectAllowlist },
   { id: '017_notification_keywords', up: migration017NotificationKeywords },
+  { id: '018_file_public_links', up: migration018FilePublicLinks },
 ]
