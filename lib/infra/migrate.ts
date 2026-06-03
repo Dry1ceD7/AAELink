@@ -2648,10 +2648,39 @@ async function migration005OrgWideChannels(pool: RunnerPool) {
   )
 }
 
+/**
+ * 006 — D1 Enterprise Grid: multi-workspace shared channels.
+ *
+ * A single channel can be shared into a selected SUBSET of sibling workspaces in
+ * the same org (Slack Grid multi-workspace channels), distinct from org-wide
+ * (whole-org) sharing in 005. The channel keeps its home `workspace_id`; each
+ * row here adds one more workspace the channel appears in and is joinable from.
+ * See lib/channels/sharedWorkspaceChannels.ts.
+ *
+ * Forward-only: a new join table, no changes to existing rows. Idempotent. The
+ * by-workspace index supports discovery of channels shared into a workspace.
+ */
+async function migration006SharedWorkspaceChannels(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.channel_workspaces (
+       channel_id   TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+       workspace_id TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+       added_by     TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       added_at     BIGINT NOT NULL,
+       PRIMARY KEY (channel_id, workspace_id)
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_channel_workspaces_ws
+       ON aaelink.channel_workspaces(workspace_id)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
   { id: '003_workspace_access_levels', up: migration003WorkspaceAccessLevels },
   { id: '004_workspace_lifecycle', up: migration004WorkspaceLifecycle },
   { id: '005_org_wide_channels', up: migration005OrgWideChannels },
+  { id: '006_shared_workspace_channels', up: migration006SharedWorkspaceChannels },
 ]
