@@ -114,6 +114,58 @@ export async function scanMessageContent(
   return matchDlpRules(content, rules, userId, channelId)
 }
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Replace every match of the violated rules' patterns with [REDACTED]. */
+export function redactContent(content: string, violations: DlpViolation[], rules: DlpRule[]): string {
+  const violatedRuleIds = new Set(violations.map(v => v.ruleId))
+  let out = content
+  for (const rule of rules) {
+    if (!violatedRuleIds.has(rule.id)) continue
+    try {
+      if (rule.type === 'pattern_match' || rule.type === 'regex') {
+        out = out.replace(new RegExp(rule.pattern, 'gi'), '[REDACTED]')
+      } else if (rule.type === 'keyword') {
+        out = out.replace(new RegExp(escapeRegex(rule.pattern), 'gi'), '[REDACTED]')
+      }
+    } catch { /* invalid pattern already logged by matchDlpRules */ }
+  }
+  return out
+}
+
+/**
+ * Synchronous DLP enforcement for a message before it is persisted. Scans the
+ * content, records any violations, and returns the enforcement decision:
+ *   - block / quarantine → { allowed: false }  (caller returns 403)
+ *   - redact            → { allowed: true, content: <redacted> }
+ *   - alert / warn      → { allowed: true, content: <unchanged> }
+ *   - clean             → { allowed: true, content: <unchanged>, action: null }
+ */
+export async function applyDlpToMessage(args: {
+  content: string
+  workspaceId?: string
+  userId: string
+  channelId: string
+}): Promise<{ allowed: boolean; content: string; action: DlpAction | null }> {
+  const rules = await getDlpRulesForWorkspace(args.workspaceId || '')
+  if (rules.length === 0) return { allowed: true, content: args.content, action: null }
+  const scan = matchDlpRules(args.content, rules, args.userId, args.channelId)
+  if (scan.clean || !scan.action) return { allowed: true, content: args.content, action: null }
+
+  for (const v of scan.violations) await recordDlpViolation(v)
+
+  if (scan.action === 'block' || scan.action === 'quarantine') {
+    return { allowed: false, content: args.content, action: scan.action }
+  }
+  if (scan.action === 'redact') {
+    return { allowed: true, content: redactContent(args.content, scan.violations, rules), action: 'redact' }
+  }
+  // alert / warn — recorded, message proceeds unchanged.
+  return { allowed: true, content: args.content, action: scan.action }
+}
+
 /** Record a DLP violation in the violations log. */
 export async function recordDlpViolation(v: DlpViolation): Promise<void> {
   const pool = getPool()

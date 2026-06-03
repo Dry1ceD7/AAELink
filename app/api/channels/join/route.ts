@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * POST /api/channels/join — join a public channel by name.
@@ -41,6 +42,15 @@ async function _POST(req: NextRequest) {
   const ch = chRows[0]
   if (ch.type !== 'O') {
     return NextResponse.json({ error: 'cannot_join_private' }, { status: 403 })
+  }
+
+  // Information barrier: block joining a channel that already contains a member
+  // separated from this user by an active channel-blocking barrier.
+  if (await isBlocked(uid, ch.id, 'channel')) {
+    return NextResponse.json(
+      { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+      { status: 403 }
+    )
   }
 
   // Add the user as a member (idempotent). channel_members is

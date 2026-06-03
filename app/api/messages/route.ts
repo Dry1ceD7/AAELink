@@ -9,6 +9,7 @@ import { notifyChannelMentions, notifyDirectMessage } from '@/lib/notifications/
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -446,12 +447,18 @@ async function _POST(req: Request) {
   await ensureSchema()
   const body = (await req.json()) as { channel_id?: string; message?: string; root_id?: string; broadcast?: boolean }
   const channel_id = String(body.channel_id || '')
-  const message = String(body.message || '').trim()
+  let message = String(body.message || '').trim()
   const root_id = String(body.root_id || '').trim()
   if (!channel_id || !message) return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
   if (!(await userCanReadChannel(pool, uid, channel_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
+
+  // DLP: scan before persisting. block/quarantine → reject; redact → mask matched
+  // content; warn/alert → record and proceed. (Engine: lib/enterprise/dlpInterceptor.)
+  const dlp = await applyDlpToMessage({ content: message, userId: uid, channelId: channel_id })
+  if (!dlp.allowed) return NextResponse.json({ error: 'dlp_blocked' }, { status: 403 })
+  message = dlp.content
 
   if (root_id) {
     const pr = await pool.query<{ id: string; channel_id: string; root_id: string }>(

@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { checkBarrier, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * Direct Messages List API.
@@ -137,6 +138,18 @@ async function _POST(req: NextRequest) {
 
   if (targetIds.length === 0) return NextResponse.json({ error: 'user_ids_required' }, { status: 400 })
   if (!workspaceId) return NextResponse.json({ error: 'workspace_id_required' }, { status: 400 })
+
+  // Information barrier: refuse a DM when any recipient is separated from the
+  // initiator by an active barrier that blocks DMs (lib/enterprise/barrierGuard).
+  for (const targetId of targetIds) {
+    const barrier = await checkBarrier(uid, targetId, workspaceId)
+    if (barrier && barrier.block_dm) {
+      return NextResponse.json(
+        { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+        { status: 403 }
+      )
+    }
+  }
 
   const allUserIds = [uid, ...targetIds].sort()
   const isGroupDM = targetIds.length > 1
