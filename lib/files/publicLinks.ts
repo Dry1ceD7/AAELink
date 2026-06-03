@@ -8,6 +8,7 @@
  */
 import type { Pool } from 'pg'
 import { randomUUID } from 'crypto'
+import { isFileAccessAllowed } from './scanGate'
 
 export interface FileSharingPolicy {
   public_links_enabled: boolean
@@ -102,6 +103,8 @@ export async function resolvePublicLink(pool: Pool, token: string): Promise<Publ
   )
   const r = rows[0]
   if (!r) return null
+  // Virus-scan gate (D12): a public link never serves a blocked file.
+  if (!(await isFileAccessAllowed(pool, r.file_id))) return null
   return { file_id: r.file_id, filename: r.filename, content_type: r.content_type, size: Number(r.size), storage_key: r.storage_key }
 }
 

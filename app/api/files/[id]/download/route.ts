@@ -4,6 +4,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import fs from 'fs'
 import path from 'path'
+import { isFileAccessAllowed } from '@/lib/files/scanGate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
@@ -29,6 +30,12 @@ async function _GET(
   )
   const att = rows[0]
   if (!att) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  // Virus-scan gate (D12): never serve an infected file; strict policy also
+  // blocks not-yet-scanned files.
+  if (!(await isFileAccessAllowed(pool, id))) {
+    return NextResponse.json({ error: 'file_blocked_by_scan' }, { status: 403 })
+  }
 
   const filePath = path.join(UPLOAD_DIR, att.storage_key)
   if (!fs.existsSync(filePath)) {
