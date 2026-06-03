@@ -2833,6 +2833,31 @@ async function migration012CallSignals(pool: RunnerPool) {
   )
 }
 
+/**
+ * 013 — D6 Lists: per-item discussion threads.
+ *
+ * Slack Lists let each item carry its own comment thread. One row per comment,
+ * ordered by time, scoped to a list item. See lib/lists/itemThreads.ts.
+ *
+ * Forward-only: a new table. Idempotent. Indexed for per-item ordered reads.
+ */
+async function migration013ListItemComments(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.list_item_comments (
+       id         TEXT PRIMARY KEY,
+       item_id    TEXT NOT NULL REFERENCES aaelink.list_items(id) ON DELETE CASCADE,
+       list_id    TEXT NOT NULL,
+       user_id    TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       body       TEXT NOT NULL,
+       created_at BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_list_item_comments_item
+       ON aaelink.list_item_comments(item_id, created_at ASC)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -2846,4 +2871,5 @@ const MIGRATIONS: Migration[] = [
   { id: '010_saved_items', up: migration010SavedItems },
   { id: '011_message_edits', up: migration011MessageEdits },
   { id: '012_call_signals', up: migration012CallSignals },
+  { id: '013_list_item_comments', up: migration013ListItemComments },
 ]
