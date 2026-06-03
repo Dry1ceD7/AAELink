@@ -3100,9 +3100,12 @@ async function migration028UnifyReadState(pool: RunnerPool) {
           FROM aaelink.read_state rs
          WHERE rs.channel_id IN (SELECT id FROM aaelink.channels)
            AND rs.user_id   IN (SELECT id FROM aaelink.users)
-        ON CONFLICT (user_id, channel_id)
-          DO UPDATE SET last_read_at =
-            GREATEST(aaelink.channel_read_state.last_read_at, EXCLUDED.last_read_at);
+        -- Seed only cursors absent from channel_read_state. Do NOT overwrite an
+        -- existing (actively-maintained) cursor: GREATEST would silently drop a
+        -- deliberate mark-as-unread rewind, and EXCLUDED-wins could resurrect a
+        -- stale read_state cursor over a newer read. Missing-only is the safe
+        -- one-time merge.
+        ON CONFLICT (user_id, channel_id) DO NOTHING;
         DROP TABLE aaelink.read_state;
       END IF;
     END $$;

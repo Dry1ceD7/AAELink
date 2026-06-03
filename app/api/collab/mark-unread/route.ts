@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Mark as Unread — POST /api/collab/mark-unread
@@ -25,6 +26,13 @@ async function _POST(req: Request) {
   }
   if (!channel_id || !from_create_at) {
     return NextResponse.json({ error: 'channel_id_and_from_create_at_required' }, { status: 400 })
+  }
+
+  // Verify channel access before writing — channel_read_state has a NOT NULL FK
+  // to channels, so a stale/bogus channel id would otherwise raise an unhandled
+  // FK violation (500) instead of a clean response.
+  if (!(await userCanReadChannel(pool, uid, channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   // Rewind the read cursor to just before the target message

@@ -72,4 +72,18 @@ describe('read-state unification', () => {
     // rewindTo = from_create_at - 1, written via plain SET (backward allowed)
     expect(await cursor(channel.id, user.id)).toBe(299)
   })
+
+  it('rejects (403, not 500) a mark against a non-existent channel — FK guard', async () => {
+    const mark = await import('@/app/api/conversations/mark/route')
+    const markRes = await mark.POST(asRequest('POST', '/api/conversations/mark', {
+      cookie: user.sessionCookie, body: { channel: 'no-such-channel', ts: '100' },
+    }))
+    expect(markRes.status).toBe(403)
+
+    const unread = await import('@/app/api/collab/mark-unread/route')
+    const unreadRes = await unread.POST(asRequest('POST', '/api/collab/mark-unread', {
+      cookie: user.sessionCookie, body: { channel_id: 'no-such-channel', from_create_at: 100 },
+    }))
+    expect(unreadRes.status).toBe(403)
+  })
 })
