@@ -1,8 +1,9 @@
+import { randomUUID } from 'crypto'
 import { cookies } from 'next/headers'
 import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
-import { getSessionPolicy, isIdleExpired } from '@/lib/auth/sessionPolicy'
+import { getSessionPolicy, isIdleExpired, sessionTtlMs } from '@/lib/auth/sessionPolicy'
 
 export const SESSION_COOKIE = 'AAELINK_SESSION'
 
@@ -52,7 +53,7 @@ export async function readSessionUserId(): Promise<string | null> {
   if (!pool) return null
   await ensureSchema()
   const { rows } = await pool.query<{ user_id: string; last_active_at: number; created_at: number }>(
-    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
+    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2 AND mfa_pending = false`,
     [sid, Date.now()]
   )
   return resolveActiveSession(pool, sid, rows[0])
@@ -73,10 +74,59 @@ export async function readSessionUserIdFromCookieHeader(
   if (!pool) return null
   await ensureSchema()
   const { rows } = await pool.query<{ user_id: string; last_active_at: number; created_at: number }>(
-    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2`,
+    `SELECT user_id, last_active_at, created_at FROM aaelink.sessions WHERE id = $1 AND expires_at > $2 AND mfa_pending = false`,
     [sid, Date.now()]
   )
   return resolveActiveSession(pool, sid, rows[0])
+}
+
+/**
+ * Read the session that is awaiting MFA step-up (mfa_pending = true), if any.
+ * Used only by the step-up route: `readSessionUserId` deliberately hides these
+ * sessions from every other route. Returns the user id + session id, or null.
+ */
+export async function readMfaPendingSession(): Promise<{ userId: string; sessionId: string } | null> {
+  const sid = (await cookies()).get(SESSION_COOKIE)?.value?.trim()
+  if (!sid) return null
+  const pool = getPool()
+  if (!pool) return null
+  await ensureSchema()
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.sessions
+      WHERE id = $1 AND expires_at > $2 AND mfa_pending = true`,
+    [sid, Date.now()]
+  )
+  if (!rows[0]) return null
+  return { userId: rows[0].user_id, sessionId: sid }
+}
+
+/**
+ * Create a fully-usable (non-pending) session for a user and return its id +
+ * lifetime. Used by login paths that establish a session directly (passwordless
+ * WebAuthn login); mirrors the session row password + SSO login write.
+ */
+export async function createSession(
+  pool: Pool,
+  userId: string,
+  meta: { ip: string; userAgent: string }
+): Promise<{ sessionId: string; sessionMs: number }> {
+  const now = Date.now()
+  const sessionId = randomUUID()
+  const sessionMs = sessionTtlMs(await getSessionPolicy(pool, now), 'web')
+  await pool.query(
+    `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+    [sessionId, userId, now + sessionMs, meta.userAgent, meta.ip, now]
+  )
+  return { sessionId, sessionMs }
+}
+
+/** Clear the MFA step-up gate on a session, promoting it to fully usable. */
+export async function clearMfaPending(pool: Pool, sessionId: string): Promise<void> {
+  await pool.query(
+    `UPDATE aaelink.sessions SET mfa_pending = false WHERE id = $1`,
+    [sessionId]
+  )
 }
 
 /** Pull a single cookie value out of an HTTP `Cookie:` header. Returns null when absent. */

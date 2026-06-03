@@ -25,8 +25,12 @@ export interface SsoProviderConfig {
   groupRoleMapping: Record<string, string>
   samlEntryPoint: string
   samlIdpCert: string
+  /** All IdP signing certs (cert rotation); empty ⇒ fall back to samlIdpCert. */
+  samlIdpCerts: string[]
   samlAudience: string
   isActive: boolean
+  /** When true, a session from this provider requires MFA step-up before use. */
+  enforceMfa: boolean
   /** Decrypted client secret, or '' when none stored. Never log this. */
   clientSecret: string
 }
@@ -47,8 +51,21 @@ interface Row {
   group_role_mapping: unknown
   saml_entry_point: string
   saml_idp_cert: string
+  saml_idp_certs: unknown
   saml_audience: string
   is_active: boolean
+  enforce_mfa: boolean
+}
+
+/** Coerce the saml_idp_certs JSONB column into a clean string[]. */
+function asCertArray(v: unknown): string[] {
+  const raw = typeof v === 'string' ? safeJsonArray(v) : v
+  if (!Array.isArray(raw)) return []
+  return raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
+}
+
+function safeJsonArray(s: string): unknown {
+  try { return JSON.parse(s) } catch { return [] }
 }
 
 function asMap(v: unknown): Record<string, string> {
@@ -72,7 +89,7 @@ export async function loadActiveProvider(
     `SELECT id, name, type, issuer, discovery_url, client_id, client_secret_enc,
             scopes, jit_provisioning, default_role, default_workspace_id,
             attribute_mapping, group_role_mapping,
-            saml_entry_point, saml_idp_cert, saml_audience, is_active
+            saml_entry_point, saml_idp_cert, saml_idp_certs, saml_audience, is_active, enforce_mfa
        FROM aaelink.sso_providers
       WHERE id = $1`,
     [providerId]
@@ -108,8 +125,10 @@ export async function loadActiveProvider(
     groupRoleMapping: asMap(r.group_role_mapping),
     samlEntryPoint: r.saml_entry_point || '',
     samlIdpCert: r.saml_idp_cert || '',
+    samlIdpCerts: asCertArray(r.saml_idp_certs),
     samlAudience: r.saml_audience || '',
     isActive: r.is_active,
+    enforceMfa: r.enforce_mfa === true,
     clientSecret,
   }
 }

@@ -40,3 +40,12 @@ export function ssoFailure(req: Request): NextResponse {
 export function ssoSuccess(req: Request): NextResponse {
   return NextResponse.redirect(new URL('/home', appOrigin(req)))
 }
+
+/**
+ * Redirect for a login that succeeded but whose provider enforces MFA: the
+ * session cookie is set but `mfa_pending`, so the user lands on the step-up
+ * challenge rather than /home.
+ */
+export function ssoStepUp(req: Request): NextResponse {
+  return NextResponse.redirect(new URL('/login?mfa=stepup', appOrigin(req)))
+}

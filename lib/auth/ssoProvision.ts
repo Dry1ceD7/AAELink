@@ -21,6 +21,8 @@ export interface SsoLoginResult {
   sessionId: string
   sessionMs: number
   provisioned: boolean
+  /** True when the provider enforces MFA: session is withheld until step-up. */
+  mfaPending: boolean
 }
 
 async function uniqueUsername(pool: Pool, email: string): Promise<string> {
@@ -112,10 +114,13 @@ export async function loginViaSso(
 
   const sessionId = randomUUID()
   const sessionMs = sessionTtlMs(await getSessionPolicy(pool, now), 'web')
+  // Providers with enforce_mfa create a session that readSessionUserId withholds
+  // until the user clears MFA step-up (POST /api/auth/mfa/stepup).
+  const mfaPending = cfg.enforceMfa === true
   await pool.query(
-    `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$6)`,
-    [sessionId, userId, now + sessionMs, meta.userAgent, meta.ip, now]
+    `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at, mfa_pending)
+     VALUES ($1,$2,$3,$4,$5,$6,$6,$7)`,
+    [sessionId, userId, now + sessionMs, meta.userAgent, meta.ip, now, mfaPending]
   )
   await pool.query(
     `UPDATE aaelink.users SET last_seen_at = $1, last_login_at = $1,
@@ -131,5 +136,5 @@ export async function loginViaSso(
     )
     .catch(() => { /* non-critical */ })
 
-  return { userId, sessionId, sessionMs, provisioned }
+  return { userId, sessionId, sessionMs, provisioned, mfaPending }
 }

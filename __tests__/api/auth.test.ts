@@ -87,7 +87,11 @@ describe('POST /api/auth/sso', () => {
       body: {
         name: 'Test SSO Provider',
         type: 'saml',
-        metadata_url: 'https://idp.test/saml/metadata',
+        // Explicit entry point + cert (the non-metadata_url path) so create does
+        // not attempt a live IdP metadata fetch. Metadata auto-discovery is
+        // covered in __tests__/api/sso-saml-metadata.test.ts.
+        saml_entry_point: 'https://idp.test/sso',
+        saml_idp_cert: 'MIIBfakecertbody',
       },
     })
     const res = await POST(req)

@@ -8,7 +8,7 @@ import { consumeAuthRequest } from '@/lib/auth/ssoAuthRequest'
 import { mapClaimsToIdentity } from '@/lib/auth/ssoClaims'
 import { loginViaSso } from '@/lib/auth/ssoProvision'
 import { auditSsoFailure, auditSsoSuccess } from '@/lib/auth/ssoAudit'
-import { clientMeta, samlCallbackUrl, ssoFailure, ssoSuccess } from '@/lib/auth/ssoRouteHelpers'
+import { clientMeta, samlCallbackUrl, ssoFailure, ssoSuccess, ssoStepUp } from '@/lib/auth/ssoRouteHelpers'
 
 /**
  * POST /api/auth/sso/saml/acs?provider=<id>
@@ -82,7 +82,7 @@ async function _POST(req: Request) {
       userId: result.userId, providerId, protocol: 'saml',
       provisioned: result.provisioned, ...meta,
     })
-    const res = ssoSuccess(req)
+    const res = result.mfaPending ? ssoStepUp(req) : ssoSuccess(req)
     res.cookies.set(SESSION_COOKIE, result.sessionId, {
       httpOnly: true,
       sameSite: 'lax',

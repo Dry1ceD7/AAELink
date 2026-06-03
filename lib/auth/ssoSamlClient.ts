@@ -14,7 +14,11 @@ import type { SsoProviderConfig } from '@/lib/auth/ssoProvider'
  */
 
 function buildSaml(cfg: SsoProviderConfig, callbackUrl: string): SAML {
-  if (!cfg.samlIdpCert) throw new Error('saml_idp_cert_unset')
+  // Cert rotation: validate against the full discovered signing-cert set when
+  // present, else the legacy single cert. node-saml's idpCert accepts an array
+  // and a token signed by ANY listed key validates (ADR 0015).
+  const certs = cfg.samlIdpCerts.length > 0 ? cfg.samlIdpCerts : [cfg.samlIdpCert].filter(Boolean)
+  if (certs.length === 0) throw new Error('saml_idp_cert_unset')
   if (!cfg.samlEntryPoint) throw new Error('saml_entry_point_unset')
   // SP entity id ("issuer" in node-saml terms): prefer the configured audience,
   // fall back to the callback origin so a value always exists.
@@ -23,7 +27,7 @@ function buildSaml(cfg: SsoProviderConfig, callbackUrl: string): SAML {
     callbackUrl,
     entryPoint: cfg.samlEntryPoint,
     issuer: spIssuer,
-    idpCert: cfg.samlIdpCert,
+    idpCert: certs.length === 1 ? certs[0] : certs,
     audience: cfg.samlAudience || spIssuer,
     wantAssertionsSigned: true,
     wantAuthnResponseSigned: false,

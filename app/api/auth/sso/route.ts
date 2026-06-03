@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { encryptSecret, ssoSecretKeyConfigured } from '@/lib/auth/ssoSecretCrypto'
+import { fetchSamlIdpMetadata } from '@/lib/auth/samlMetadata'
 
 /**
  * SSO Configuration API — manage SAML/OIDC identity provider settings.
@@ -124,21 +125,40 @@ async function _POST(req: NextRequest) {
   // AES-256-GCM ciphertext used by the RP code exchange. Never the plaintext.
   const secretEnc = body.client_secret ? encryptSecret(body.client_secret) : ''
 
+  // SAML metadata auto-discovery: when an IdP metadata_url is supplied, fetch +
+  // parse it to fill the entry point + signing cert set (ADR 0015). Explicit
+  // values still win for the single-cert/entry-point fields if also provided.
+  let samlEntryPoint = body.saml_entry_point || ''
+  let samlIdpCert = body.saml_idp_cert || ''
+  let samlIdpCerts: string[] = []
+  let resolvedIssuer = body.issuer || ''
+  if (type === 'saml' && body.metadata_url) {
+    try {
+      const md = await fetchSamlIdpMetadata(body.metadata_url)
+      samlEntryPoint = samlEntryPoint || md.entryPoint
+      samlIdpCerts = md.certs
+      samlIdpCert = samlIdpCert || md.certs[0] || ''
+      resolvedIssuer = resolvedIssuer || md.entityId
+    } catch {
+      return NextResponse.json({ error: 'saml_metadata_fetch_failed' }, { status: 400 })
+    }
+  }
+
   await pool.query(`
     INSERT INTO aaelink.sso_providers
       (id, name, type, issuer, metadata_url, discovery_url,
        client_id, client_secret_hash, client_secret_enc, callback_url, scopes,
        jit_provisioning, default_role, default_workspace_id,
        attribute_mapping, group_role_mapping,
-       saml_entry_point, saml_idp_cert, saml_audience,
+       saml_entry_point, saml_idp_cert, saml_idp_certs, saml_audience,
        session_lifetime_hours, enforce_mfa, is_active,
        login_count, last_login_at, created_by, created_at, updated_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, true,
-            0, 0, $22, $23, $23)
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, true,
+            0, 0, $23, $24, $24)
   `, [
     id, name, type,
-    body.issuer || '', body.metadata_url || '', body.discovery_url || '',
+    resolvedIssuer, body.metadata_url || '', body.discovery_url || '',
     body.client_id || '', body.client_secret ? `sha256:${body.client_secret.slice(0, 8)}***` : '',
     secretEnc,
     body.callback_url || `/api/auth/sso/callback/${id}`,
@@ -147,7 +167,7 @@ async function _POST(req: NextRequest) {
     body.default_workspace_id || null,
     JSON.stringify(body.attribute_mapping || { email: 'email', name: 'name', groups: 'groups' }),
     JSON.stringify(body.group_role_mapping || {}),
-    body.saml_entry_point || '', body.saml_idp_cert || '', body.saml_audience || '',
+    samlEntryPoint, samlIdpCert, JSON.stringify(samlIdpCerts), body.saml_audience || '',
     Math.min(Math.max(body.session_lifetime_hours || 24, 1), 720),
     body.enforce_mfa || false,
     uid, now

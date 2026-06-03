@@ -3080,6 +3080,70 @@ async function migration024JobsPayloadText(pool: RunnerPool) {
   `)
 }
 
+async function migration025SessionMfaPending(pool: RunnerPool) {
+  // SSO providers with enforce_mfa=true create a session that is authenticated
+  // to the user but withheld from normal routes until the user clears an MFA
+  // step-up challenge. readSessionUserId treats an mfa_pending session as
+  // unauthenticated; POST /api/auth/mfa/stepup flips this to false after a valid
+  // TOTP code. Defaulting false means existing/password sessions are unaffected.
+  await pool.query(`
+    ALTER TABLE aaelink.sessions
+      ADD COLUMN IF NOT EXISTS mfa_pending BOOLEAN NOT NULL DEFAULT false
+  `)
+}
+
+async function migration026SamlIdpCerts(pool: RunnerPool) {
+  // SAML IdPs publish MULTIPLE signing certs during a key rollover. The legacy
+  // single saml_idp_cert can't represent that, so a rotation breaks every login.
+  // saml_idp_certs holds the full signing-cert set discovered from IdP metadata;
+  // node-saml's idpCert accepts an array so a token signed by ANY current key
+  // validates. saml_idp_cert is kept (first cert) for back-compat + display.
+  await pool.query(`
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS saml_idp_certs JSONB NOT NULL DEFAULT '[]'
+  `)
+}
+
+async function migration027WebauthnPasskeys(pool: RunnerPool) {
+  // Passkeys (WebAuthn/FIDO2) as an MFA factor (ADR 0016). One row per
+  // registered credential; counter + backed_up are kept for replay defense and
+  // device-type display. Challenges are short-lived, bound to (user_id, kind),
+  // issued on `begin` and consumed on `finish`.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webauthn_credentials (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      credential_id TEXT NOT NULL UNIQUE,
+      public_key    TEXT NOT NULL,
+      counter       BIGINT NOT NULL DEFAULT 0,
+      transports    TEXT NOT NULL DEFAULT '',
+      device_type   TEXT NOT NULL DEFAULT '',
+      backed_up     BOOLEAN NOT NULL DEFAULT false,
+      name          TEXT NOT NULL DEFAULT '',
+      created_at    BIGINT NOT NULL,
+      last_used_at  BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user
+       ON aaelink.webauthn_credentials(user_id);`
+  )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.webauthn_challenges (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      challenge   TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      expires_at  BIGINT NOT NULL,
+      created_at  BIGINT NOT NULL
+    );
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_user_kind
+       ON aaelink.webauthn_challenges(user_id, kind);`
+  )
+}
+
 async function migration021SavedSearches(pool: RunnerPool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.saved_searches (
@@ -3191,4 +3255,7 @@ const MIGRATIONS: Migration[] = [
   { id: '022_inbound_sso', up: migration022InboundSso },
   { id: '023_messages_fts', up: migration023MessagesFts },
   { id: '024_jobs_payload_text', up: migration024JobsPayloadText },
+  { id: '025_session_mfa_pending', up: migration025SessionMfaPending },
+  { id: '026_saml_idp_certs', up: migration026SamlIdpCerts },
+  { id: '027_webauthn_passkeys', up: migration027WebauthnPasskeys },
 ]

@@ -8,7 +8,7 @@ import { consumeAuthRequest } from '@/lib/auth/ssoAuthRequest'
 import { mapClaimsToIdentity } from '@/lib/auth/ssoClaims'
 import { loginViaSso } from '@/lib/auth/ssoProvision'
 import { auditSsoFailure, auditSsoSuccess } from '@/lib/auth/ssoAudit'
-import { clientMeta, ssoFailure, ssoSuccess } from '@/lib/auth/ssoRouteHelpers'
+import { clientMeta, ssoFailure, ssoSuccess, ssoStepUp } from '@/lib/auth/ssoRouteHelpers'
 
 /**
  * GET /api/auth/sso/oidc/callback?provider=<id>&code=...&state=...
@@ -67,7 +67,7 @@ async function _GET(req: Request) {
       userId: result.userId, providerId, protocol: 'oidc',
       provisioned: result.provisioned, ...meta,
     })
-    const res = ssoSuccess(req)
+    const res = result.mfaPending ? ssoStepUp(req) : ssoSuccess(req)
     res.cookies.set(SESSION_COOKIE, result.sessionId, {
       httpOnly: true,
       sameSite: 'lax',

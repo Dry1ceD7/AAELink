@@ -22,8 +22,8 @@ function cfg(): SsoProviderConfig {
     id: 'p1', name: 'SAML IdP', type: 'saml', issuer: '', discoveryUrl: '',
     clientId: '', scopes: '', jitProvisioning: true, defaultRole: 'member',
     defaultWorkspaceId: null, attributeMapping: {}, groupRoleMapping: {},
-    samlEntryPoint: 'http://idp.test/sso', samlIdpCert: fx.idpCertPem, samlAudience: AUD,
-    isActive: true, clientSecret: '',
+    samlEntryPoint: 'http://idp.test/sso', samlIdpCert: fx.idpCertPem, samlIdpCerts: [], samlAudience: AUD,
+    isActive: true, enforceMfa: false, clientSecret: '',
   }
 }
 
@@ -58,5 +58,12 @@ describe('ssoSamlClient — validateSamlResponse', () => {
     const resp = fx.signedResponseB64({ email: 'jane@corp.com', audience: AUD, recipient: CB, inResponseTo: 'req-123' })
     const out = await validateSamlResponse(cfg(), CB, resp)
     expect(out.inResponseTo).toBe('req-123')
+  })
+
+  it('validates via the samlIdpCerts rotation set (cert in array, single cert blank)', async () => {
+    const resp = fx.signedResponseB64({ email: 'jane@corp.com', audience: AUD, recipient: CB })
+    const rotated = { ...cfg(), samlIdpCert: '', samlIdpCerts: [fx.idpCertPem] }
+    const out = await validateSamlResponse(rotated, CB, resp)
+    expect(out.claims.email).toBe('jane@corp.com')
   })
 })
