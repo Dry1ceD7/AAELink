@@ -38,7 +38,24 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
   enforces getPool() going forward.
 - H5: stale dated audits moved to docs/_archive/.
 
+## Stage C progress (this session)
+- CRITICAL fix: fresh-database migration built only 30 of 145 tables (a seed
+  guard `if (!users[0]) return` also gated ~115 CREATE TABLE statements). Fixed
+  + backfill migration 002. Fresh DB now builds 138 tables. This means clean
+  deploys (CI/k8s/new dev) were previously broken for all org/compliance/admin
+  routes. See deep-audit C4.
+- Fixed 14 enterprise-table columns mistyped UUID (base ids are TEXT) — FKs
+  failed on fresh DB. See C5.
+- Repaired the __tests__/api integration harness (stale import, wrong users/
+  sessions schema, wrong cookie, CI `--dir` no-op). Added
+  vitest.integration.config.ts. See C6.
+- Shipped D1 workspace discovery (migration 003 access levels +
+  /api/workspaces/discover + lib + lib-layer test). D1 discovery Gap → Done.
+
 ## Next (Stage C — build in-scope parity gaps, phase order in the directive section 7)
+- Re-validate schema-dependent "Done" routes (D9/D10/org/roles) with DB-backed
+  lib-layer tests now that the schema actually builds (their "Done" was
+  unverified — see C4 correction note at the top of the audit).
 - Phase 1 (D1): org-wide channels, workspace discovery, access levels, enterprise
   identity cross-workspace verification, workspace move/archive lifecycle.
 - Phase 2 (D2): domain claiming, SAML signed-response + owner bypass, session
@@ -48,6 +65,11 @@ Last updated: 2026-06-02 (Stage A audit + Stage B remediation).
 - See `docs/audits/deep-audit-2026-06-02.md` section A1b for the full ordered list.
 
 ## Watch / tracked follow-ups
+- TEST HARNESS GAP (audit C7): route handlers invoked directly under vitest 500
+  because readSessionUserId() calls cookies() (next/headers) outside a request
+  scope. Cookie-auth routes can't be tested by direct invocation. Verify
+  business logic at the lib layer (as D1 discovery does) or via a running server
+  (Playwright). Needs a request-context shim or a documented testing standard.
 - H7 (infra): `infra/k3s` and `infra/docker-desktop` kustomize deploy MATTERMOST
   (namespace `mattermost`, mattermost image, MATTERMOST_URL), not AAELink. There
   is no AAELink Kubernetes deployment manifest. Authoring real AAELink manifests

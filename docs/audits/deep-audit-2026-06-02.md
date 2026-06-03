@@ -8,6 +8,16 @@ Baseline: v0.0.58-alpha, Next.js 16 / React 19 / TS 6 strict / PG 17 / MinIO / R
 This is the Stage A diagnosis. **No fixes applied.** Remediation (Stage B) must not begin
 until this report is committed.
 
+> **2026-06-03 correction (Stage C).** Stage A's "green baseline" was measured against a
+> long-lived dev database and was **misleading**. A critical migration bug (C4 below, found
+> while building D1) meant a *fresh* database built only 30 of 145 tables. So the green
+> `bun run build`/test signal did not imply a working deploy, and the parity ledger's
+> "Done" marks for every schema-dependent domain (D9 admin, D10 compliance, org/roles/DLP/
+> retention/legal-hold) were **unverified** — those routes would 503/500 on a clean install
+> because their tables did not exist. C4 is now fixed and verified (fresh DB builds 138
+> tables). Treat the ledger statuses below as "code exists", not "works on a fresh deploy",
+> until each is exercised by a DB-backed test. See C4 and the test-harness finding.
+
 ---
 
 ## 0. Executive summary
@@ -448,3 +458,81 @@ Medium items (tracked, not blockers):
 Stage B exit criteria met: gates green, compose valid, dependency tree clean
 (no AI deps; 1 documented advisory), legacy archived, no duplicate/legacy files
 live. Proceeding to Stage C.
+
+---
+
+## Stage C — findings (2026-06-03)
+
+### C4 (CRITICAL, fixed). Fresh-database migration built only 30 of 145 tables
+- Evidence: dropping `aaelink` schema and re-running `ensureSchema()` recorded
+  `001_initial_schema` as applied but created only 30 tables.
+  `ensureGlobalWorkspaceAndDepartments()` (lib/infra/migrate.ts) opened with
+  `if (!users[0]) return`, which gated BOTH the owner-seed AND the ~115
+  `CREATE TABLE`/`INDEX`/`ALTER` statements that follow it. On a fresh DB (no
+  users yet) the function returned immediately, so organizations, org_members,
+  org_policies, custom_roles, role_assignments, invite_requests, dlp_scan_queue,
+  audit_stream_configs, lists, document_versions/annotations/signatures,
+  thread_followers, and dozens more were never created.
+- Impact: any clean deploy (CI, k8s, a new developer) ran a crippled schema.
+  Every route depending on those tables would 503/500. The Stage A "green
+  baseline" was measured on a long-lived dev DB where the tables had accreted
+  over time once a user existed — masking the bug. **This invalidates the
+  "Done" confidence for D9/D10/org/roles/DLP/retention/legal-hold in the
+  ledger** (code exists, but never ran on a fresh DB).
+- Fix: gate only the seed; run all DDL unconditionally. Added migration
+  `002_backfill_extended_schema` (idempotent) so DBs whose 001 ran before the
+  fix converge. Commit 2b8b9c02.
+- Verified: fresh `DROP SCHEMA` + remigrate now builds **138 tables**, all
+  three migrations recorded, no DDL errors.
+
+### C5 (HIGH, fixed). Enterprise tables used UUID ids referencing TEXT base tables
+- Evidence: surfaced once C4 let the DDL run on a fresh DB — `custom_roles.
+  workspace_id UUID REFERENCES workspaces(id)` failed ("foreign key constraint
+  cannot be implemented") because `workspaces.id` is TEXT. A parallel schema
+  audit (6 tables × lib consumers) found **14 columns** across custom_roles,
+  role_assignments, invite_requests, dlp_scan_queue, audit_stream_configs, and
+  org_members typed UUID but holding base-entity (users/workspaces/channels/
+  messages) ids.
+- Impact: FK creation failed on fresh DB; text-id inserts would fail at runtime
+  on existing DBs. Latent because the whole block was dead code (C4).
+- Fix: 14 columns UUID → TEXT; `org_id`→organizations and `role_id`→custom_roles
+  stay UUID. Lib consumers already passed TEXT ids (no code changes). Commit
+  2b8b9c02.
+
+### C6 (HIGH, fixed). The `__tests__/api` integration suite never ran
+- Evidence: three independent breakages, any one fatal: (a) `helpers.ts`
+  imported `@/lib/migrate` (moved to `@/lib/infra/migrate`) — every test errored
+  in `createTestContext`; (b) `createTestUser` inserted nonexistent `users`
+  columns (display_name/workspace_id/department_id/status) and an invalid
+  `sessions` row (missing required `expires_at`, nonexistent `device_type`);
+  (c) wrong session cookie name (`session` vs `AAELINK_SESSION`). Additionally
+  the CI integration job and the H3 `test:integration` script used
+  `vitest run --dir __tests__`, which matches **nothing** (the config `include:
+  tests/**` still resolves at root), so CI's "integration" job ran zero tests
+  and reported success.
+- Impact: zero DB-backed route coverage despite 16 integration test files; the
+  C4/C5 schema bugs had no test that would have caught them.
+- Fix: corrected the helper to the real schema; added
+  `vitest.integration.config.ts` (include `__tests__/**`) wired into
+  `test:integration`/`test:all`. Commit 2b8b9c02.
+
+### C7 (HIGH, tracked — not yet fixed). Route tests can't authenticate via direct invocation
+- Evidence: with the harness repaired, route handlers invoked directly under
+  vitest return 500 for every case — `readSessionUserId()` calls `cookies()`
+  (next/headers) with no try/catch, and `cookies()` throws outside a request
+  scope (`verifyCsrf` guards this; `readSessionUserId` does not). This is a
+  TEST-HARNESS artifact, not a production bug (real requests have the scope).
+- Impact: cookie-authenticated routes (most of the 255) cannot be verified by
+  direct-invocation integration tests. The D1 discovery feature was therefore
+  verified at the lib-function layer instead (the robust pattern going forward).
+- Proposed fix (follow-up): either establish a request-context shim in a vitest
+  setup file, or standardize on lib-layer integration tests for business logic
+  and reserve route tests for a running server (Playwright/e2e). Until then,
+  "route works" must be proven by a lib-layer test or manual run, not assumed.
+
+### Stage C delta so far
+- D1 workspace discovery shipped (access levels + discover/join + lib test):
+  migration 003, `lib/workspace/workspaceDiscovery.ts`, `/api/workspaces/
+  discover`. Commit 2bd2e13c. Ledger: D1 "workspace discovery" Gap → Done;
+  "workspace access levels" Partial → Done (schema + enforcement on join).
+- Net schema integrity: fresh deploy now viable for the first time (C4/C5).
