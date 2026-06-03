@@ -2621,9 +2621,37 @@ async function migration004WorkspaceLifecycle(pool: RunnerPool) {
   )
 }
 
+/**
+ * 005 — D1 Enterprise Grid: org-wide channels.
+ *
+ * Adds `org_id` (the organization the channel is shared across) and
+ * `is_org_wide` to channels. A channel keeps its home `workspace_id`, but when
+ * `is_org_wide` is set any member of any workspace in `org_id` can discover and
+ * join it (Slack Grid org-wide channels). See lib/channels/orgWideChannels.ts.
+ *
+ * Forward-only: additive columns with safe defaults (existing channels stay
+ * workspace-scoped, is_org_wide = false, org_id NULL). Idempotent. The index
+ * supports discovery of org-wide channels by org.
+ */
+async function migration005OrgWideChannels(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.channels
+       ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES aaelink.organizations(id) ON DELETE SET NULL`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.channels
+       ADD COLUMN IF NOT EXISTS is_org_wide BOOLEAN NOT NULL DEFAULT false`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_channels_org_wide
+       ON aaelink.channels(org_id, is_org_wide)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
   { id: '003_workspace_access_levels', up: migration003WorkspaceAccessLevels },
   { id: '004_workspace_lifecycle', up: migration004WorkspaceLifecycle },
+  { id: '005_org_wide_channels', up: migration005OrgWideChannels },
 ]

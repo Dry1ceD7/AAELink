@@ -43,11 +43,13 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'cannot_join_private' }, { status: 403 })
   }
 
-  // Add the user as a member (idempotent)
+  // Add the user as a member (idempotent). channel_members is
+  // (channel_id, user_id, role, joined_at) — joined_at is NOT NULL and there is
+  // no created_at column, so the prior insert errored on every join.
   const now = Date.now()
   const { rowCount } = await pool.query(
-    `INSERT INTO aaelink.channel_members (channel_id, user_id, created_at)
-     VALUES ($1, $2, $3)
+    `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at)
+     VALUES ($1, $2, 'member', $3)
      ON CONFLICT (channel_id, user_id) DO NOTHING`,
     [ch.id, uid, now]
   )
