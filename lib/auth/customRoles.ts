@@ -42,7 +42,7 @@ export async function createRole(
   await pool.query(
     `INSERT INTO aaelink.custom_roles (id, workspace_id, name, description, permissions, is_system, created_at)
      VALUES ($1, $2, $3, $4, $5, false, $6)`,
-    [id, workspaceId, name, description, JSON.stringify(permissions), now]
+    [id, workspaceId, name, description, permissions, now]
   )
   return { id, workspace_id: workspaceId, name, description, permissions, is_system: false, created_at: now }
 }
@@ -55,7 +55,7 @@ export async function updateRole(
   let idx = 1
   if (updates.name !== undefined)        { sets.push(`name = $${idx++}`);        vals.push(updates.name) }
   if (updates.description !== undefined) { sets.push(`description = $${idx++}`); vals.push(updates.description) }
-  if (updates.permissions !== undefined) { sets.push(`permissions = $${idx++}`); vals.push(JSON.stringify(updates.permissions)) }
+  if (updates.permissions !== undefined) { sets.push(`permissions = $${idx++}`); vals.push(updates.permissions) }
   if (sets.length === 0) return
   vals.push(roleId)
   await pool.query(`UPDATE aaelink.custom_roles SET ${sets.join(', ')} WHERE id = $${idx} AND is_system = false`, vals)

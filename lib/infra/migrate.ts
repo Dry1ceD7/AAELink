@@ -2432,7 +2432,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
   `)
 
   await pool.query(
-    `ALTER TABLE aaelink.workspaces ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES aaelink.organizations(id)`
+    `ALTER TABLE aaelink.workspaces ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES aaelink.organizations(id) ON DELETE SET NULL`
   )
 
   // Audit stream configs
@@ -2487,7 +2487,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
       description   TEXT NOT NULL DEFAULT '',
       permissions   TEXT[] NOT NULL DEFAULT '{}',
       is_system     BOOLEAN NOT NULL DEFAULT false,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at    BIGINT NOT NULL DEFAULT 0,
       UNIQUE(workspace_id, name)
     )
   `)
@@ -2501,7 +2501,7 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
       scope         TEXT NOT NULL DEFAULT 'workspace' CHECK (scope IN ('workspace','org','channel')),
       scope_id      TEXT,
       assigned_by   TEXT NOT NULL,
-      assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      assigned_at   BIGINT NOT NULL DEFAULT 0,
       UNIQUE(role_id, user_id, workspace_id, scope, scope_id)
     )
   `)
@@ -2513,9 +2513,9 @@ async function ensureGlobalWorkspaceAndDepartments(pool: RunnerPool) {
       email         TEXT NOT NULL,
       requester_id  TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied','expired')),
-      reviewed_by   TEXT,
-      reviewed_at   TIMESTAMPTZ,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+      reviewer_id   TEXT,
+      reviewed_at   BIGINT,
+      created_at    BIGINT NOT NULL DEFAULT 0
     )
   `)
 
