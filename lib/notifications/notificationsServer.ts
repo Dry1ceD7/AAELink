@@ -4,6 +4,7 @@ import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { filterUsersForNotification } from '@/lib/notifications/notificationPrefs'
 import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
+import { matchKeywords } from '@/lib/notifications/keywords'
 import { selectPushTargets, enqueuePush } from '@/lib/notifications/pushTargeting'
 
 export type NotificationInsertRow = {
@@ -84,19 +85,19 @@ export async function notifyChannelMentions(args: {
   authorId: string
   authorLabel: string
   body: string
-}): Promise<void> {
+}): Promise<string[]> {
   const names = parseMentionUsernames(args.body)
-  if (names.length === 0) return
+  if (names.length === 0) return []
   let targets = await resolveMentionTargets(args.pool, args.workspaceId, names, args.authorId)
-  if (targets.length === 0) return
+  if (targets.length === 0) return []
   targets = await filterUsersForNotification(args.pool, targets, 'mentions')
-  if (targets.length === 0) return
+  if (targets.length === 0) return []
   const allowed: string[] = []
   for (const t of targets) {
     if (await userCanReadChannel(args.pool, t, args.channelId)) allowed.push(t)
   }
   targets = allowed
-  if (targets.length === 0) return
+  if (targets.length === 0) return []
   const title = `Mention in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
   await insertNotifications(
@@ -115,6 +116,81 @@ export async function notifyChannelMentions(args: {
 
   // Auto-push to mentioned users, respecting channel mute + DND.
   const pushable = await selectPushTargets(args.pool, targets, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      { userIds: pushable, title, body, channelId: args.channelId, priority: 'high' },
+      args.authorId
+    )
+  }
+  return targets
+}
+
+/**
+ * Notify channel members whose configured highlight keywords appear in a
+ * message (Slack-style keyword highlights). One row per member is read from
+ * notification_keywords; matching is done in-memory via matchKeywords. Members
+ * already notified by an @mention (excludeUserIds) are skipped to avoid a
+ * duplicate alert. Like mentions, keyword hits push (respecting mute + DND).
+ */
+export async function notifyKeywordMatches(args: {
+  pool: Pool
+  workspaceId: string
+  channelId: string
+  channelLabel: string
+  messageId: string
+  authorId: string
+  authorLabel: string
+  body: string
+  excludeUserIds?: string[]
+}): Promise<void> {
+  const exclude = new Set([args.authorId, ...(args.excludeUserIds || [])])
+
+  // Members of the channel (excluding author + already-notified) who have keywords.
+  const { rows } = await args.pool.query<{ user_id: string; keyword: string }>(
+    `SELECT nk.user_id, nk.keyword
+       FROM aaelink.notification_keywords nk
+       INNER JOIN aaelink.channel_members cm
+         ON cm.user_id = nk.user_id AND cm.channel_id = $1`,
+    [args.channelId]
+  )
+  if (rows.length === 0) return
+
+  const byUser = new Map<string, string[]>()
+  for (const r of rows) {
+    if (exclude.has(r.user_id)) continue
+    const list = byUser.get(r.user_id) ?? []
+    list.push(r.keyword)
+    byUser.set(r.user_id, list)
+  }
+  if (byUser.size === 0) return
+
+  let hits = [...byUser.entries()]
+    .filter(([, keywords]) => matchKeywords(args.body, keywords).length > 0)
+    .map(([userId]) => userId)
+  if (hits.length === 0) return
+
+  // Keyword highlights ride the 'mentions' notification preference.
+  hits = await filterUsersForNotification(args.pool, hits, 'mentions')
+  if (hits.length === 0) return
+
+  const title = `Keyword in ${args.channelLabel}`
+  const body = `${args.authorLabel}: ${snippet(args.body)}`
+  await insertNotifications(
+    args.pool,
+    hits.map(user_id => ({
+      user_id,
+      kind: 'keyword',
+      title,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: args.channelId,
+      message_id: args.messageId,
+      ticket_id: null
+    }))
+  )
+
+  const pushable = await selectPushTargets(args.pool, hits, args.channelId)
   if (pushable.length > 0) {
     await enqueuePush(
       args.pool,
