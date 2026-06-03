@@ -4,6 +4,7 @@ import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { filterUsersForNotification } from '@/lib/notifications/notificationPrefs'
 import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
+import { selectPushTargets, enqueuePush } from '@/lib/notifications/pushTargeting'
 
 export type NotificationInsertRow = {
   user_id: string
@@ -111,6 +112,69 @@ export async function notifyChannelMentions(args: {
       ticket_id: null
     }))
   )
+
+  // Auto-push to mentioned users, respecting channel mute + DND.
+  const pushable = await selectPushTargets(args.pool, targets, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      { userIds: pushable, title, body, channelId: args.channelId, priority: 'high' },
+      args.authorId
+    )
+  }
+}
+
+/**
+ * Notify the recipients of a direct / group-DM message: writes an in-app `dm`
+ * notification for every channel member except the author, and enqueues a push
+ * for those who haven't muted the DM and aren't in DND. A DM is direct, so the
+ * in-app notification is not gated by the mention preference.
+ */
+export async function notifyDirectMessage(args: {
+  pool: Pool
+  workspaceId: string
+  channelId: string
+  messageId: string
+  authorId: string
+  authorLabel: string
+  body: string
+}): Promise<void> {
+  const { rows } = await args.pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_members WHERE channel_id = $1 AND user_id <> $2`,
+    [args.channelId, args.authorId]
+  )
+  const recipients = rows.map(r => r.user_id)
+  if (recipients.length === 0) return
+
+  const body = snippet(args.body)
+  await insertNotifications(
+    args.pool,
+    recipients.map(user_id => ({
+      user_id,
+      kind: 'dm',
+      title: args.authorLabel,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: args.channelId,
+      message_id: args.messageId,
+      ticket_id: null
+    }))
+  )
+
+  const pushable = await selectPushTargets(args.pool, recipients, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      {
+        userIds: pushable,
+        title: `New message from ${args.authorLabel}`,
+        body,
+        channelId: args.channelId,
+        priority: 'high'
+      },
+      args.authorId
+    )
+  }
 }
 
 export async function notifyTicketReply(args: {

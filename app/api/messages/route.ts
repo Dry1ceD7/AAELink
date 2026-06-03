@@ -5,7 +5,7 @@ import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
-import { notifyChannelMentions } from '@/lib/notifications/notificationsServer'
+import { notifyChannelMentions, notifyDirectMessage } from '@/lib/notifications/notificationsServer'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
@@ -488,18 +488,31 @@ async function _POST(req: Request) {
     }>(`SELECT username, nickname, first_name, last_name FROM aaelink.users WHERE id = $1`, [uid])
     const ur = uRows[0]
     if (ch?.workspace_id && ur) {
-      const labelBase = (ch.display_name || ch.name || 'channel').trim()
-      const channelLabel = ch.type === 'D' ? labelBase : `#${labelBase}`
-      await notifyChannelMentions({
-        pool,
-        workspaceId: ch.workspace_id,
-        channelId: channel_id,
-        channelLabel,
-        messageId: id,
-        authorId: uid,
-        authorLabel: authorLabel(ur),
-        body: message
-      })
+      const isDm = ch.type === 'D' || ch.type === 'G'
+      if (isDm) {
+        // DMs/group-DMs notify (and push) every recipient, not just @mentions.
+        await notifyDirectMessage({
+          pool,
+          workspaceId: ch.workspace_id,
+          channelId: channel_id,
+          messageId: id,
+          authorId: uid,
+          authorLabel: authorLabel(ur),
+          body: message
+        })
+      } else {
+        const labelBase = (ch.display_name || ch.name || 'channel').trim()
+        await notifyChannelMentions({
+          pool,
+          workspaceId: ch.workspace_id,
+          channelId: channel_id,
+          channelLabel: `#${labelBase}`,
+          messageId: id,
+          authorId: uid,
+          authorLabel: authorLabel(ur),
+          body: message
+        })
+      }
     }
   } catch (e) {
     console.error('notifyChannelMentions', e)

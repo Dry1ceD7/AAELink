@@ -5,6 +5,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { enqueuePush, type PushPriority } from '@/lib/notifications/pushTargeting'
 
 /**
  * Mobile Push Notification API — device registration + delivery management.
@@ -154,40 +155,21 @@ async function _POST(req: NextRequest) {
     const userIds = Array.isArray(body.user_ids) ? body.user_ids : []
     if (userIds.length === 0) return NextResponse.json({ error: 'user_ids_required' }, { status: 400 })
 
-    const priority = ['high', 'normal', 'low'].includes(body.priority || '') ? body.priority! : 'normal'
-    // Map push priority → job queue priority (lower runs first).
-    const jobPriority = priority === 'high' ? 2 : priority === 'low' ? 6 : 4
+    const priority: PushPriority =
+      body.priority === 'high' || body.priority === 'low' ? body.priority : 'normal'
     const now = Date.now()
-    let queued = 0
 
-    for (const targetId of userIds.slice(0, 100)) {
-      const logId = randomUUID()
-      await pool.query(`
-        INSERT INTO aaelink.push_log
-          (id, user_id, title, body, channel_id, priority, silent, badge_count, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9)
-      `, [logId, targetId, body.title || '', body.body_text || '', body.channel_id || '',
-          priority, body.silent || false, body.badge_count || 0, now])
-
-      // Enqueue actual delivery via the worker job queue (push_deliver handler
-      // in lib/infra/worker.ts → lib/notifications/pushDelivery.ts). log_id lets
-      // the worker update this push_log row's status on completion.
-      await pool.query(`
-        INSERT INTO aaelink.jobs
-          (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
-        VALUES ($1, 'push_deliver', 'pending', $2, $3, $4, 3, 0, $5, $4)
-      `, [randomUUID(), jobPriority, JSON.stringify({
-        user_id: targetId,
-        title: body.title || '',
-        body: body.body_text || '',
-        channel_id: body.channel_id || '',
-        badge_count: body.badge_count || 0,
-        silent: body.silent || false,
-        priority,
-        log_id: logId,
-      }), now, uid])
-      queued++
-    }
+    // Delegate log + job creation to the shared enqueue helper (single source
+    // of truth with the auto-push path in notificationsServer.ts).
+    const queued = await enqueuePush(pool, {
+      userIds,
+      title: body.title || '',
+      body: body.body_text || '',
+      channelId: body.channel_id,
+      priority,
+      badgeCount: body.badge_count,
+      silent: body.silent,
+    }, uid)
 
     return NextResponse.json({ queued, priority, created_at: now })
   }
