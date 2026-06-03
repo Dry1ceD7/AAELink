@@ -10,6 +10,7 @@ import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
 import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
+import { emitMessageCreated } from '@/lib/webhooks/webhookEmitter'
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
@@ -481,6 +482,13 @@ async function _POST(req: Request) {
      VALUES ($1, $2, $3, $4, $5, $6, $6)`,
     [id, channel_id, uid, message, root_id, now]
   )
+
+  // Fan out to subscribed outgoing webhooks (no-op when none configured).
+  try {
+    await emitMessageCreated(pool, { channel_id, message_id: id, user_id: uid, content: message })
+  } catch (e) {
+    console.error('emitMessageCreated', e)
+  }
 
   try {
     const { rows: chRows } = await pool.query<{

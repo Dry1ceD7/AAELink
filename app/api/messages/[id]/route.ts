@@ -8,6 +8,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { emitMessageDeleted } from '@/lib/webhooks/webhookEmitter'
 
 const MAX_BODY = 32_000
 
@@ -247,6 +248,9 @@ async function _DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
     }
 
     await client.query('COMMIT')
+    try {
+      await emitMessageDeleted(pool, { channel_id: row.channel_id, message_id: messageId, user_id: uid })
+    } catch (e) { console.error('emitMessageDeleted', e) }
     return NextResponse.json({ deleted_ids: deletedIds, deleted_at: now })
   } catch {
     try {

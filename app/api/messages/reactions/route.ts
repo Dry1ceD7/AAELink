@@ -7,6 +7,7 @@ import { type ReactionSummary, isValidReactionKey } from '@/lib/messaging/reacti
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { emitWebhookEvent } from '@/lib/webhooks/webhookEmitter'
 
 async function summarizeForMessage(
   pool: Pool,
@@ -62,6 +63,7 @@ async function _POST(req: Request) {
 
   // Atomic toggle: try to delete first; if nothing was deleted, insert.
   // Wrap in a transaction to prevent race conditions from rapid clicks.
+  let added = false
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -78,6 +80,7 @@ async function _POST(req: Request) {
          ON CONFLICT (message_id, user_id, reaction_key) DO NOTHING`,
         [messageId, uid, key, now]
       )
+      added = true
     }
     await client.query('COMMIT')
   } catch (e) {
@@ -86,6 +89,12 @@ async function _POST(req: Request) {
   } finally {
     client.release()
   }
+
+  // Fan out reaction add/remove to subscribed webhooks (no-op when none).
+  try {
+    await emitWebhookEvent(pool, added ? 'reaction.added' : 'reaction.removed',
+      { channel_id: ch, message_id: messageId, user_id: uid, reaction: key }, uid, ch)
+  } catch (e) { console.error('emitReaction', e) }
 
   const reactions = await summarizeForMessage(pool, uid, messageId)
   return NextResponse.json({ message_id: messageId, reactions })
