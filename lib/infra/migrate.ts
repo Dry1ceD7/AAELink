@@ -3238,6 +3238,63 @@ async function migration022InboundSso(pool: RunnerPool) {
   )
 }
 
+async function migration029OauthCodes(pool: RunnerPool) {
+  // Real OAuth2 authorization-code flow (Slack oauth.v2 parity). The base DDL
+  // for oauth_apps / oauth_tokens lives in migration001 and is SKIPPED on
+  // already-initialized DBs, so this migration re-declares both with IF NOT
+  // EXISTS (no-op where they exist, creates them on a fresh runner DB) before
+  // adding the authorization-code store the exchange flow consumes.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.oauth_apps (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL DEFAULT '',
+      client_id     TEXT UNIQUE NOT NULL,
+      client_secret TEXT NOT NULL DEFAULT '',
+      redirect_uris TEXT[] NOT NULL DEFAULT '{}',
+      scopes        TEXT NOT NULL DEFAULT '',
+      description   TEXT NOT NULL DEFAULT '',
+      icon_url      TEXT NOT NULL DEFAULT '',
+      is_active     BOOLEAN NOT NULL DEFAULT true,
+      created_by    TEXT NOT NULL DEFAULT '',
+      created_at    BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_apps_client ON aaelink.oauth_apps(client_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.oauth_tokens (
+      id           TEXT PRIMARY KEY,
+      token        TEXT UNIQUE NOT NULL,
+      token_type   TEXT NOT NULL DEFAULT 'bot',
+      app_id       TEXT NOT NULL DEFAULT '',
+      user_id      TEXT NOT NULL DEFAULT '',
+      workspace_id TEXT NOT NULL DEFAULT '',
+      scope        TEXT NOT NULL DEFAULT '',
+      expires_at   BIGINT NOT NULL DEFAULT 0,
+      created_at   BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON aaelink.oauth_tokens(user_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_app ON aaelink.oauth_tokens(app_id)`)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.oauth_codes (
+      id           TEXT PRIMARY KEY,
+      code         TEXT UNIQUE NOT NULL,
+      app_id       TEXT NOT NULL,
+      client_id    TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      workspace_id TEXT NOT NULL DEFAULT '',
+      redirect_uri TEXT NOT NULL,
+      scope        TEXT NOT NULL DEFAULT '',
+      expires_at   BIGINT NOT NULL,
+      used_at      BIGINT,
+      created_at   BIGINT NOT NULL
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_codes_code ON aaelink.oauth_codes(code)`)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3267,4 +3324,5 @@ const MIGRATIONS: Migration[] = [
   { id: '026_saml_idp_certs', up: migration026SamlIdpCerts },
   { id: '027_webauthn_passkeys', up: migration027WebauthnPasskeys },
   { id: '028_unify_read_state', up: migration028UnifyReadState },
+  { id: '029_oauth_codes', up: migration029OauthCodes },
 ]
