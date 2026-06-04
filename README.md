@@ -21,7 +21,7 @@
 ## About
 
 **AAELink** is the internal enterprise SuperApp for **Advanced ID Asia Engineering Co.,Ltd**.
-It started as an **IT Help Desk** and has grown into a **full Slack/Mattermost-grade** communication and productivity platform — tickets, messaging, channels, files, compliance, identity, workflows, and more. **227 API routes. 55/55 Slack method groups. 1,316 tests (105 suites, 84/84 lib modules). 429+ traced handlers (100% route coverage). Redis Pub/Sub fan-out. WebSocket transport layer. Channel archival automation. Bulk user provisioning. Webhook HMAC signing. DLQ + data retention. IP access control. Prometheus metrics exporter. OpenTelemetry export. SCIM v2. OpenID Connect. CSP + CSRF middleware. Enterprise security hardening.**
+It started as an **IT Help Desk** and has grown into a **Slack/Mattermost-grade** communication and productivity platform — tickets, messaging, channels, files, compliance, identity, workflows, and more. **Audit-derived Slack parity (2026-06-04): 53.6% of behaviors Full, 84.4% Full-or-Partial across 263 audited behaviors** — see [`docs/parity-reference-matrix.md`](docs/parity-reference-matrix.md). **Redis Pub/Sub fan-out. WebSocket transport layer. Channel archival automation. Bulk user provisioning. Webhook HMAC signing. DLQ + data retention. IP access control. Prometheus metrics exporter. OpenTelemetry export. SCIM v2. OpenID Connect + SAML SP. MFA (TOTP + WebAuthn). CSP + CSRF middleware. Enterprise security hardening.**
 
 The project ships as:
 
@@ -52,7 +52,7 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 
 ---
 
-## Platform Capabilities (v0.0.8-alpha — 100% Parity)
+## Platform Capabilities (Slack parity — audit-derived 2026-06-04)
 
 | Domain | Features | Routes |
 |--------|----------|--------|
@@ -69,7 +69,7 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 | **Internationalization** | 18 locales, per-user locale preferences | 1 |
 | **Desktop** | Electron (Win/macOS), auto-update, idle detection, tray, deep links | — |
 
-> **227 API routes · 30/30 Slack method groups · 2,156 lines of DDL · 1,316 tests · 0 parity gaps**
+> **Slack parity (audit-derived, 2026-06-04): 53.6% Full · 84.4% Full-or-Partial across 263 behaviors.** Status reflects working capability, not route existence — full breakdown in [`docs/parity-reference-matrix.md`](docs/parity-reference-matrix.md). Known env-blocked: SFU calls, APNS push, LDAP sync, KMS encryption-at-rest.
 
 ---
 
@@ -84,8 +84,8 @@ Download the latest installer from the [Releases](https://github.com/Dry1ceD7/AA
 | v0.0.4 | Pins, bookmarks, link preview, webhooks, calendar |
 | v0.0.5 | Rate limits, feature flags, default channels, activity feed |
 | v0.0.6 | Advanced search, DND, custom emoji, slash commands, drafts |
-| v0.0.7 | **100% enterprise parity** — SSO/SCIM/LDAP/MFA, compliance suite, federation, Canvas, calls, push, EKM, clustering |
-| v0.0.8 | **Full Slack API parity (30/30 method groups)** — conversations.*, chat.*, views.*, oauth.*, workflows.*, functions.*, lists, assistant, reactions, usergroups, migration, 14 new DDL tables, 4 worker handlers |
+| v0.0.7 | **Enterprise surface area** — SSO/SCIM/LDAP/MFA, compliance suite, federation, Canvas, calls, push, EKM, clustering (route + DDL scaffold; capability depth audited later — see parity matrix) |
+| v0.0.8 | **Slack API method-group surface (30 groups)** — conversations.*, chat.*, views.*, oauth.*, workflows.*, functions.*, lists, assistant, reactions, usergroups, migration, 14 new DDL tables, 4 worker handlers (surface, not full capability — see [`docs/parity-reference-matrix.md`](docs/parity-reference-matrix.md)) |
 | v0.0.9 | **Observability & Admin Console** — OpenTelemetry tracing (W3C traceparent, P50/P95/P99 metrics), Vitest test suite (30 tests), 4 new admin panels (OAuth, Functions, Migration, Observability), `/api/admin/tracing` |
 | v0.0.10–v0.0.16 | Thread intelligence, notification UX, session intelligence, enterprise ticketing, document viewer, annotations, signatures, channel archival, bulk provisioning, CSRF hardening |
 | v0.0.17 | **Full stabilization** — zero demo-data stubs, Prometheus metrics exporter, Grafana dashboard, 7 new integration test suites |
