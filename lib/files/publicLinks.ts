@@ -84,6 +84,7 @@ export interface PublicFile {
   content_type: string
   size: number
   storage_key: string
+  storage_backend: string
 }
 
 /**
@@ -93,11 +94,13 @@ export interface PublicFile {
 export async function resolvePublicLink(pool: Pool, token: string): Promise<PublicFile | null> {
   if (!(await getFileSharingPolicy(pool)).public_links_enabled) return null
   const { rows } = await pool.query<{
-    file_id: string; filename: string; content_type: string; size: string; storage_key: string
+    file_id: string; filename: string; content_type: string; size: string
+    storage_key: string; storage_backend: string | null
   }>(
-    `SELECT f.id AS file_id, f.filename, f.content_type, f.size::text AS size, f.storage_key
+    `SELECT f.id AS file_id, f.filename, f.content_type, f.size::text AS size,
+            f.storage_key, f.storage_backend
        FROM aaelink.file_public_links l
-       JOIN aaelink.file_attachments f ON f.id = l.file_id
+       JOIN aaelink.file_attachments f ON f.id = l.file_id AND f.deleted_at = 0
       WHERE l.token = $1 AND l.enabled = true AND l.revoked_at = 0`,
     [String(token || '').trim()]
   )
@@ -105,7 +108,14 @@ export async function resolvePublicLink(pool: Pool, token: string): Promise<Publ
   if (!r) return null
   // Virus-scan gate (D12): a public link never serves a blocked file.
   if (!(await isFileAccessAllowed(pool, r.file_id))) return null
-  return { file_id: r.file_id, filename: r.filename, content_type: r.content_type, size: Number(r.size), storage_key: r.storage_key }
+  return {
+    file_id: r.file_id,
+    filename: r.filename,
+    content_type: r.content_type,
+    size: Number(r.size),
+    storage_key: r.storage_key,
+    storage_backend: r.storage_backend || 'local',
+  }
 }
 
 export type RevokeLinkResult =

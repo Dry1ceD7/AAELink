@@ -30,12 +30,12 @@ async function _GET(req: NextRequest) {
   // Get workspace stats for billing context
   const userCount = await pool.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM aaelink.users`)
   const channelCount = await pool.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM aaelink.channels`)
-  const fileCount = await pool.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM aaelink.files`)
+  const fileCount = await pool.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM aaelink.file_attachments WHERE deleted_at = 0`)
   const messageCount = await pool.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM aaelink.messages`)
 
   // Storage usage
   const storageResult = await pool.query<{ total_bytes: string }>(
-    `SELECT COALESCE(SUM(size), 0) AS total_bytes FROM aaelink.files`
+    `SELECT COALESCE(SUM(size), 0) AS total_bytes FROM aaelink.file_attachments WHERE deleted_at = 0`
   )
 
   return NextResponse.json({

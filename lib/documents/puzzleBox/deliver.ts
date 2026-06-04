@@ -28,18 +28,28 @@ export interface DeliverOutput {
 }
 
 export async function runDeliver(input: DeliverInput): Promise<StageResult<DeliverOutput>> {
-  // file_attachments row (mirrors existing pattern in lib/migrate.ts)
+  // Canonical file_attachments row (migration 033/034 columns) so the delivered
+  // document appears in /api/files list/info. The document already lives in the
+  // S3 bucket under bucket_key, so storage_backend is 's3'.
   const attachmentId = randomUUID()
   const now = Date.now()
   try {
     await input.pool.query(
       `INSERT INTO aaelink.file_attachments
-        (id, workspace_id, uploader_id, bucket_key, filename, content_type, size_bytes, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        (id, message_id, channel_id, workspace_id, user_id, filename, content_type, size, storage_key, storage_backend, created_at)
+       VALUES ($1,NULL,$2,$3,$4,$5,$6,$7,$8,'s3',$9)
        ON CONFLICT (id) DO NOTHING`,
-      [attachmentId, input.workspace_id, input.posted_by, input.bucket_key, input.filename, 'application/pdf', input.size_bytes, now]
+      [attachmentId, input.channel_id, input.workspace_id, input.posted_by, input.filename, 'application/pdf', input.size_bytes, input.bucket_key, now]
     )
-  } catch { /* table shape may differ across environments — non-fatal */ }
+  } catch (err: unknown) {
+    // Non-fatal (delivery still proceeds), but log it instead of swallowing so a
+    // real schema/DB problem is not invisible.
+    log.error('puzzleBox file_attachments insert failed', {
+      name: 'puzzleBox.deliver',
+      assembly_id: input.assembly_id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   // Best-effort ticket comment — non-fatal; we still try the channel post below.
   let ticketCommentId: string | null = null

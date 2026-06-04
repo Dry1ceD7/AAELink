@@ -6,13 +6,10 @@
  * row per match, and audits when violations are found.
  */
 import type { Pool } from 'pg'
-import fs from 'fs'
-import path from 'path'
 import { randomUUID } from 'crypto'
 import { matchDlpRules, type DlpRule } from './dlpInterceptor'
+import { readFileBytes } from '@/lib/files/storage'
 import { writeAuditLog } from './auditLog'
-
-const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
 
 export interface DlpScanPayload {
   content?: string
@@ -55,15 +52,16 @@ async function resolveTarget(
   }
 
   if (!content && p.file_id) {
-    const { rows } = await pool.query<{ storage_key: string; channel_id: string; user_id: string }>(
-      `SELECT storage_key, channel_id, user_id FROM aaelink.file_attachments WHERE id = $1`, [p.file_id]
+    const { rows } = await pool.query<{ storage_key: string; storage_backend: string | null; channel_id: string; user_id: string }>(
+      `SELECT storage_key, storage_backend, channel_id, user_id FROM aaelink.file_attachments WHERE id = $1`, [p.file_id]
     )
     if (rows[0]) {
       channelId = channelId || rows[0].channel_id
       userId = userId || rows[0].user_id
-      try {
-        content = fs.readFileSync(path.join(UPLOAD_DIR, rows[0].storage_key), 'utf8')
-      } catch { /* non-text or missing — leave content empty */ }
+      // Resolve via the recorded backend (S3 or disk) so S3-stored files are
+      // actually scanned for DLP, not silently treated as empty.
+      const bytes = await readFileBytes(rows[0].storage_key, rows[0].storage_backend)
+      if (bytes) content = bytes.toString('utf8')
     }
   }
 

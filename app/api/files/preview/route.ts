@@ -62,17 +62,20 @@ async function _GET(req: NextRequest) {
   const fileId = req.nextUrl.searchParams.get('file_id')?.trim() || ''
   if (!fileId) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
-  // Fetch file metadata
+  // Fetch file metadata. Canonical table: aaelink.file_attachments
+  // (migration 033). The legacy `aaelink.file_uploads` table this route used
+  // never existed in the migration runner, so preview returned file_not_found
+  // for every real upload. Soft-deleted rows are excluded.
   const { rows } = await pool.query<{
-    id: string; name: string; content_type: string; size_bytes: string
-    storage_key: string; workspace_id: string; uploaded_by: string
+    id: string; filename: string; content_type: string; size: string
+    storage_key: string; workspace_id: string | null; user_id: string
     width: string | null; height: string | null; duration_ms: string | null
     thumbnail_key: string | null; created_at: string
   }>(`
-    SELECT id, name, content_type, size_bytes, storage_key, workspace_id,
-           uploaded_by, width, height, duration_ms, thumbnail_key, created_at
-    FROM aaelink.file_uploads
-    WHERE id = $1
+    SELECT id, filename, content_type, size, storage_key, workspace_id,
+           user_id, width, height, duration_ms, thumbnail_key, created_at
+    FROM aaelink.file_attachments
+    WHERE id = $1 AND deleted_at = 0
   `, [fileId])
 
   if (!rows[0]) return NextResponse.json({ error: 'file_not_found' }, { status: 404 })
@@ -80,23 +83,24 @@ async function _GET(req: NextRequest) {
 
   const previewCategory = getPreviewCategory(file.content_type)
   const isPreviewable = previewCategory !== null
-  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  const extension = file.filename.split('.').pop()?.toLowerCase() || ''
 
-  // Build preview URLs
+  // Build preview URLs from the canonical download route (/api/files/:id/download).
+  // The legacy /api/files/download?file_id= path has no handler. The download
+  // route does not honor a thumbnail param yet, so the thumbnail URL falls back
+  // to the full file for images (no dedicated thumbnail endpoint exists).
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
-  const fileUrl = `${baseUrl}/api/files/download?file_id=${fileId}`
-  const thumbnailUrl = file.thumbnail_key
-    ? `${baseUrl}/api/files/download?file_id=${fileId}&thumbnail=true`
-    : (previewCategory === 'image' ? fileUrl : null)
+  const fileUrl = `${baseUrl}/api/files/${fileId}/download`
+  const thumbnailUrl = previewCategory === 'image' ? fileUrl : null
 
   return NextResponse.json({
     preview: {
       file_id: file.id,
-      name: file.name,
+      name: file.filename,
       extension,
       content_type: file.content_type,
-      size_bytes: Number(file.size_bytes),
-      size_formatted: formatFileSize(Number(file.size_bytes)),
+      size_bytes: Number(file.size),
+      size_formatted: formatFileSize(Number(file.size)),
 
       // Preview capabilities
       is_previewable: isPreviewable,
@@ -113,8 +117,8 @@ async function _GET(req: NextRequest) {
       inline_url: isPreviewable ? fileUrl : null,
 
       // Metadata
-      uploaded_by: file.uploaded_by,
-      workspace_id: file.workspace_id,
+      uploaded_by: file.user_id,
+      workspace_id: file.workspace_id || '',
       created_at: Number(file.created_at),
 
       // Rendering hints for the client

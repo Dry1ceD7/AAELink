@@ -28,12 +28,18 @@ async function _GET(req: NextRequest) {
   const messageId = req.nextUrl.searchParams.get('message_id')?.trim() || ''
   if (!messageId) return NextResponse.json({ error: 'message_id_required' }, { status: 400 })
 
+  // The message_attachments link table (id, message_id, file_id, sort_order)
+  // is the real binding and is preserved. Only the joined file table changes:
+  // canonical chat files live in aaelink.file_attachments (migration 033), not
+  // aaelink.documents (which is the documents/KB subsystem). Output column
+  // names are kept stable (filename/file_size/mime_type/storage_key) so
+  // existing clients are unaffected. Soft-deleted files are excluded.
   const { rows } = await pool.query(`
     SELECT ma.id, ma.file_id, ma.sort_order,
-           d.filename, d.file_size, d.mime_type, d.storage_key,
-           d.created_at AS file_created_at
+           f.filename, f.size AS file_size, f.content_type AS mime_type,
+           f.storage_key, f.created_at AS file_created_at
     FROM aaelink.message_attachments ma
-    JOIN aaelink.documents d ON d.id = ma.file_id
+    JOIN aaelink.file_attachments f ON f.id = ma.file_id AND f.deleted_at = 0
     WHERE ma.message_id = $1
     ORDER BY ma.sort_order ASC
   `, [messageId])

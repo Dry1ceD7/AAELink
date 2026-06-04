@@ -53,7 +53,7 @@ async function _GET(req: NextRequest) {
       (SELECT COUNT(*)::text FROM aaelink.channels) AS total_channels,
       (SELECT COUNT(*)::text FROM aaelink.messages) AS total_messages,
       (SELECT COUNT(*)::text FROM aaelink.messages WHERE created_at > $1) AS messages_today,
-      (SELECT COUNT(*)::text FROM aaelink.files) AS total_files,
+      (SELECT COUNT(*)::text FROM aaelink.file_attachments WHERE deleted_at = 0) AS total_files,
       (SELECT COUNT(*)::text FROM aaelink.workspaces) AS total_workspaces
   `, [now - day])
 

@@ -37,6 +37,9 @@ docker-compose.override.yml
 # === MinIO data (local dev) ===
 .minio-data/
 
+# === Local file-upload store (dev/CI fallback when S3 is unconfigured) ===
+.uploads/
+
 # === Logs ===
 *.log
 logs/

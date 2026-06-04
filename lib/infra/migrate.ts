@@ -3542,6 +3542,88 @@ async function migration032CallParticipantsUniqueActive(pool: RunnerPool) {
   `)
 }
 
+/**
+ * 033 — Make `file_attachments` the canonical file row.
+ *
+ * The file subsystem was fragmented across four tables; two of them
+ * (`files`, `file_uploads`) never existed in this runner, so /api/files
+ * (list/info/delete) and /api/files/preview returned nothing for real chat
+ * uploads. This migration repoints those routes onto `file_attachments` by
+ * giving it the columns they need and relaxing the message/channel coupling.
+ *
+ * 1. Slack uploads a file BEFORE attaching it to a message
+ *    (getUploadURLExternal → completeUploadExternal). The base schema's
+ *    NOT NULL on message_id/channel_id makes an unattached upload impossible
+ *    to persist (the audit's orphan problem). Drop those NOT NULLs.
+ * 2. Add metadata columns the preview route answers from
+ *    (width/height/duration_ms/thumbnail_key) plus workspace_id for scoping
+ *    and deleted_at as a soft-delete marker so list/info can hide deleted
+ *    rows while download + public-link history stays auditable.
+ * 3. List/browse indexes: (channel_id, created_at DESC) partial over live
+ *    rows, and (user_id, created_at DESC).
+ *
+ * The base table DDL lives in migration001 and is SKIPPED on already-
+ * initialized DBs, so re-declare with IF NOT EXISTS before altering.
+ * Forward-only; every statement is idempotent.
+ */
+async function migration033FileAttachmentsCanonical(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.file_attachments (
+      id          TEXT PRIMARY KEY,
+      message_id  TEXT REFERENCES aaelink.messages(id) ON DELETE CASCADE,
+      channel_id  TEXT REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      filename    TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size        BIGINT NOT NULL DEFAULT 0,
+      storage_key TEXT NOT NULL,
+      created_at  BIGINT NOT NULL
+    )
+  `)
+
+  // Slack flow: a file is uploaded first and attached to a message later.
+  // Relax the coupling so an unattached upload can persist.
+  await pool.query(`ALTER TABLE aaelink.file_attachments ALTER COLUMN message_id DROP NOT NULL`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ALTER COLUMN channel_id DROP NOT NULL`)
+
+  // Metadata + scoping + soft-delete columns the repointed routes rely on.
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS workspace_id TEXT`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS width INT`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS height INT`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS duration_ms INT`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS thumbnail_key TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.file_attachments ADD COLUMN IF NOT EXISTS deleted_at BIGINT NOT NULL DEFAULT 0`)
+
+  // Browse/list indexes. The channel index is partial over live rows since
+  // list/info exclude soft-deleted ones.
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_file_attachments_channel_created
+      ON aaelink.file_attachments(channel_id, created_at DESC)
+      WHERE deleted_at = 0
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_file_attachments_user_created
+      ON aaelink.file_attachments(user_id, created_at DESC)
+  `)
+}
+
+/**
+ * Migration 034 — record the storage backend on each file row.
+ *
+ * Stage B routes the chat upload/download bytes through lib/files/storage.ts,
+ * which writes to S3 when configured and local disk otherwise. To resolve a
+ * file's bytes (download, public link, scan, index, delete) we must know where
+ * they were written, independent of the current S3 env. 's3' rows are stored
+ * under 'chat/<id>/<filename>'; existing/legacy rows default to 'local' so they
+ * keep resolving from disk. Forward-only, idempotent.
+ */
+async function migration034FileStorageBackend(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.file_attachments
+       ADD COLUMN IF NOT EXISTS storage_backend TEXT NOT NULL DEFAULT 'local'`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3575,4 +3657,6 @@ const MIGRATIONS: Migration[] = [
   { id: '030_event_subscriptions_active_index', up: migration030EventSubscriptionsActiveIndex },
   { id: '031_entra_to_sso_providers', up: migration031EntraToSsoProviders },
   { id: '032_call_participants_unique_active', up: migration032CallParticipantsUniqueActive },
+  { id: '033_file_attachments_canonical', up: migration033FileAttachmentsCanonical },
+  { id: '034_file_storage_backend', up: migration034FileStorageBackend },
 ]

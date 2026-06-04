@@ -54,7 +54,8 @@ async function _GET(req: NextRequest) {
         (SELECT COUNT(*)::text FROM aaelink.messages m
          JOIN aaelink.channels c ON c.id = m.channel_id
          WHERE c.workspace_id = $1) AS total_messages,
-        (SELECT COUNT(*)::text FROM aaelink.files) AS total_files
+        (SELECT COUNT(*)::text FROM aaelink.file_attachments
+         WHERE workspace_id = $1 AND deleted_at = 0) AS total_files
     `, [workspaceId])
 
     return NextResponse.json({

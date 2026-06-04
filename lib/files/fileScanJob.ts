@@ -1,21 +1,19 @@
 /**
  * file_scan job orchestration — real ClamAV virus scan.
  *
- * Reads the attachment bytes from the local upload store (same source the D12
- * download gate serves from), streams them to clamd via INSTREAM, and writes
- * the verdict to the file_scans row the D12 gate reads.
+ * Reads the attachment bytes via the storage abstraction (S3 when the row was
+ * stored on S3, local disk otherwise — same source the D12 download gate serves
+ * from), streams them to clamd via INSTREAM, and writes the verdict to the
+ * file_scans row the D12 gate reads.
  *
  *   clamd clean    → result 'clean'
  *   clamd infected → result 'infected' (+ threat_name)
  *   clamd down     → result 'pending' (NOT 'clean') so strict policy can block
  */
 import type { Pool } from 'pg'
-import fs from 'fs'
-import path from 'path'
 import { scanBuffer } from './clamav'
+import { readFileBytes } from './storage'
 import { writeAuditLog } from '@/lib/enterprise/auditLog'
-
-const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
 
 export type FileScanVerdict = 'clean' | 'infected' | 'pending'
 
@@ -55,9 +53,10 @@ export async function runFileScan(
   const scanId = payload.scan_id ? String(payload.scan_id) : undefined
   if (!fileId) throw new Error('file_scan: file_id required')
 
-  // Resolve the stored bytes via the attachment's storage_key.
-  const { rows } = await pool.query<{ storage_key: string }>(
-    `SELECT storage_key FROM aaelink.file_attachments WHERE id = $1`, [fileId]
+  // Resolve the stored bytes via the recorded backend (S3 or local disk) so an
+  // S3-backed upload is scanned from S3, not a non-existent local path.
+  const { rows } = await pool.query<{ storage_key: string; storage_backend: string | null }>(
+    `SELECT storage_key, storage_backend FROM aaelink.file_attachments WHERE id = $1`, [fileId]
   )
   const storageKey = rows[0]?.storage_key
   if (!storageKey) {
@@ -65,11 +64,8 @@ export async function runFileScan(
     throw new Error(`file_scan: attachment ${fileId} not found`)
   }
 
-  const filePath = path.join(UPLOAD_DIR, storageKey)
-  let data: Buffer
-  try {
-    data = fs.readFileSync(filePath)
-  } catch {
+  const data = await readFileBytes(storageKey, rows[0]?.storage_backend)
+  if (!data) {
     await recordVerdict(pool, fileId, scanId, 'pending', '')
     throw new Error(`file_scan: bytes missing for ${fileId}`)
   }

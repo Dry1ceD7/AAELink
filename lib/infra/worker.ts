@@ -141,6 +141,17 @@ const handlers: Record<string, JobHandler> = {
     log.info(`   ${verdict.result === 'clean' ? '✅' : verdict.result === 'infected' ? '🦠' : '⏳'} verdict: ${verdict.result}${verdict.threatName ? ` (${verdict.threatName})` : ''}`)
   },
 
+  // File content index — extract searchable text into file_index so
+  // GET /api/search/files can find the upload. (Also handles the legacy
+  // 'index_rebuild' jobs POST /api/search/files enqueues, which had no handler.)
+  file_index: async (payload, pool) => {
+    const { file_id } = payload as { file_id: string }
+    log.info(`🗂️ [file_index] File: ${file_id}`)
+    const { runFileIndex } = await import('@/lib/files/fileIndexJob')
+    const res = await runFileIndex(pool, payload as { file_id?: string })
+    log.info(`   ${res.indexed ? '✅' : '⏭️'} indexed ${res.contentLength} chars`)
+  },
+
   // Clip transcription
   clip_transcription: async (payload) => {
     const { clip_id } = payload as { clip_id: string }
@@ -437,6 +448,10 @@ const handlers: Record<string, JobHandler> = {
     log.info(`   ✅ Removed ${rowCount || 0} expired tokens`)
   },
 }
+
+// Legacy alias: POST /api/search/files enqueues 'index_rebuild' jobs (no handler
+// existed before Stage B). Route them to the file_index handler.
+handlers.index_rebuild = handlers.file_index
 
 // ── Worker Engine ────────────────────────────────────────────────────
 
