@@ -437,6 +437,35 @@ const handlers: Record<string, JobHandler> = {
     log.info(`   ✅ Delivered to channel ${msg.channel_id}`)
   },
 
+  // Saved-search alerts (BLUEPRINT §2.1.4) — re-run every alerts_enabled saved
+  // search as its owner, notify on new matches, advance the watermark. This is a
+  // recurring heartbeat: there is no cron in this worker, so the handler
+  // re-enqueues itself with run_after = now + interval (the standard
+  // self-rescheduling job pattern). Seed one 'saved_search_alerts' job to start
+  // the cadence (admin/jobs route or migration seed); it keeps itself alive.
+  saved_search_alerts: async (payload, pool) => {
+    log.info(`🔔 [saved_search_alerts] evaluating watched saved searches`)
+    const { runSavedSearchAlerts } = await import('@/lib/messaging/savedSearchAlerts')
+    const outcomes = await runSavedSearchAlerts(pool)
+    const notified = outcomes.filter(o => o.notified).length
+    const matches = outcomes.reduce((n, o) => n + o.newMatches, 0)
+    log.info(`   ✅ ${outcomes.length} saved search(es), ${notified} notified, ${matches} new match(es)`)
+
+    // Self-reschedule unless explicitly told not to (tests pass once:true to run
+    // a single pass without re-arming the heartbeat).
+    const once = (payload as { once?: boolean }).once === true
+    if (!once) {
+      const intervalMs = Number(process.env.SAVED_SEARCH_ALERTS_INTERVAL_MS) || 60_000
+      const { randomUUID } = await import('crypto')
+      await pool.query(
+        `INSERT INTO aaelink.jobs
+           (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+         VALUES ($1, 'saved_search_alerts', 'pending', 3, '{}', $2, 3, 0, $3)`,
+        [randomUUID(), Date.now() + intervalMs, Date.now()]
+      )
+    }
+  },
+
   // OAuth token cleanup (v0.0.8 — expire old tokens)
   oauth_token_cleanup: async (_payload, pool) => {
     log.info(`🔑 [oauth_token_cleanup] Removing expired tokens`)

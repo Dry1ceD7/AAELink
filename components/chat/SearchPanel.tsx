@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, X, MessageCircle } from 'lucide-react'
@@ -12,7 +13,33 @@ interface SearchHit {
   channel_display: string
   channel_type: string
   snippet: string
+  /** Server-side ts_headline highlight (<mark>…</mark>), present since the FTS engine. */
+  highlight?: string
   created_at: number
+}
+
+/**
+ * Render the server-side ts_headline highlight. The engine returns a string with
+ * <mark>…</mark> around matched (stemmed) tokens; we split on those tags and
+ * render the marked spans as <mark>, the rest as plain text. We never use
+ * dangerouslySetInnerHTML — only the literal <mark> markers are interpreted, so
+ * message content can't inject markup. Falls back to the plain snippet.
+ */
+function renderHit(hit: SearchHit) {
+  const h = hit.highlight
+  if (!h || !h.includes('<mark>')) return hit.snippet
+  const parts: React.ReactNode[] = []
+  const re = /<mark>([\s\S]*?)<\/mark>/g
+  let cursor = 0
+  let key = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(h)) !== null) {
+    if (m.index > cursor) parts.push(<span key={key++}>{h.slice(cursor, m.index)}</span>)
+    parts.push(<mark key={key++} className="mm-search-highlight">{m[1]}</mark>)
+    cursor = m.index + m[0].length
+  }
+  if (cursor < h.length) parts.push(<span key={key++}>{h.slice(cursor)}</span>)
+  return <>{parts}</>
 }
 
 interface SearchPanelProps {
@@ -120,7 +147,7 @@ export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelP
               <span className="mm-search-hit-channel">
                 {hit.channel_type === 'D' ? <MessageCircle size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : '#'} {hit.channel_display || hit.channel_name}
               </span>
-              <span className="mm-search-hit-snippet">{hit.snippet}</span>
+              <span className="mm-search-hit-snippet">{renderHit(hit)}</span>
               <span className="mm-search-hit-time">
                 {new Date(hit.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
               </span>

@@ -116,9 +116,11 @@ async function _GET(req: NextRequest) {
   `, [since])
 
   // === Reaction Metrics ===
+  // Canonical reaction table is aaelink.message_reactions (migrate.ts:134);
+  // aaelink.reactions never existed in the migration runner.
   const { rows: [reactionMetrics] } = await pool.query<{ reactions_period: string }>(`
     SELECT COUNT(*)::text AS reactions_period
-    FROM aaelink.reactions
+    FROM aaelink.message_reactions
     WHERE created_at > $1
   `, [since])
 

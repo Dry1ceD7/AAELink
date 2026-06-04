@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, X, Hash, MessageSquare, Loader2, User, Calendar, Paperclip, Pin, Link2, Smile } from 'lucide-react'
+import { Search, X, Hash, MessageSquare, Loader2, User, Calendar, Paperclip, Pin, Link2, Smile, SortDesc, Clock } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { MessageRichText } from '@/lib/messaging/messageRich'
 import { parseSearchFilters, type SearchFilters } from '@/lib/messaging/searchFilters'
@@ -11,6 +11,7 @@ import { SavedSearches } from '@/components/search/SavedSearches'
 interface SearchResult {
   message_id: string
   body: string
+  highlight?: string
   created_at: number
   channel_id: string
   channel_name: string
@@ -48,6 +49,7 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(-1)
+  const [sort, setSort] = useState<'relevance' | 'recent'>('relevance')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const filters = useMemo(() => parseSearchFilters(query), [query])
@@ -57,7 +59,10 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
     if (filters.in) keys.push('in')
     if (filters.before) keys.push('before')
     if (filters.after) keys.push('after')
+    if (filters.on) keys.push('on')
+    if (filters.during) keys.push('during')
     if (filters.has) keys.push('has')
+    if (filters.is?.length) keys.push('is')
     return keys
   }, [filters])
 
@@ -68,24 +73,33 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
       setTotal(0)
       setSearched(false)
       setSelectedIdx(-1)
+      setSort('relevance')
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [open])
 
   const doSearch = useCallback(async (q: string) => {
     const parsed = parseSearchFilters(q)
-    if (parsed.text.length < 2 && !parsed.from && !parsed.in && !parsed.has) {
+    // The FTS engine needs >= 2 chars of keyword text; filter-only queries can't
+    // run on their own, so require real text before firing.
+    if (parsed.text.length < 2) {
       setResults([]); setTotal(0); setSearched(false); return
     }
     setLoading(true)
     setSearched(true)
-    const params = new URLSearchParams({ q: parsed.text || '*', limit: '25' })
+    const params = new URLSearchParams({ q: parsed.text, limit: '25' })
     if (workspaceId) params.set('workspace_id', workspaceId)
+    params.set('sort', sort)
     if (parsed.from) params.set('from', parsed.from)
-    if (parsed.in) params.set('channel_id', parsed.in)
+    // in:<name> resolves server-side against readable channels (channel_name),
+    // not the opaque channel_id the old path mistakenly sent.
+    if (parsed.in) params.set('channel_name', parsed.in)
     if (parsed.before) params.set('before', parsed.before)
     if (parsed.after) params.set('after', parsed.after)
+    if (parsed.on) params.set('on', parsed.on)
+    if (parsed.during) params.set('during', parsed.during)
     if (parsed.has) params.set('has', parsed.has)
+    for (const flag of parsed.is ?? []) params.append('is', flag)
     const res = await apiFetch(`/api/search/messages?${params.toString()}`)
     setLoading(false)
     if (res.ok) {
@@ -93,7 +107,7 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
       setResults(data.results)
       setTotal(data.total)
     }
-  }, [workspaceId])
+  }, [workspaceId, sort])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -132,7 +146,30 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
     return full || r.author_username
   }
 
-  function highlightBody(body: string) {
+  // Render the server-side ts_headline highlight. The engine returns a string
+  // with <mark>…</mark> around matched (stemmed) tokens; we split on those tags
+  // and render the marked spans as <mark>, the rest as plain text. We never use
+  // dangerouslySetInnerHTML — only the literal <mark> markers are interpreted,
+  // so message content can't inject markup.
+  function renderServerHighlight(highlight: string) {
+    const parts: React.ReactNode[] = []
+    const re = /<mark>([\s\S]*?)<\/mark>/g
+    let cursor = 0
+    let key = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(highlight)) !== null) {
+      if (m.index > cursor) parts.push(<span key={key++}>{highlight.slice(cursor, m.index)}</span>)
+      parts.push(<mark key={key++} className="search-highlight">{m[1]}</mark>)
+      cursor = m.index + m[0].length
+    }
+    if (cursor < highlight.length) parts.push(<span key={key++}>{highlight.slice(cursor)}</span>)
+    return <span className="search-result-text">{parts}</span>
+  }
+
+  function highlightBody(r: SearchResult) {
+    // Prefer the server highlight (tracks FTS/stemmed matches like running→run).
+    if (r.highlight && r.highlight.includes('<mark>')) return renderServerHighlight(r.highlight)
+    const body = r.body
     const q = filters.text
     if (!q || q.length < 2) return <MessageRichText text={body.slice(0, 200)} />
     const lower = body.toLowerCase()
@@ -216,10 +253,12 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
         {activeFilterKeys.length > 0 && (
           <div className="search-filter-pills" role="list" aria-label="Active search filters">
             {activeFilterKeys.map(key => {
-              const val = filters[key as keyof SearchFilters] as string
+              const rawVal = filters[key as keyof SearchFilters]
+              const val = Array.isArray(rawVal) ? rawVal.join(', ') : String(rawVal ?? '')
               const HasIcon = key === 'has' ? (hasIconMap[val] || Paperclip) :
                 key === 'from' ? User :
                 key === 'in' ? Hash :
+                key === 'is' ? Pin :
                 Calendar
               return (
                 <span key={key} className="search-filter-pill" role="listitem">
@@ -279,12 +318,37 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
           {!loading && results.length > 0 && (
             <>
               <div className="global-search-count">
-                {total} result{total !== 1 ? 's' : ''} found
-                {activeFilterKeys.length > 0 && (
-                  <span style={{ color: 'var(--mm-muted)', marginLeft: 6, fontSize: 12 }}>
-                    ({activeFilterKeys.map(k => `${k}:${filters[k as keyof SearchFilters]}`).join(', ')})
-                  </span>
-                )}
+                <span>
+                  {total} result{total !== 1 ? 's' : ''} found
+                  {activeFilterKeys.length > 0 && (
+                    <span style={{ color: 'var(--mm-muted)', marginLeft: 6, fontSize: 12 }}>
+                      ({activeFilterKeys.map(k => {
+                        const v = filters[k as keyof SearchFilters]
+                        return `${k}:${Array.isArray(v) ? v.join('+') : v}`
+                      }).join(', ')})
+                    </span>
+                  )}
+                </span>
+                <div className="global-search-sort" role="group" aria-label="Sort results">
+                  <button
+                    type="button"
+                    className={`global-search-sort-btn${sort === 'relevance' ? ' global-search-sort-btn--active' : ''}`}
+                    aria-pressed={sort === 'relevance'}
+                    onClick={() => setSort('relevance')}
+                    title="Sort by relevance"
+                  >
+                    <SortDesc size={13} aria-hidden="true" /> Relevance
+                  </button>
+                  <button
+                    type="button"
+                    className={`global-search-sort-btn${sort === 'recent' ? ' global-search-sort-btn--active' : ''}`}
+                    aria-pressed={sort === 'recent'}
+                    onClick={() => setSort('recent')}
+                    title="Sort by most recent"
+                  >
+                    <Clock size={13} aria-hidden="true" /> Recent
+                  </button>
+                </div>
               </div>
               {results.map((r, idx) => (
                 <button
@@ -304,7 +368,7 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
                     <span className="global-search-time">{fmtTime(r.created_at)}</span>
                   </div>
                   <div className="global-search-result-body">
-                    {highlightBody(r.body)}
+                    {highlightBody(r)}
                   </div>
                 </button>
               ))}

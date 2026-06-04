@@ -3624,6 +3624,36 @@ async function migration034FileStorageBackend(pool: RunnerPool) {
   )
 }
 
+/**
+ * Migration 035 — saved-search alerts (BLUEPRINT §2.1.4).
+ *
+ * Turns saved_searches into a watched query. The worker job 'saved_search_alerts'
+ * re-runs each row with alerts_enabled=true as its OWNER, finds messages newer
+ * than last_match_created_at, notifies, and advances the watermark.
+ *
+ *   - alerts_enabled         opt-in toggle (owner-controlled via PATCH).
+ *   - last_run_at            bookkeeping: when the worker last evaluated this row.
+ *   - last_match_created_at  watermark: the created_at of the newest message we've
+ *                            already alerted on, so we never re-notify the same hit.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration035SavedSearchAlerts(pool: RunnerPool) {
+  await pool.query(`
+    ALTER TABLE aaelink.saved_searches
+      ADD COLUMN IF NOT EXISTS alerts_enabled BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE aaelink.saved_searches
+      ADD COLUMN IF NOT EXISTS last_run_at BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE aaelink.saved_searches
+      ADD COLUMN IF NOT EXISTS last_match_created_at BIGINT NOT NULL DEFAULT 0;
+  `)
+  // Partial index so the worker's "rows with alerts on" scan stays cheap.
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_saved_searches_alerts_enabled
+       ON aaelink.saved_searches(alerts_enabled) WHERE alerts_enabled = true;`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3659,4 +3689,5 @@ const MIGRATIONS: Migration[] = [
   { id: '032_call_participants_unique_active', up: migration032CallParticipantsUniqueActive },
   { id: '033_file_attachments_canonical', up: migration033FileAttachmentsCanonical },
   { id: '034_file_storage_backend', up: migration034FileStorageBackend },
+  { id: '035_saved_search_alerts', up: migration035SavedSearchAlerts },
 ]

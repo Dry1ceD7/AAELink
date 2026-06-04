@@ -12,7 +12,10 @@
  *   - in:<channel-id-or-name>
  *   - before:<YYYY-MM-DD>
  *   - after:<YYYY-MM-DD>
+ *   - on:<YYYY-MM-DD>            (whole calendar day)
+ *   - during:<YYYY | YYYY-MM>   (whole year or month)
  *   - has:<link|file|attachment|pin|reaction>
+ *   - is:<thread|pinned|saved>
  *
  * Anything not matching the `<key>:<value>` shape is left in the
  * `text` field, which is the actual `q` parameter the route uses for
@@ -28,22 +31,34 @@
  *     free-text portion. This mirrors the behavior of Slack's parser.
  */
 
+/** `is:` boolean flags the engine understands. */
+export type IsFlag = 'thread' | 'pinned' | 'saved'
+
 export interface SearchFilters {
   text: string
   from?: string
   in?: string
   before?: string
   after?: string
+  on?: string
+  during?: string
   has?: string
+  /** Collected `is:<flag>` tokens (deduped, in first-seen order). */
+  is?: IsFlag[]
 }
 
-const FILTER_RE = /\b(from|in|before|after|has):(\S+)/gi
+// Single-value keys: last occurrence wins (matches the original behaviour).
+const FILTER_RE = /\b(from|in|before|after|on|during|has):(\S+)/gi
+// `is:` is multi-valued — one query can carry several (`is:thread is:pinned`).
+const IS_RE = /\bis:(thread|pinned|saved)\b/gi
 
 /**
  * Parse a search query string into structured filters + free text.
  *
- * The regex requires a non-empty `\S+` value so a bare `from:` (no
- * value) is left in the text portion as-is.
+ * Single-value tokens (`from`, `in`, `before`, `after`, `on`, `during`, `has`)
+ * require a non-empty `\S+` value, so a bare `from:` is left in the text. The
+ * `is:` token is multi-valued and whitelisted to known flags; an unknown
+ * `is:foo` is left in the free text.
  *
  * @param raw — the raw query string from the search input
  * @returns structured `SearchFilters` (always with a `text` field)
@@ -53,13 +68,21 @@ export function parseSearchFilters(raw: string): SearchFilters {
   let text = raw
 
   for (const match of raw.matchAll(FILTER_RE)) {
-    const key = match[1].toLowerCase() as keyof Omit<SearchFilters, 'text'>
+    const key = match[1].toLowerCase() as keyof Omit<SearchFilters, 'text' | 'is'>
     filters[key] = match[2]
     // Strip the matched token from the text view. Use a literal replace
     // (not regex) so user-supplied special chars (% / etc.) inside the
     // value can never break the strip.
     text = text.replace(match[0], '')
   }
+
+  const isFlags: IsFlag[] = []
+  for (const match of raw.matchAll(IS_RE)) {
+    const flag = match[1].toLowerCase() as IsFlag
+    if (!isFlags.includes(flag)) isFlags.push(flag)
+    text = text.replace(match[0], '')
+  }
+  if (isFlags.length) filters.is = isFlags
 
   filters.text = text.replace(/\s+/g, ' ').trim()
   return filters
@@ -81,8 +104,8 @@ export function validateHasValue(s: string): boolean {
   return HAS_VALUES.has(s)
 }
 
-/** Filter keys recognized by `parseSearchFilters`. */
-export type FilterKey = 'from' | 'in' | 'before' | 'after' | 'has'
+/** Single-value filter keys recognized by `parseSearchFilters` (excludes multi-valued `is`). */
+export type FilterKey = 'from' | 'in' | 'before' | 'after' | 'on' | 'during' | 'has'
 
 /**
  * Strip the first `<key>:<value>` token (case-insensitive on the key)
@@ -117,6 +140,6 @@ export function removeFilterToken(raw: string, key: FilterKey): string {
  * the user typed.
  */
 export function formatFilterChip(key: FilterKey, value: string): string {
-  if (key === 'before' || key === 'after') return `${key} ${value}`
+  if (key === 'before' || key === 'after' || key === 'on' || key === 'during') return `${key} ${value}`
   return `${key}: ${value}`
 }

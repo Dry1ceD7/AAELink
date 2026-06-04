@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bookmark, BookmarkPlus, X, Check } from 'lucide-react'
+import { Bookmark, BookmarkPlus, X, Check, Bell, BellOff } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 
 export interface SavedSearch {
@@ -10,6 +10,7 @@ export interface SavedSearch {
   name: string
   query: string
   filters: Record<string, unknown>
+  alerts_enabled: boolean
   created_at: number
   updated_at: number
 }
@@ -88,6 +89,24 @@ export function SavedSearches({ workspaceId, open, currentQuery, currentFilters,
     if (res.ok) setItems(prev => prev.filter(s => s.id !== id))
   }, [busy])
 
+  // Toggle "alert me on new matches" for a saved search. Owner-only is enforced
+  // server-side; the worker re-runs alerts_enabled searches and notifies on new
+  // matches (BLUEPRINT §2.1.4). Optimistic flip, rolled back on failure.
+  const toggleAlerts = useCallback(async (id: string, next: boolean) => {
+    if (busy) return
+    setBusy(true)
+    setItems(prev => prev.map(s => (s.id === id ? { ...s, alerts_enabled: next } : s)))
+    const res = await apiFetch('/api/saved-searches', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, alerts_enabled: next }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      setItems(prev => prev.map(s => (s.id === id ? { ...s, alerts_enabled: !next } : s)))
+    }
+  }, [busy])
+
   const canSave = currentQuery.trim().length > 0
 
   return (
@@ -157,6 +176,20 @@ export function SavedSearches({ workspaceId, open, currentQuery, currentFilters,
                 title={s.query}
               >
                 {s.name}
+              </button>
+              <button
+                type="button"
+                className={`saved-searches-item-alert${s.alerts_enabled ? ' saved-searches-item-alert--on' : ''}`}
+                onClick={() => void toggleAlerts(s.id, !s.alerts_enabled)}
+                aria-pressed={s.alerts_enabled}
+                aria-label={s.alerts_enabled
+                  ? `Turn off alerts for ${s.name}`
+                  : `Alert me on new matches for ${s.name}`}
+                title={s.alerts_enabled ? 'Alerts on — click to turn off' : 'Alert me on new matches'}
+              >
+                {s.alerts_enabled
+                  ? <Bell size={12} aria-hidden="true" />
+                  : <BellOff size={12} aria-hidden="true" />}
               </button>
               <button
                 type="button"

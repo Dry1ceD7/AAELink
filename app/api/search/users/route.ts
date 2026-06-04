@@ -40,10 +40,10 @@ async function _GET(req: NextRequest) {
              u.avatar_url, u.job_title, u.phone, u.timezone,
              u.status_text, u.status_emoji, u.department,
              u.platform_role, u.pronouns,
-             p.status AS presence_status
+             us.status AS presence_status
       FROM aaelink.users u
       JOIN aaelink.workspace_members wm ON wm.user_id = u.id AND wm.workspace_id = $2
-      LEFT JOIN aaelink.presence p ON p.user_id = u.id
+      LEFT JOIN aaelink.user_status us ON us.user_id = u.id
       WHERE (u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1
              OR u.email ILIKE $1 OR u.department ILIKE $1 OR u.job_title ILIKE $1)
       ORDER BY
@@ -59,9 +59,9 @@ async function _GET(req: NextRequest) {
              u.avatar_url, u.job_title, u.phone, u.timezone,
              u.status_text, u.status_emoji, u.department,
              u.platform_role, u.pronouns,
-             p.status AS presence_status
+             us.status AS presence_status
       FROM aaelink.users u
-      LEFT JOIN aaelink.presence p ON p.user_id = u.id
+      LEFT JOIN aaelink.user_status us ON us.user_id = u.id
       WHERE (u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1
              OR u.email ILIKE $1 OR u.department ILIKE $1 OR u.job_title ILIKE $1)
       ORDER BY

@@ -66,6 +66,65 @@ describe('parseSearchFilters — single filter extraction', () => {
       after: '2025-06-15',
     } satisfies SearchFilters)
   })
+
+  it('extracts on:<date>', () => {
+    expect(parseSearchFilters('on:2025-03-04 incident')).toEqual({
+      text: 'incident',
+      on: '2025-03-04',
+    } satisfies SearchFilters)
+  })
+
+  it('extracts during:<year>', () => {
+    expect(parseSearchFilters('during:2025 launch')).toEqual({
+      text: 'launch',
+      during: '2025',
+    } satisfies SearchFilters)
+  })
+
+  it('extracts during:<year-month>', () => {
+    expect(parseSearchFilters('retro during:2025-06')).toEqual({
+      text: 'retro',
+      during: '2025-06',
+    } satisfies SearchFilters)
+  })
+})
+
+describe('parseSearchFilters — is: flags (multi-valued)', () => {
+  it('extracts a single is:thread flag', () => {
+    expect(parseSearchFilters('deploy is:thread')).toEqual({
+      text: 'deploy',
+      is: ['thread'],
+    } satisfies SearchFilters)
+  })
+
+  it('collects multiple is: flags in first-seen order, deduped', () => {
+    expect(parseSearchFilters('is:thread notes is:pinned is:thread')).toEqual({
+      text: 'notes',
+      is: ['thread', 'pinned'],
+    } satisfies SearchFilters)
+  })
+
+  it('supports is:saved', () => {
+    expect(parseSearchFilters('summary is:saved')).toEqual({
+      text: 'summary',
+      is: ['saved'],
+    } satisfies SearchFilters)
+  })
+
+  it('leaves an unknown is:<flag> in the free text', () => {
+    const r = parseSearchFilters('plan is:dm')
+    expect(r.is).toBeUndefined()
+    expect(r.text).toContain('is:dm')
+  })
+
+  it('combines is: flags with single-value filters', () => {
+    expect(parseSearchFilters('from:alice deploy is:thread has:link')).toEqual({
+      text: 'deploy',
+      from: 'alice',
+      has: 'link',
+      is: ['thread'],
+    } satisfies SearchFilters)
+  })
 })
 
 describe('parseSearchFilters — multi-filter combinations', () => {

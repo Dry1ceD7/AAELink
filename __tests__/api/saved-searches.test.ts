@@ -126,6 +126,38 @@ describe('PATCH /api/saved-searches', () => {
   })
 })
 
+describe('PATCH /api/saved-searches — alerts toggle', () => {
+  it('defaults alerts_enabled to false on create', async () => {
+    const body = await expectSuccess<{ saved_search: { alerts_enabled: boolean } }>(
+      await create(owner, { workspace_id: workspaceId, name: 'NoAlerts', query: 'q' })
+    )
+    expect(body.saved_search.alerts_enabled).toBe(false)
+  })
+
+  it('owner can enable alerts (alerts_enabled=true)', async () => {
+    const created = await expectSuccess<{ saved_search: { id: string } }>(
+      await create(owner, { workspace_id: workspaceId, name: 'Watchable', query: 'deploy' })
+    )
+    const { PATCH } = await import('@/app/api/saved-searches/route')
+    const res = await PATCH(asRequest('PATCH', '/api/saved-searches', {
+      cookie: owner.sessionCookie, body: { id: created.saved_search.id, alerts_enabled: true }
+    }))
+    const body = await expectSuccess<{ saved_search: { alerts_enabled: boolean } }>(res)
+    expect(body.saved_search.alerts_enabled).toBe(true)
+  })
+
+  it('another user cannot toggle alerts on a saved search they do not own (404)', async () => {
+    const created = await expectSuccess<{ saved_search: { id: string } }>(
+      await create(owner, { workspace_id: workspaceId, name: 'Private', query: 'q' })
+    )
+    const { PATCH } = await import('@/app/api/saved-searches/route')
+    const res = await PATCH(asRequest('PATCH', '/api/saved-searches', {
+      cookie: other.sessionCookie, body: { id: created.saved_search.id, alerts_enabled: true }
+    }))
+    await expectError(res, 404, 'not_found')
+  })
+})
+
 describe('DELETE /api/saved-searches', () => {
   it('cannot delete another user saved search (404)', async () => {
     const created = await expectSuccess<{ saved_search: { id: string } }>(

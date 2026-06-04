@@ -27,6 +27,7 @@ interface SavedSearchRow {
   name: string
   query: string
   filters: Record<string, unknown> | null
+  alerts_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -38,6 +39,7 @@ function serialize(r: SavedSearchRow) {
     name: r.name,
     query: r.query,
     filters: r.filters ?? {},
+    alerts_enabled: r.alerts_enabled === true,
     created_at: Number(r.created_at) || 0,
     updated_at: Number(r.updated_at) || 0,
   }
@@ -51,7 +53,7 @@ async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: strin
   return rows.length > 0
 }
 
-const SELECT_COLS = `id, workspace_id, name, query, filters,
+const SELECT_COLS = `id, workspace_id, name, query, filters, alerts_enabled,
   (EXTRACT(EPOCH FROM created_at) * 1000)::bigint::text AS created_at,
   (EXTRACT(EPOCH FROM updated_at) * 1000)::bigint::text AS updated_at`
 
@@ -128,7 +130,7 @@ async function _PATCH(req: Request) {
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
 
-  let body: { id?: string; name?: string; query?: string; filters?: unknown }
+  let body: { id?: string; name?: string; query?: string; filters?: unknown; alerts_enabled?: unknown }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'invalid_body' }, { status: 400 }) }
 
   const id = String(body.id || '').trim()
@@ -152,6 +154,17 @@ async function _PATCH(req: Request) {
       ? (body.filters as Record<string, unknown>)
       : {}
     sets.push(`filters = $${i++}::jsonb`); params.push(JSON.stringify(filters))
+  }
+  if (body.alerts_enabled !== undefined) {
+    const enabled = body.alerts_enabled === true || body.alerts_enabled === 'true' || body.alerts_enabled === 1
+    sets.push(`alerts_enabled = $${i++}`); params.push(enabled)
+    // When alerts are first switched on, seed the watermark to now so the user is
+    // only alerted on genuinely-new matches — never a backlog of every historical
+    // hit. Only advance (GREATEST) so a re-toggle never replays already-seen msgs.
+    if (enabled) {
+      sets.push(`last_match_created_at = GREATEST(last_match_created_at, $${i++})`)
+      params.push(Date.now())
+    }
   }
   if (sets.length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 })
   sets.push(`updated_at = now()`)
