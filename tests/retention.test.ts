@@ -17,7 +17,7 @@ describe('Data Retention Engine', () => {
   it('loads default policies', () => {
     const policies = engine.getPolicies()
     expect(policies.length).toBe(DEFAULT_RETENTION_POLICIES.length)
-    expect(policies.length).toBe(10)
+    expect(policies.length).toBe(9) // read_state policy dropped in 04299563 (read-state unification)
   })
 
   it('gets specific policy by entity', () => {
