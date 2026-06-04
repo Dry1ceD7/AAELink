@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import { getPool } from './db'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { ensureMigrations, type Migration, type RunnerPool } from './migrationRunner'
@@ -3654,6 +3654,216 @@ async function migration035SavedSearchAlerts(pool: RunnerPool) {
   )
 }
 
+/**
+ * Migration 036 — knowledge access enforcement (Canvas) + canvas backend
+ * consolidation.
+ *
+ * Stage A of the knowledge-parity epic turns the previously-inert canvas access
+ * surfaces into enforced ones:
+ *   - aaelink.canvases gains `deleted_at` (soft delete; canvases are
+ *     compliance-scoped content, so a DELETE tombstones rather than purges) and
+ *     `workspace_id` (so template read access is scoped to the owning workspace
+ *     instead of leaking cross-tenant; also lets audit rows be workspace-scoped).
+ *     Existing channel-attached canvases are backfilled from their channel.
+ *   - aaelink.canvas_access is promoted from a route-lazy `CREATE TABLE IF NOT
+ *     EXISTS` to a real migration so the access engine (lib/knowledge/canvasAccess)
+ *     can rely on it existing. Grants here now MEAN something (the engine reads
+ *     them); previously they were write-only and never consulted.
+ *   - aaelink.canvas_sections is likewise promoted out of route-lazy creation.
+ *
+ * Stage B consolidates the SECOND canvas backend (conversation_canvases →
+ * aaelink.documents) onto aaelink.canvases so there is one canvas store with one
+ * access engine. See `consolidateConversationCanvases` below for the conversion
+ * contract and the rollback story (the legacy table is kept, its rows tagged with
+ * `migrated_canvas_id`).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration036KnowledgeAccess(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.canvases ADD COLUMN IF NOT EXISTS deleted_at BIGINT NOT NULL DEFAULT 0`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.canvases ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT ''`
+  )
+  // Backfill workspace_id on existing channel-attached canvases from their
+  // channel, so they are correctly workspace-scoped (templates without a
+  // workspace_id are intentionally NOT globally readable post-fix; backfilling
+  // the channel ones keeps legitimate channel canvases scoped). Channel-less
+  // canvases (personal notes) keep '' and rely on the creator/shared_with/grant
+  // read paths, none of which need workspace_id.
+  await pool.query(
+    `UPDATE aaelink.canvases c
+        SET workspace_id = ch.workspace_id
+       FROM aaelink.channels ch
+      WHERE c.channel_id = ch.id
+        AND (c.workspace_id IS NULL OR c.workspace_id = '')
+        AND ch.workspace_id IS NOT NULL AND ch.workspace_id <> ''`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_canvases_workspace ON aaelink.canvases(workspace_id)`
+  )
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.canvas_access (
+      id           TEXT PRIMARY KEY,
+      canvas_id    TEXT NOT NULL,
+      grantee_type TEXT NOT NULL DEFAULT 'user',
+      grantee_id   TEXT NOT NULL,
+      access_level TEXT NOT NULL DEFAULT 'read',
+      granted_by   TEXT,
+      granted_at   BIGINT NOT NULL DEFAULT 0,
+      UNIQUE(canvas_id, grantee_type, grantee_id)
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_access_canvas ON aaelink.canvas_access(canvas_id)`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_access_grantee ON aaelink.canvas_access(grantee_type, grantee_id)`
+  )
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.canvas_sections (
+      id            TEXT PRIMARY KEY,
+      canvas_id     TEXT NOT NULL,
+      section_type  TEXT NOT NULL DEFAULT 'text',
+      title         TEXT NOT NULL DEFAULT '',
+      content       TEXT NOT NULL DEFAULT '',
+      position      INT NOT NULL DEFAULT 0,
+      created_by    TEXT,
+      created_at    BIGINT NOT NULL DEFAULT 0,
+      updated_at    BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_canvas_sections_canvas ON aaelink.canvas_sections(canvas_id)`
+  )
+
+  await consolidateConversationCanvases(pool)
+}
+
+/**
+ * Consolidate the legacy conversation_canvases backend onto aaelink.canvases.
+ *
+ * The old /api/conversations/canvases route linked a channel to a row in
+ * aaelink.documents (title/body). But the CANONICAL aaelink.documents table in
+ * this schema is the file-storage table (filename/content_type/size/bucket_key),
+ * so that route's `INSERT INTO documents (title, body, doc_type, ...)` only ever
+ * worked against an ad-hoc/legacy documents shape — there is effectively no real
+ * block content to carry. We still convert defensively, only reading the `body`
+ * column when it actually exists.
+ *
+ * For each legacy link we have not already migrated, create a channel_canvas in
+ * aaelink.canvases whose content_blocks wrap the document body as a single
+ * paragraph block, preserving created_by/created_at, then tag the legacy row with
+ * `migrated_canvas_id`. The legacy table + rows are kept (not dropped) so the
+ * conversion is reversible — rollback = revert the route + null out
+ * migrated_canvas_id.
+ *
+ * Idempotency: the INSERT and the link-tagging UPDATE are NOT wrapped in a single
+ * transaction (the migration runner runs `up()` without one and marks the
+ * migration applied only after it returns cleanly). If the process dies between
+ * the two statements, the whole migration re-runs on next boot and the link is
+ * re-selected (its migrated_canvas_id is still NULL). To stay duplicate-free we
+ * derive the new canvas id DETERMINISTICALLY from the immutable link id, so the
+ * re-run's INSERT targets the SAME id and `ON CONFLICT (id) DO NOTHING` dedupes —
+ * a random per-iteration id would defeat the conflict guard and create a second
+ * channel_canvas. The UPDATE is then a no-op-safe re-tag of the same id.
+ */
+async function consolidateConversationCanvases(pool: RunnerPool) {
+  // The legacy table only exists where the old route ran. Nothing to do otherwise.
+  const present = await pool.query(`SELECT to_regclass('aaelink.conversation_canvases') AS t`)
+  if (!(present.rows[0] as { t?: unknown } | undefined)?.t) return
+
+  // Idempotency + rollback marker.
+  await pool.query(
+    `ALTER TABLE aaelink.conversation_canvases ADD COLUMN IF NOT EXISTS migrated_canvas_id TEXT`
+  )
+
+  // Does the linked documents table carry a `body` column? (The canonical
+  // file-storage documents table does not.) Decides whether we can read content.
+  const bodyCol = await pool.query(
+    `SELECT 1 AS has FROM information_schema.columns
+      WHERE table_schema = 'aaelink' AND table_name = 'documents' AND column_name = 'body'
+      LIMIT 1`
+  )
+  const hasBody = (bodyCol.rows[0] as { has?: unknown } | undefined)?.has != null
+
+  const bodySelect = hasBody ? 'd.body' : `''`
+  const { rows } = await pool.query(
+    `SELECT cc.id AS link_id, cc.channel_id, cc.canvas_id AS doc_id,
+            cc.linked_by, cc.linked_at,
+            ${bodySelect} AS body,
+            d.title AS doc_title,
+            ch.workspace_id AS workspace_id
+       FROM aaelink.conversation_canvases cc
+       LEFT JOIN aaelink.documents d ON d.id = cc.canvas_id
+       LEFT JOIN aaelink.channels ch ON ch.id = cc.channel_id
+      WHERE cc.migrated_canvas_id IS NULL`
+  )
+
+  for (const r of rows as Array<{
+    link_id: string; channel_id: string; doc_id: string
+    linked_by: string | null; linked_at: string | number | null
+    body: string | null; doc_title: string | null
+    workspace_id: string | null
+  }>) {
+    // Derive the new canvas id deterministically from the immutable link id so a
+    // crash-then-rerun re-targets the SAME id and ON CONFLICT (id) DO NOTHING
+    // dedupes (a random id per run would create a duplicate channel_canvas).
+    const newId = deterministicUuid(`conversation_canvas:${r.link_id}`)
+    const title = (r.doc_title || 'Conversation Canvas').toString()
+    const bodyText = (r.body || '').toString()
+    const blocks = [{ type: 'paragraph', content: bodyText }]
+    const createdAt = Number(r.linked_at || 0) || Date.now()
+    const wordCount = bodyText.split(/\s+/).filter(Boolean).length
+
+    await pool.query(
+      `INSERT INTO aaelink.canvases
+         (id, title, type, channel_id, workspace_id, icon, cover_image,
+          content_blocks, word_count, block_count,
+          shared_with, is_pinned, is_template,
+          created_by, last_edited_by, created_at, updated_at)
+       VALUES ($1, $2, 'channel_canvas', $3, $4, '📄', '',
+               $5::jsonb, $6, 1,
+               '[]'::jsonb, false, false,
+               $7, $7, $8, $8)
+       ON CONFLICT (id) DO NOTHING`,
+      [newId, title, r.channel_id, r.workspace_id || '', JSON.stringify(blocks), wordCount, r.linked_by, createdAt]
+    )
+
+    await pool.query(
+      `UPDATE aaelink.conversation_canvases SET migrated_canvas_id = $1 WHERE id = $2`,
+      [newId, r.link_id]
+    )
+  }
+}
+
+/**
+ * Derive a stable RFC-4122-shaped UUID from an arbitrary seed string. Used to
+ * make migration-sourced ids idempotent (same seed → same id across re-runs) so
+ * ON CONFLICT (id) guards actually dedupe. Not cryptographically meaningful — a
+ * SHA-256 of the seed, formatted as a v4-shaped UUID (version/variant nibbles set).
+ */
+function deterministicUuid(seed: string): string {
+  const h = createHash('sha256').update(seed).digest('hex')
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    '4' + h.slice(13, 16),
+    ((parseInt(h.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + h.slice(17, 20),
+    h.slice(20, 32),
+  ].join('-')
+}
+
+/**
+ * Test-only seam: lets the integration suite re-run the conversation-canvas
+ * consolidation directly (it is idempotent) to assert the conversion contract
+ * without faking the whole migration runner. Not used by production code.
+ */
+export const __testConsolidateConversationCanvases = consolidateConversationCanvases
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3690,4 +3900,5 @@ const MIGRATIONS: Migration[] = [
   { id: '033_file_attachments_canonical', up: migration033FileAttachmentsCanonical },
   { id: '034_file_storage_backend', up: migration034FileStorageBackend },
   { id: '035_saved_search_alerts', up: migration035SavedSearchAlerts },
+  { id: '036_knowledge_access', up: migration036KnowledgeAccess },
 ]

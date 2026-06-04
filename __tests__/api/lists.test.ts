@@ -143,3 +143,92 @@ describe('POST /api/lists', () => {
     expect(body.lists.every(l => l.created_by === other.id)).toBe(true)
   })
 })
+
+describe('POST /api/lists — columns', () => {
+  let listId: string
+  let itemId: string
+
+  it('sets up a list with a custom column and an item that uses it', async () => {
+    const { POST } = await import('@/app/api/lists/route')
+    const created = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie, body: { action: 'create_list', name: 'Columns List' },
+    }))
+    const { list } = await expectSuccess<{ list: { id: string } }>(created)
+    listId = list.id
+
+    await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'add_column', list_id: listId, column_name: 'Priority', column_type: 'status', column_options: ['Low', 'High'] },
+    }))
+
+    const item = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'add_item', list_id: listId, values: { Title: 'Row', Priority: 'High' } },
+    }))
+    const { item: created2 } = await expectSuccess<{ item: { id: string } }>(item)
+    itemId = created2.id
+  })
+
+  it('update_column renames the column and carries item values to the new key', async () => {
+    const { POST, GET } = await import('@/app/api/lists/route')
+    const res = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'update_column', list_id: listId, column_name: 'Priority', new_column_name: 'Urgency' },
+    }))
+    expect(res.status).toBe(200)
+    const body = await expectSuccess<{ columns: Array<{ name: string }> }>(res)
+    expect(body.columns.some(c => c.name === 'Urgency')).toBe(true)
+    expect(body.columns.some(c => c.name === 'Priority')).toBe(false)
+
+    const got = await GET(asRequest('GET', '/api/lists', { cookie: user.sessionCookie, query: { list_id: listId } }))
+    const read = await expectSuccess<{ list: { items: Array<{ id: string; values: Record<string, unknown> }> } }>(got)
+    const row = read.list.items.find(i => i.id === itemId)!
+    expect(row.values.Urgency).toBe('High')
+    expect(row.values.Priority).toBeUndefined()
+  })
+
+  it('delete_column removes the column and strips its values from items', async () => {
+    const { POST, GET } = await import('@/app/api/lists/route')
+    const res = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'delete_column', list_id: listId, column_name: 'Urgency' },
+    }))
+    expect(res.status).toBe(200)
+    const body = await expectSuccess<{ columns: Array<{ name: string }> }>(res)
+    expect(body.columns.some(c => c.name === 'Urgency')).toBe(false)
+
+    const got = await GET(asRequest('GET', '/api/lists', { cookie: user.sessionCookie, query: { list_id: listId } }))
+    const read = await expectSuccess<{ list: { items: Array<{ id: string; values: Record<string, unknown> }> } }>(got)
+    const row = read.list.items.find(i => i.id === itemId)!
+    expect(row.values.Urgency).toBeUndefined()
+  })
+
+  it('delete_column on a missing column returns 404', async () => {
+    const { POST } = await import('@/app/api/lists/route')
+    const res = await POST(asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'delete_column', list_id: listId, column_name: 'Nope' },
+    }))
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a column op without a CSRF token', async () => {
+    const { POST } = await import('@/app/api/lists/route')
+    const req = asRequest('POST', '/api/lists', {
+      cookie: user.sessionCookie,
+      body: { action: 'add_column', list_id: listId, column_name: 'X', column_type: 'text' },
+      noAutoCsrf: true,
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(403)
+  })
+
+  it('forbids a non-creator from mutating columns', async () => {
+    const { POST } = await import('@/app/api/lists/route')
+    const res = await POST(asRequest('POST', '/api/lists', {
+      cookie: other.sessionCookie,
+      body: { action: 'add_column', list_id: listId, column_name: 'Y', column_type: 'text' },
+    }))
+    expect(res.status).toBe(403)
+  })
+})

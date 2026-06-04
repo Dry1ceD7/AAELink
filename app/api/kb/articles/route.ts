@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { randomUUID } from 'crypto'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 
 async function _GET(req: NextRequest) {
   await ensureSchema()
@@ -18,8 +21,13 @@ async function _GET(req: NextRequest) {
   
   if (!workspace_id) return NextResponse.json({ error: 'Missing workspace_id' }, { status: 400 })
 
+  // Workspace membership gate (Hard Rule #1) before any per-workspace KB read.
+  if (!(await isWorkspaceMember(pool, userId, workspace_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
   let query = `
-    SELECT a.*, u.username as author_username, u.first_name, u.last_name 
+    SELECT a.*, u.username as author_username, u.first_name, u.last_name
     FROM aaelink.kb_articles a
     LEFT JOIN aaelink.users u ON u.id = a.author_id
     WHERE a.workspace_id = $1
@@ -38,6 +46,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -49,6 +59,10 @@ async function _POST(req: NextRequest) {
   if (!workspace_id || !title || !content) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  // Only a member of the target workspace may author an article in it.
+  if (!(await isWorkspaceMember(pool, userId, workspace_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const id = randomUUID()
   const now = Date.now()
@@ -59,6 +73,10 @@ async function _POST(req: NextRequest) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [id, workspace_id, category_id || null, title, content, userId, is_published ?? true, now, now]
     )
+    writeAuditLog({
+      pool, actorId: userId, workspaceId: workspace_id, action: 'kb.article.create',
+      resourceKind: 'kb_article', resourceId: id, ipAddress: extractIp(req),
+    })
     return NextResponse.json({ success: true, id })
   } catch (err: unknown) {
     console.error('Error creating KB article:', err)

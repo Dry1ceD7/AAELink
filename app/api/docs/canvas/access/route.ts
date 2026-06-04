@@ -4,7 +4,10 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { loadCanvas, canAdministerCanvas } from '@/lib/knowledge/canvasAccess'
 
 /**
  * Canvases Access API — Slack canvases.access parity.
@@ -14,8 +17,15 @@ import { tracedRoute } from '@/lib/api/tracedRoute'
  *     - set      — set access level for user/channel
  *     - delete   — revoke access for user/channel
  *     - lookup   — get access list for a canvas
+ *
+ * Grants here are ENFORCED: lib/knowledge/canvasAccess reads this table when
+ * resolving read/write access (they used to be inert). Only a user who can
+ * administer the canvas (creator, platform admin, or admin-grant holder) may
+ * set/revoke grants or read the grant list.
  */
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -33,27 +43,21 @@ async function _POST(req: NextRequest) {
   const { action, canvas_id } = body
   if (!canvas_id) return NextResponse.json({ error: 'canvas_id_required' }, { status: 400 })
 
-  // Ensure canvas_access table exists
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.canvas_access (
-      id          TEXT PRIMARY KEY,
-      canvas_id   TEXT NOT NULL,
-      grantee_type TEXT NOT NULL DEFAULT 'user',
-      grantee_id  TEXT NOT NULL,
-      access_level TEXT NOT NULL DEFAULT 'read',
-      granted_by  TEXT,
-      granted_at  BIGINT NOT NULL DEFAULT 0,
-      UNIQUE(canvas_id, grantee_type, grantee_id)
-    )
-  `).catch(() => {})
+  const canvas = await loadCanvas(pool, canvas_id)
+  if (!canvas || canvas.deleted_at !== 0) {
+    return NextResponse.json({ error: 'canvas_not_found' }, { status: 404 })
+  }
+  if (!(await canAdministerCanvas(pool, uid, canvas))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   if (action === 'lookup') {
     const { rows } = await pool.query(
       `SELECT ca.*, u.username AS grantee_username
-       FROM aaelink.canvas_access ca
-       LEFT JOIN aaelink.users u ON u.id = ca.grantee_id AND ca.grantee_type = 'user'
-       WHERE ca.canvas_id = $1
-       ORDER BY ca.granted_at DESC`,
+         FROM aaelink.canvas_access ca
+         LEFT JOIN aaelink.users u ON u.id = ca.grantee_id AND ca.grantee_type = 'user'
+        WHERE ca.canvas_id = $1
+        ORDER BY ca.granted_at DESC`,
       [canvas_id]
     )
     return NextResponse.json({ access: rows })
@@ -61,15 +65,14 @@ async function _POST(req: NextRequest) {
 
   if (action === 'set') {
     const level = body.access_level || 'read'
+    if (!['read', 'write', 'admin'].includes(level)) {
+      return NextResponse.json({ error: 'invalid_access_level' }, { status: 400 })
+    }
     const now = Date.now()
     const grants: Array<{ type: string; id: string }> = []
 
-    for (const userId of (body.user_ids || [])) {
-      grants.push({ type: 'user', id: userId })
-    }
-    for (const channelId of (body.channel_ids || [])) {
-      grants.push({ type: 'channel', id: channelId })
-    }
+    for (const userId of body.user_ids || []) grants.push({ type: 'user', id: userId })
+    for (const channelId of body.channel_ids || []) grants.push({ type: 'channel', id: channelId })
 
     for (const g of grants) {
       await pool.query(
@@ -80,18 +83,39 @@ async function _POST(req: NextRequest) {
       )
     }
 
+    writeAuditLog({
+      pool, actorId: uid, action: 'canvas.access_set', resourceKind: 'canvas', resourceId: canvas_id,
+      ipAddress: extractIp(req), metadata: { level, grants: grants.length },
+    })
+
     return NextResponse.json({ ok: true, grants_updated: grants.length })
   }
 
   if (action === 'delete') {
-    const targets = [...(body.user_ids || []), ...(body.channel_ids || [])]
-    if (targets.length > 0) {
+    // Revoke must be the inverse of 'set': type-scoped. Deleting purely by
+    // grantee_id (no grantee_type) would over-delete if a user id and a channel
+    // id ever share a value — revoking a user grant could silently drop an
+    // unrelated channel grant on the same canvas. Match grantee_type explicitly.
+    const userIds = body.user_ids || []
+    const channelIds = body.channel_ids || []
+    if (userIds.length > 0) {
       await pool.query(
-        `DELETE FROM aaelink.canvas_access WHERE canvas_id = $1 AND grantee_id = ANY($2)`,
-        [canvas_id, targets]
+        `DELETE FROM aaelink.canvas_access WHERE canvas_id = $1 AND grantee_type = 'user' AND grantee_id = ANY($2)`,
+        [canvas_id, userIds]
       )
     }
-    return NextResponse.json({ ok: true, revoked: targets.length })
+    if (channelIds.length > 0) {
+      await pool.query(
+        `DELETE FROM aaelink.canvas_access WHERE canvas_id = $1 AND grantee_type = 'channel' AND grantee_id = ANY($2)`,
+        [canvas_id, channelIds]
+      )
+    }
+    const revoked = userIds.length + channelIds.length
+    writeAuditLog({
+      pool, actorId: uid, action: 'canvas.access_revoke', resourceKind: 'canvas', resourceId: canvas_id,
+      ipAddress: extractIp(req), metadata: { revoked },
+    })
+    return NextResponse.json({ ok: true, revoked })
   }
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 })

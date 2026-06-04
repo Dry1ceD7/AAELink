@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
 import { writeAuditLog } from '@/lib/enterprise/auditLog'
 
 /** True if the user authored the article or is a platform admin. */
@@ -38,6 +40,11 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     )
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // Only a member of the article's workspace may read it.
+    if (!(await isWorkspaceMember(pool, userId, (rows[0] as { workspace_id: string }).workspace_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+
     // Increment view count in the background
     pool.query(`UPDATE aaelink.kb_articles SET view_count = view_count + 1 WHERE id = $1`, [id]).catch(console.error)
 
@@ -49,6 +56,8 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 }
 
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -60,9 +69,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   const { title, content, category_id, is_published } = await req.json().catch(() => ({}))
 
   try {
-    const { rows } = await pool.query<{ author_id: string }>(`SELECT author_id FROM aaelink.kb_articles WHERE id = $1`, [id])
+    const { rows } = await pool.query<{ author_id: string; workspace_id: string }>(`SELECT author_id, workspace_id FROM aaelink.kb_articles WHERE id = $1`, [id])
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // Assert workspace membership before the author/admin gate — an outsider must
+    // not edit (or probe) another workspace's article.
+    if (!(await isWorkspaceMember(pool, userId, rows[0].workspace_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     // Only the author or a platform admin may edit a KB article.
     if (!(await canManageArticle(pool, userId, rows[0].author_id))) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -96,6 +110,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 }
 
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -106,8 +122,11 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
   const { id } = await params
 
   try {
-    const { rows } = await pool.query<{ author_id: string }>(`SELECT author_id FROM aaelink.kb_articles WHERE id = $1`, [id])
+    const { rows } = await pool.query<{ author_id: string; workspace_id: string }>(`SELECT author_id, workspace_id FROM aaelink.kb_articles WHERE id = $1`, [id])
     if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!(await isWorkspaceMember(pool, userId, rows[0].workspace_id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     if (!(await canManageArticle(pool, userId, rows[0].author_id))) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }

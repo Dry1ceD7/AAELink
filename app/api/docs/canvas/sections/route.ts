@@ -1,17 +1,36 @@
 // keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { resolveCanvasAccess } from '@/lib/knowledge/canvasAccess'
+import {
+  createSection, updateSection, deleteSection, reorderSections, parseBlocks,
+  type SectionOpResult,
+} from '@/lib/knowledge/canvasSections'
+import { emitKnowledgeEvent } from '@/lib/knowledge/knowledgeRealtime'
 
 /**
  * Canvas Sections API — Slack canvases.sections parity.
  *
- * GET  /api/docs/canvas/sections?canvas_id=...  — list sections
- * POST /api/docs/canvas/sections — create/update/delete/reorder sections
+ * Stage B unification: sections now operate ON the canvas content_blocks array
+ * (a "section" is a block with a stable `id`), NOT the parallel canvas_sections
+ * table. canvas GET returns content_blocks, so reads and writes finally agree —
+ * the previous write-only split-brain (canvas_sections written but never read) is
+ * gone. The canvas_sections table is retired from the write path (left in place
+ * for rollback only). See lib/knowledge/canvasSections for the block helpers.
+ *
+ * GET  /api/docs/canvas/sections?canvas_id=...  — list sections (= blocks) [read]
+ * POST /api/docs/canvas/sections — create/update/delete/reorder sections [write]
  *   Actions: create, update, delete, reorder
+ *   Optimistic concurrency: pass `expected_updated_at` (the updated_at the client
+ *   last saw); a mismatch yields 409 stale_canvas so concurrent edits don't clobber.
+ *
+ * Access is resolved through lib/knowledge/canvasAccess so this surface shares the
+ * exact read/write rules as the main canvas (no separate, unguarded model).
  */
 async function _GET(req: NextRequest) {
   await ensureSchema()
@@ -23,20 +42,56 @@ async function _GET(req: NextRequest) {
   const canvasId = req.nextUrl.searchParams.get('canvas_id') || ''
   if (!canvasId) return NextResponse.json({ error: 'canvas_id_required' }, { status: 400 })
 
-  await ensureSectionsTable(pool)
+  const access = await resolveCanvasAccess(pool, uid, canvasId)
+  if (!access.canvas || access.deleted) {
+    return NextResponse.json({ error: 'canvas_not_found' }, { status: 404 })
+  }
+  if (!access.canRead) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  const { rows } = await pool.query(
-    `SELECT id, canvas_id, section_type, title, content, position, created_by, created_at, updated_at
-     FROM aaelink.canvas_sections
-     WHERE canvas_id = $1
-     ORDER BY position ASC, created_at ASC`,
+  // Sections ARE the content blocks. Read them from the canvas row (single source
+  // of truth) and surface position by array index for callers that want it.
+  // Normalize through parseBlocks so EVERY block — including the seed block and
+  // any block authored via the main canvas editor (which may have no `id`) — gets
+  // a stable, addressable id, instead of returning a raw, possibly-undefined b.id.
+  const { rows } = await pool.query<{ content_blocks: unknown; updated_at: string | number }>(
+    `SELECT content_blocks, updated_at FROM aaelink.canvases WHERE id = $1 AND deleted_at = 0`,
     [canvasId]
   )
+  const blocks = parseBlocks(rows[0]?.content_blocks)
+  const sections = blocks.map((b, i) => ({
+    id: b.id,
+    section_type: b.type ?? 'paragraph',
+    title: b.title ?? '',
+    content: b.content ?? '',
+    position: i,
+  }))
 
-  return NextResponse.json({ sections: rows })
+  return NextResponse.json({ sections, updated_at: Number(rows[0]?.updated_at || 0) })
+}
+
+/** Map a section-op result to an HTTP response, emitting on success. */
+async function respond(
+  res: SectionOpResult,
+  ctx: { canvasId: string; channelId: string | null; ownerId: string | null; extra?: Record<string, unknown> }
+): Promise<NextResponse> {
+  if (!res.ok) {
+    const status =
+      res.code === 'stale_canvas' ? 409 :
+      res.code === 'payload_too_large' ? 413 :
+      res.code === 'too_many_blocks' ? 413 :
+      res.code === 'canvas_not_found' ? 404 : 404
+    return NextResponse.json({ error: res.code }, { status })
+  }
+  await emitKnowledgeEvent(
+    { kind: 'canvas.updated', canvas_id: ctx.canvasId, channel_id: ctx.channelId || '', updated_at: res.updated_at },
+    { channelId: ctx.channelId, ownerId: ctx.ownerId }
+  )
+  return NextResponse.json({ ok: true, updated_at: res.updated_at, ...(res.section_id ? { section_id: res.section_id } : {}), ...(ctx.extra || {}) })
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -52,87 +107,58 @@ async function _POST(req: NextRequest) {
     content?: string
     position?: number
     sections_order?: string[]
+    expected_updated_at?: number
   }
 
   const { action, canvas_id } = body
   if (!canvas_id) return NextResponse.json({ error: 'canvas_id_required' }, { status: 400 })
 
-  await ensureSectionsTable(pool)
-  const now = Date.now()
+  const access = await resolveCanvasAccess(pool, uid, canvas_id)
+  if (!access.canvas || access.deleted) {
+    return NextResponse.json({ error: 'canvas_not_found' }, { status: 404 })
+  }
+  if (!access.canWrite) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  const channelId = access.canvas.channel_id
+  const ownerId = access.canvas.created_by
+  const ip = extractIp(req)
+  const audit = (act: string, meta?: Record<string, unknown>) =>
+    writeAuditLog({ pool, actorId: uid, action: act, resourceKind: 'canvas', resourceId: canvas_id, ipAddress: ip, metadata: meta })
 
   if (action === 'create') {
-    const id = randomUUID()
-    const maxPos = await pool.query<{ max: number }>(
-      `SELECT COALESCE(MAX(position), -1) AS max FROM aaelink.canvas_sections WHERE canvas_id = $1`,
-      [canvas_id]
-    )
-    const position = body.position ?? ((maxPos.rows[0]?.max ?? -1) + 1)
-
-    await pool.query(
-      `INSERT INTO aaelink.canvas_sections (id, canvas_id, section_type, title, content, position, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
-      [id, canvas_id, body.section_type || 'text', body.title || '', body.content || '', position, uid, now]
-    )
-    return NextResponse.json({ ok: true, section_id: id })
+    const res = await createSection(pool, canvas_id, uid, {
+      section_type: body.section_type, title: body.title, content: body.content,
+      position: body.position, expected_updated_at: body.expected_updated_at,
+    })
+    if (res.ok) audit('canvas.section_create', { section_id: res.section_id })
+    return respond(res, { canvasId: canvas_id, channelId, ownerId })
   }
 
   if (action === 'update') {
     if (!body.section_id) return NextResponse.json({ error: 'section_id_required' }, { status: 400 })
-    const sets: string[] = []
-    const params: unknown[] = [body.section_id, canvas_id]
-
-    if (body.title !== undefined) { params.push(body.title); sets.push(`title = $${params.length}`) }
-    if (body.content !== undefined) { params.push(body.content); sets.push(`content = $${params.length}`) }
-    if (body.section_type !== undefined) { params.push(body.section_type); sets.push(`section_type = $${params.length}`) }
-    params.push(now); sets.push(`updated_at = $${params.length}`)
-
-    if (sets.length > 0) {
-      await pool.query(
-        `UPDATE aaelink.canvas_sections SET ${sets.join(', ')} WHERE id = $1 AND canvas_id = $2`,
-        params
-      )
-    }
-    return NextResponse.json({ ok: true })
+    const res = await updateSection(pool, canvas_id, uid, body.section_id, {
+      section_type: body.section_type, title: body.title, content: body.content,
+      expected_updated_at: body.expected_updated_at,
+    })
+    if (res.ok) audit('canvas.section_update', { section_id: body.section_id })
+    return respond(res, { canvasId: canvas_id, channelId, ownerId })
   }
 
   if (action === 'delete') {
     if (!body.section_id) return NextResponse.json({ error: 'section_id_required' }, { status: 400 })
-    await pool.query(
-      `DELETE FROM aaelink.canvas_sections WHERE id = $1 AND canvas_id = $2`,
-      [body.section_id, canvas_id]
-    )
-    return NextResponse.json({ ok: true })
+    const res = await deleteSection(pool, canvas_id, uid, body.section_id, body.expected_updated_at)
+    if (res.ok) audit('canvas.section_delete', { section_id: body.section_id })
+    return respond(res, { canvasId: canvas_id, channelId, ownerId })
   }
 
   if (action === 'reorder') {
     const order = body.sections_order || []
-    for (let i = 0; i < order.length; i++) {
-      await pool.query(
-        `UPDATE aaelink.canvas_sections SET position = $1, updated_at = $2 WHERE id = $3 AND canvas_id = $4`,
-        [i, now, order[i], canvas_id]
-      )
-    }
-    return NextResponse.json({ ok: true, reordered: order.length })
+    const res = await reorderSections(pool, canvas_id, uid, order, body.expected_updated_at)
+    if (res.ok) audit('canvas.section_reorder', { count: order.length })
+    return respond(res, { canvasId: canvas_id, channelId, ownerId, extra: { reordered: order.length } })
   }
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 })
-}
-
-async function ensureSectionsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.canvas_sections (
-      id            TEXT PRIMARY KEY,
-      canvas_id     TEXT NOT NULL,
-      section_type  TEXT NOT NULL DEFAULT 'text',
-      title         TEXT NOT NULL DEFAULT '',
-      content       TEXT NOT NULL DEFAULT '',
-      position      INT NOT NULL DEFAULT 0,
-      created_by    TEXT,
-      created_at    BIGINT NOT NULL DEFAULT 0,
-      updated_at    BIGINT NOT NULL DEFAULT 0
-    )
-  `).catch(() => {})
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_canvas_sections_canvas ON aaelink.canvas_sections(canvas_id)`).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/docs/canvas/sections', _GET)
