@@ -3481,6 +3481,67 @@ export async function migration031EntraToSsoProviders(pool: RunnerPool) {
   // info-level log here (the project's no-console rule only permits warn/error).
 }
 
+/**
+ * 032 — Idempotent active-participant join.
+ *
+ * PUT /api/calls/rooms?action=join runs
+ *   INSERT INTO aaelink.call_participants (...) ... ON CONFLICT DO NOTHING
+ * to make re-joining a no-op. But call_participants has no unique constraint on
+ * (room_id, user_id), so ON CONFLICT had no partial index to honor — a re-join
+ * silently inserted a SECOND active row, surfacing the same user twice in the
+ * mesh peer list (listRoomParticipants) and breaking perfect-negotiation pairing.
+ *
+ * Fix: a partial UNIQUE INDEX over active rows (left_at = 0). Postgres' inference
+ * for `ON CONFLICT DO NOTHING` *without* an explicit conflict target honors any
+ * applicable arbiter index, including a partial unique index, so the existing
+ * join INSERT becomes correctly idempotent with no route change.
+ *
+ * Existing duplicates must be deduped first or the unique index creation fails:
+ * for each (room_id, user_id) group with left_at = 0, keep the earliest joined_at
+ * (tiebreak by id) and delete the rest.
+ *
+ * The base table DDL lives in migration001 and is SKIPPED on already-initialized
+ * DBs, so re-declare with IF NOT EXISTS (no-op where it exists, creates it on a
+ * fresh runner DB) before deduping + indexing. Forward-only; idempotent.
+ */
+async function migration032CallParticipantsUniqueActive(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.call_participants (
+      id              TEXT PRIMARY KEY,
+      room_id         TEXT NOT NULL REFERENCES aaelink.call_rooms(id) ON DELETE CASCADE,
+      user_id         TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      role            TEXT NOT NULL DEFAULT 'participant',
+      muted           BOOLEAN NOT NULL DEFAULT false,
+      video_on        BOOLEAN NOT NULL DEFAULT false,
+      screen_sharing  BOOLEAN NOT NULL DEFAULT false,
+      joined_at       BIGINT NOT NULL,
+      left_at         BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+
+  // Dedupe existing active rows so the unique index can be created. For each
+  // (room_id, user_id) with left_at = 0, keep the earliest joined_at (tiebreak
+  // by id) and delete the others.
+  await pool.query(`
+    DELETE FROM aaelink.call_participants cp
+     WHERE cp.left_at = 0
+       AND EXISTS (
+         SELECT 1 FROM aaelink.call_participants keep
+          WHERE keep.left_at = 0
+            AND keep.room_id = cp.room_id
+            AND keep.user_id = cp.user_id
+            AND (keep.joined_at < cp.joined_at
+                 OR (keep.joined_at = cp.joined_at AND keep.id < cp.id))
+       )
+  `)
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_call_participants_active
+      ON aaelink.call_participants(room_id, user_id)
+      WHERE left_at = 0
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3513,4 +3574,5 @@ const MIGRATIONS: Migration[] = [
   { id: '029_oauth_codes', up: migration029OauthCodes },
   { id: '030_event_subscriptions_active_index', up: migration030EventSubscriptionsActiveIndex },
   { id: '031_entra_to_sso_providers', up: migration031EntraToSsoProviders },
+  { id: '032_call_participants_unique_active', up: migration032CallParticipantsUniqueActive },
 ]

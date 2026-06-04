@@ -3,8 +3,10 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { turnConfigured } from '@/lib/calls/turnCredentials'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 
 /**
  * Calls & Huddles API — call signaling, room management, and screen share sessions.
@@ -98,6 +100,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -153,6 +157,8 @@ async function _POST(req: NextRequest) {
 }
 
 async function _PUT(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -229,8 +235,8 @@ async function _PUT(req: NextRequest) {
 
   if (body.action === 'end') {
     // Only the room creator (host) or a super_admin may end a call for everyone.
-    const { rows: roomRows } = await pool.query<{ created_by: string }>(
-      `SELECT created_by FROM aaelink.call_rooms WHERE id = $1`, [roomId]
+    const { rows: roomRows } = await pool.query<{ created_by: string; status: string; ended_at: string }>(
+      `SELECT created_by, status, ended_at::text AS ended_at FROM aaelink.call_rooms WHERE id = $1`, [roomId]
     )
     if (!roomRows[0]) return NextResponse.json({ error: 'room_not_found' }, { status: 404 })
     if (roomRows[0].created_by !== uid) {
@@ -241,8 +247,31 @@ async function _PUT(req: NextRequest) {
         return NextResponse.json({ error: 'host_or_admin_only' }, { status: 403 })
       }
     }
+    // Idempotent: re-ending an already-ended room must not rewrite ended_at or
+    // emit a phantom second audit row.
+    if (roomRows[0].status !== 'active') {
+      return NextResponse.json({ ok: true, ended_at: Number(roomRows[0].ended_at || 0) })
+    }
+    // Count the participants this ends the call for (compliance trail).
+    const { rows: [endCount] } = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM aaelink.call_participants WHERE room_id = $1 AND left_at = 0`, [roomId]
+    )
     await pool.query(`UPDATE aaelink.call_rooms SET status = 'ended', ended_at = $1 WHERE id = $2`, [now, roomId])
     await pool.query(`UPDATE aaelink.call_participants SET left_at = $1 WHERE room_id = $2 AND left_at = 0`, [now, roomId])
+
+    // Ending a call removes every active participant — a write that affects other
+    // users, so it is audited (Hard Rule 5).
+    writeAuditLog({
+      pool,
+      actorId: uid,
+      action: 'call.end',
+      resourceKind: 'call_room',
+      resourceId: roomId,
+      ipAddress: extractIp(req),
+      userAgent: req.headers.get('user-agent') || '',
+      metadata: { ended_at: now, participants_ended: Number(endCount?.n || 0) },
+    })
+
     return NextResponse.json({ ok: true, ended_at: now })
   }
 

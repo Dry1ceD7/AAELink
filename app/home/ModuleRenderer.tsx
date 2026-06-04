@@ -175,7 +175,7 @@ export function ModuleRenderer({
     case 'huddles':
     case 'huddle':
       return bare(
-        <HuddlePanel channelName={channelTitle} onClose={navigateHome} />,
+        <HuddlePanel channelName={channelTitle} workspaceId={activeTeamId} onClose={navigateHome} />,
         activeModule === 'huddle' ? { style: { background: '#1a1a2e' } } : undefined)
     case 'calls':
     case 'call_history':

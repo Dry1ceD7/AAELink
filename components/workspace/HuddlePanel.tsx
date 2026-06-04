@@ -1,39 +1,40 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Mic, MicOff, Video, VideoOff, MonitorUp, Circle, Smile, MessageSquare, PhoneOff, Loader2 } from 'lucide-react'
-import { apiFetch } from '@/lib/api/apiClient'
+import { useHuddleRtc, type HuddleTile } from './useHuddleRtc'
 
-/* ── Huddle Panel — Real-time audio/video calls ──────────────────── */
+/* ── Huddle Panel — Real-time audio/video calls (WebRTC mesh) ──────── */
 
-interface HuddleParticipant {
-  id: string
-  name: string
-  initials: string
-  muted: boolean
-  videoOn: boolean
-  screenSharing: boolean
-  speaking: boolean
+/** Remote/self video element that binds a MediaStream via srcObject. */
+function HuddleVideo({ stream, muted }: { stream: MediaStream | null; muted: boolean }) {
+  const ref = useRef<HTMLVideoElement | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (el && el.srcObject !== stream) el.srcObject = stream
+  }, [stream])
+  if (!stream) return null
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      className="huddle-tile-video"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+    />
+  )
 }
 
-interface CallRoom {
-  id: string
-  type: string
-  status: string
-  participants?: Array<{ user_id: string; username: string; joined_at: number; muted?: boolean; video_on?: boolean }>
-}
+export default function HuddlePanel({
+  onClose, channelName, channelId, workspaceId,
+}: { onClose: () => void; channelName?: string; channelId?: string; workspaceId?: string }) {
+  const {
+    loading, tiles, mediaError,
+    isMuted, isVideoOn, isScreenSharing,
+    toggleMute, toggleVideo, toggleScreenShare, leave,
+  } = useHuddleRtc({ channelId, workspaceId })
 
-function getInitials(name: string): string {
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?'
-}
-
-export default function HuddlePanel({ onClose, channelName, channelId }: { onClose: () => void; channelName?: string; channelId?: string }) {
-  const [participants, setParticipants] = useState<HuddleParticipant[]>([])
-  const [roomId, setRoomId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isMuted, setIsMuted] = useState(false)
-  const [isVideoOn, setIsVideoOn] = useState(true)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
   const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string }[]>([])
@@ -44,95 +45,14 @@ export default function HuddlePanel({ onClose, channelName, channelId }: { onClo
   const chatEndRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Load or create the huddle room
-  const init = useCallback(async () => {
-    setLoading(true)
-    try {
-      // Check for existing active rooms
-      const res = await apiFetch('/api/calls/rooms')
-      if (res.ok) {
-        const data = await res.json() as { rooms?: CallRoom[] }
-        const activeRoom = (data.rooms || []).find(r =>
-          r.status === 'active' && r.type === 'huddle'
-        )
-
-        if (activeRoom) {
-          setRoomId(activeRoom.id)
-          setParticipants(
-            (activeRoom.participants || []).map(p => ({
-              id: p.user_id,
-              name: p.username,
-              initials: getInitials(p.username),
-              muted: p.muted ?? false,
-              videoOn: p.video_on ?? true,
-              screenSharing: false,
-              speaking: false,
-            }))
-          )
-        } else {
-          // Create a new huddle room
-          const createRes = await apiFetch('/api/calls/rooms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'huddle',
-              channel_id: channelId,
-            }),
-          })
-          if (createRes.ok) {
-            const room = await createRes.json() as { room?: CallRoom }
-            if (room.room) {
-              setRoomId(room.room.id)
-              // Start with self as the only participant
-              setParticipants([{
-                id: 'self',
-                name: 'You',
-                initials: 'YO',
-                muted: false,
-                videoOn: true,
-                screenSharing: false,
-                speaking: true,
-              }])
-            }
-          }
-        }
-      }
-    } catch {
-      // Fallback: show self only
-      setParticipants([{
-        id: 'self', name: 'You', initials: 'YO',
-        muted: false, videoOn: true, screenSharing: false, speaking: true,
-      }])
-    } finally {
-      setLoading(false)
-    }
-  }, [channelId])
-
   useEffect(() => {
-    void init()
-    // Start elapsed timer
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [init])
+  }, [])
 
   const leaveCall = async () => {
-    if (roomId) {
-      await apiFetch('/api/calls/rooms', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_id: roomId, action: 'leave' }),
-      }).catch(() => {})
-    }
+    await leave()
     onClose()
-  }
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
-    setParticipants(prev => prev.map(p => p.id === 'self' ? { ...p, muted: !isMuted } : p))
-  }
-  const toggleVideo = () => {
-    setIsVideoOn(!isVideoOn)
-    setParticipants(prev => prev.map(p => p.id === 'self' ? { ...p, videoOn: !isVideoOn } : p))
   }
 
   const sendChat = () => {
@@ -155,9 +75,9 @@ export default function HuddlePanel({ onClose, channelName, channelId }: { onClo
   }
 
   const controls: { Icon: typeof Mic; label: string; action: () => void; active: boolean }[] = [
-    { Icon: isMuted ? MicOff : Mic, label: isMuted ? 'Unmute' : 'Mute', action: toggleMute, active: !isMuted },
-    { Icon: isVideoOn ? Video : VideoOff, label: isVideoOn ? 'Stop Video' : 'Start Video', action: toggleVideo, active: isVideoOn },
-    { Icon: MonitorUp, label: isScreenSharing ? 'Stop Share' : 'Share Screen', action: () => setIsScreenSharing(!isScreenSharing), active: isScreenSharing },
+    { Icon: isMuted ? MicOff : Mic, label: isMuted ? 'Unmute' : 'Mute', action: () => void toggleMute(), active: !isMuted },
+    { Icon: isVideoOn ? Video : VideoOff, label: isVideoOn ? 'Stop Video' : 'Start Video', action: () => void toggleVideo(), active: isVideoOn },
+    { Icon: MonitorUp, label: isScreenSharing ? 'Stop Share' : 'Share Screen', action: () => void toggleScreenShare(), active: isScreenSharing },
     { Icon: Circle, label: isRecording ? 'Stop Recording' : 'Record', action: () => setIsRecording(!isRecording), active: isRecording },
     { Icon: Smile, label: 'Reactions', action: () => setReactionPickerOpen(v => !v), active: reactionPickerOpen },
   ]
@@ -171,6 +91,23 @@ export default function HuddlePanel({ onClose, channelName, channelId }: { onClo
     )
   }
 
+  const renderTile = (p: HuddleTile) => (
+    <div key={p.id} className={`huddle-tile${!p.videoOn ? ' huddle-tile--no-video' : ''}`}>
+      {p.videoOn && p.stream && <HuddleVideo stream={p.stream} muted={p.isSelf} />}
+      <div className="huddle-tile-center">
+        <div className={`huddle-avatar${!p.videoOn ? ' huddle-avatar--no-video' : ''}`}>
+          {p.initials}
+        </div>
+        <div className="huddle-tile-name">{p.name}</div>
+      </div>
+      <div className="huddle-tile-badges">
+        {p.muted && <span className="huddle-tile-badge huddle-tile-badge--muted"><MicOff size={12} /></span>}
+        {p.screenSharing && <span className="huddle-tile-badge huddle-tile-badge--screen"><MonitorUp size={12} /></span>}
+      </div>
+      <div className="huddle-tile-label">{p.name}</div>
+    </div>
+  )
+
   return (
     <div className="huddle-panel">
       <div className="huddle-header">
@@ -178,7 +115,7 @@ export default function HuddlePanel({ onClose, channelName, channelId }: { onClo
           <div className="huddle-header-dot" />
           <div>
             <h3>Huddle{channelName ? ` in ${channelName}` : ''}</h3>
-            <span className="huddle-header-meta">{participants.length} participant{participants.length !== 1 ? 's' : ''} · {elapsedStr}</span>
+            <span className="huddle-header-meta">{tiles.length} participant{tiles.length !== 1 ? 's' : ''} · {elapsedStr}</span>
           </div>
         </div>
         <div className="huddle-header-actions">
@@ -196,23 +133,18 @@ export default function HuddlePanel({ onClose, channelName, channelId }: { onClo
         </div>
       </div>
 
+      {mediaError && (
+        <div className="huddle-media-notice" role="status" style={{
+          padding: '8px 16px', fontSize: 13, color: '#f6c177',
+          background: 'rgba(246, 193, 119, 0.08)', borderBottom: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          Camera/microphone unavailable — you joined in listen-only mode.
+        </div>
+      )}
+
       <div className="huddle-body">
-        <div className={`huddle-grid ${participants.length <= 2 ? 'huddle-grid--few' : 'huddle-grid--many'}`}>
-          {participants.map(p => (
-            <div key={p.id} className={`huddle-tile${!p.videoOn ? ' huddle-tile--no-video' : ''}${p.speaking ? ' huddle-tile--speaking' : ''}`}>
-              <div className="huddle-tile-center">
-                <div className={`huddle-avatar${!p.videoOn ? ' huddle-avatar--no-video' : ''}`}>
-                  {p.initials}
-                </div>
-                <div className="huddle-tile-name">{p.name}</div>
-              </div>
-              <div className="huddle-tile-badges">
-                {p.muted && <span className="huddle-tile-badge huddle-tile-badge--muted"><MicOff size={12} /></span>}
-                {p.screenSharing && <span className="huddle-tile-badge huddle-tile-badge--screen"><MonitorUp size={12} /></span>}
-              </div>
-              <div className="huddle-tile-label">{p.name}</div>
-            </div>
-          ))}
+        <div className={`huddle-grid ${tiles.length <= 2 ? 'huddle-grid--few' : 'huddle-grid--many'}`}>
+          {tiles.map(renderTile)}
         </div>
 
         {showChat && (
