@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { getPool } from './db'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { ensureMigrations, type Migration, type RunnerPool } from './migrationRunner'
+import { encryptSecret, ssoSecretKeyConfigured } from '@/lib/auth/ssoSecretCrypto'
 
 let migrateOnce: Promise<void> | null = null
 
@@ -3335,6 +3336,151 @@ async function migration030EventSubscriptionsActiveIndex(pool: RunnerPool) {
   `)
 }
 
+export async function migration031EntraToSsoProviders(pool: RunnerPool) {
+  // Retire the legacy /api/auth/entra OAuth path by migrating any enabled
+  // aaelink.sso_configs(provider='entra') row into a hardened OIDC provider in
+  // aaelink.sso_providers (ADR 0014). The legacy route hand-rolled the code
+  // exchange and minted sessions outside the RP stack (no MFA step-up, no JIT
+  // provisioning, weak-RNG usernames); seeding a real OIDC provider lets the
+  // existing Entra tenant keep working through /api/auth/sso/oidc/start.
+  //
+  // Idempotency + safety:
+  //   - sso_configs may be ABSENT on fresh DBs → guard with to_regclass.
+  //   - Only seed when an ENABLED entra row exists AND no active OIDC/oauth2
+  //     provider already exists (don't clobber an admin-configured provider).
+  //   - The RP code exchange needs a recoverable secret, so client_secret_enc
+  //     must be AES-256-GCM encrypted exactly as the /api/auth/sso POST does. If
+  //     no secret-encryption key is configured we CANNOT produce a usable
+  //     provider, so we skip seeding with a NOTICE rather than write a broken row.
+
+  // sso_providers base DDL lives in migration001 and is SKIPPED on
+  // already-initialized DBs — re-declare with IF NOT EXISTS so a fresh runner DB
+  // still has the table this migration depends on.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.sso_providers (
+      id                     TEXT PRIMARY KEY,
+      name                   TEXT NOT NULL,
+      type                   TEXT NOT NULL DEFAULT 'oidc',
+      issuer                 TEXT NOT NULL DEFAULT '',
+      metadata_url           TEXT NOT NULL DEFAULT '',
+      discovery_url          TEXT NOT NULL DEFAULT '',
+      client_id              TEXT NOT NULL DEFAULT '',
+      client_secret_hash     TEXT NOT NULL DEFAULT '',
+      client_secret_enc      TEXT NOT NULL DEFAULT '',
+      callback_url           TEXT NOT NULL DEFAULT '',
+      scopes                 TEXT NOT NULL DEFAULT 'openid profile email',
+      jit_provisioning       BOOLEAN NOT NULL DEFAULT true,
+      default_role           TEXT NOT NULL DEFAULT 'member',
+      default_workspace_id   TEXT,
+      attribute_mapping      JSONB NOT NULL DEFAULT '{}',
+      group_role_mapping     JSONB NOT NULL DEFAULT '{}',
+      saml_entry_point       TEXT NOT NULL DEFAULT '',
+      saml_idp_cert          TEXT NOT NULL DEFAULT '',
+      saml_idp_certs         JSONB NOT NULL DEFAULT '[]',
+      saml_audience          TEXT NOT NULL DEFAULT '',
+      session_lifetime_hours INTEGER NOT NULL DEFAULT 24,
+      enforce_mfa            BOOLEAN NOT NULL DEFAULT false,
+      is_active              BOOLEAN NOT NULL DEFAULT true,
+      login_count            BIGINT NOT NULL DEFAULT 0,
+      last_login_at          BIGINT NOT NULL DEFAULT 0,
+      created_by             TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at             BIGINT NOT NULL,
+      updated_at             BIGINT NOT NULL DEFAULT 0
+    );
+  `)
+  // Make sure the recoverable-secret column exists even on DBs that created
+  // sso_providers before migration022 added it.
+  await pool.query(`
+    ALTER TABLE aaelink.sso_providers
+      ADD COLUMN IF NOT EXISTS client_secret_enc TEXT NOT NULL DEFAULT '';
+  `)
+
+  // No legacy table ⇒ nothing to migrate (fresh DB). Clean no-op.
+  const reg = await pool.query(`SELECT to_regclass('aaelink.sso_configs') AS exists`)
+  if (!(reg.rows[0] as { exists?: unknown })?.exists) return
+
+  // An active OIDC/oauth2 provider already covers inbound login — don't seed a
+  // duplicate / conflicting one.
+  const existing = await pool.query(
+    `SELECT 1 FROM aaelink.sso_providers WHERE is_active = true AND type IN ('oidc', 'oauth2') LIMIT 1`
+  )
+  if (existing.rows.length > 0) return
+
+  // Pull the enabled legacy Entra config.
+  const cfgRes = await pool.query(
+    `SELECT tenant_id, client_id, client_secret
+       FROM aaelink.sso_configs
+      WHERE provider = 'entra' AND is_enabled = true
+      LIMIT 1`
+  )
+  const cfg = cfgRes.rows[0] as
+    | { tenant_id?: string; client_id?: string; client_secret?: string }
+    | undefined
+  if (!cfg) return
+
+  const tenantId = String(cfg.tenant_id || '').trim()
+  const clientId = String(cfg.client_id || '').trim()
+  const clientSecret = String(cfg.client_secret || '')
+  if (!tenantId || !clientId || !clientSecret) {
+    console.warn('[migrate] 031_entra_to_sso_providers: legacy entra config incomplete; skipping seed')
+    return
+  }
+
+  // The RP code exchange requires a recoverable secret. Without an encryption
+  // key we would store an empty client_secret_enc and produce a provider that
+  // can never complete a login — skip rather than seed a broken row.
+  if (!ssoSecretKeyConfigured()) {
+    console.warn('[migrate] 031_entra_to_sso_providers: AAELINK_SSO_SECRET_KEY/SESSION_SECRET unset; skipping Entra→OIDC seed (configure the SSO provider via /api/auth/sso once a key is set)')
+    return
+  }
+
+  // Mirror the /api/auth/sso POST persistence EXACTLY: a non-recoverable display
+  // hash plus the AES-256-GCM ciphertext the RP flow decrypts in-process.
+  let secretEnc: string
+  try {
+    secretEnc = encryptSecret(clientSecret)
+  } catch {
+    console.warn('[migrate] 031_entra_to_sso_providers: secret encryption failed; skipping Entra→OIDC seed')
+    return
+  }
+  const secretHash = `sha256:${clientSecret.slice(0, 8)}***`
+
+  const id = randomUUID()
+  const now = Date.now()
+  const discoveryUrl = `https://login.microsoftonline.com/${tenantId}/v2.0/.well-known/openid-configuration`
+
+  await pool.query(
+    `INSERT INTO aaelink.sso_providers
+       (id, name, type, issuer, metadata_url, discovery_url,
+        client_id, client_secret_hash, client_secret_enc, callback_url, scopes,
+        jit_provisioning, default_role, default_workspace_id,
+        attribute_mapping, group_role_mapping,
+        saml_entry_point, saml_idp_cert, saml_idp_certs, saml_audience,
+        session_lifetime_hours, enforce_mfa, is_active,
+        login_count, last_login_at, created_by, created_at, updated_at)
+     VALUES ($1, $2, 'oidc', '', '', $3,
+             $4, $5, $6, $7, 'openid profile email',
+             true, 'member', NULL,
+             $8, '{}',
+             '', '', '[]', '',
+             24, false, true,
+             0, 0, NULL, $9, $9)`,
+    [
+      id,
+      'Microsoft Entra ID',
+      discoveryUrl,
+      clientId,
+      secretHash,
+      secretEnc,
+      `/api/auth/sso/oidc/callback?provider=${id}`,
+      JSON.stringify({ email: 'email', name: 'name', groups: 'groups' }),
+      now,
+    ]
+  )
+  // Success is recorded by the migration runner (schema_migrations); no
+  // info-level log here (the project's no-console rule only permits warn/error).
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3366,4 +3512,5 @@ const MIGRATIONS: Migration[] = [
   { id: '028_unify_read_state', up: migration028UnifyReadState },
   { id: '029_oauth_codes', up: migration029OauthCodes },
   { id: '030_event_subscriptions_active_index', up: migration030EventSubscriptionsActiveIndex },
+  { id: '031_entra_to_sso_providers', up: migration031EntraToSsoProviders },
 ]

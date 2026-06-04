@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
-import { loadActiveProvider } from '@/lib/auth/ssoProvider'
+import { loadActiveProvider, resolveDefaultOidcProviderId } from '@/lib/auth/ssoProvider'
 import { startOidcAuthz } from '@/lib/auth/ssoOidcClient'
 import { createAuthRequest, purgeStaleAuthRequests } from '@/lib/auth/ssoAuthRequest'
 import { ssoSecretKeyConfigured } from '@/lib/auth/ssoSecretCrypto'
@@ -16,7 +16,11 @@ import { oidcCallbackUrl, ssoFailure } from '@/lib/auth/ssoRouteHelpers'
  * (single-use), and 302s the browser to the IdP. No session required — this is
  * the pre-auth entry point.
  *
- * Request:  query { provider: string }
+ * Request:  query { provider?: string }
+ *           When `provider` is omitted (e.g. the login page's generic "Sign in
+ *           with Microsoft" button, or a legacy /api/auth/entra redirect), the
+ *           single active OIDC provider is resolved automatically; if zero or
+ *           more than one exist the request fails generically (no oracle).
  * Response: 302 → IdP authorize URL, or 302 → /login?error=sso_failed
  */
 async function _GET(req: Request) {
@@ -25,7 +29,10 @@ async function _GET(req: Request) {
   if (!ssoSecretKeyConfigured()) return ssoFailure(req)
   await ensureSchema()
 
-  const providerId = new URL(req.url).searchParams.get('provider')?.trim() || ''
+  let providerId = new URL(req.url).searchParams.get('provider')?.trim() || ''
+  if (!providerId) {
+    providerId = await resolveDefaultOidcProviderId(pool)
+  }
   const cfg = await loadActiveProvider(pool, providerId, 'oidc')
   if (!cfg) return ssoFailure(req)
 

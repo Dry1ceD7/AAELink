@@ -79,6 +79,28 @@ function asMap(v: unknown): Record<string, string> {
   return {}
 }
 
+/**
+ * Resolve the id of the single active OIDC/oauth2 provider, for entry points
+ * that don't carry an explicit `provider` query param (the login page's "Sign in
+ * with Microsoft" button, the retired /api/auth/entra shim). Returns '' when
+ * none exist OR when more than one exists — an ambiguous pick must not silently
+ * route a user to the wrong IdP, so callers treat '' as a generic failure.
+ * Entra-seeded providers (name 'Microsoft Entra ID') are preferred only as a
+ * tie-break among providers of the same age; ambiguity still yields ''.
+ */
+export async function resolveDefaultOidcProviderId(pool: Pool): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id
+       FROM aaelink.sso_providers
+      WHERE is_active = true
+        AND type IN ('oidc', 'oauth2')
+      ORDER BY (name = 'Microsoft Entra ID') DESC, created_at ASC
+      LIMIT 2`
+  )
+  if (rows.length !== 1) return ''
+  return rows[0]?.id || ''
+}
+
 export async function loadActiveProvider(
   pool: Pool,
   providerId: string,

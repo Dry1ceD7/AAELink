@@ -13,6 +13,7 @@ interface SsoConfig {
 
 export function SsoSettingsPanel() {
   const [config, setConfig] = useState<SsoConfig | null>(null)
+  const [providerId, setProviderId] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -25,6 +26,7 @@ export function SsoSettingsPanel() {
       if (res.ok) {
         const data = await res.json()
         setConfig(data.config || { tenant_id: '', client_id: '', client_secret: '', is_enabled: false })
+        setProviderId(typeof data.provider_id === 'string' ? data.provider_id : '')
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'sso_load_failed')
@@ -109,11 +111,19 @@ export function SsoSettingsPanel() {
           <div style={{ background: 'var(--mm-sidebar-hover)', padding: 12, borderRadius: 8, marginTop: 12 }}>
             <h5 style={{ margin: '0 0 8px 0' }}>Redirect URI Configuration</h5>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--mm-muted)' }}>
-              Add the following URL to your App Registration's Authentication platform settings (Web):
+              Add the following URL to your App Registration&apos;s Authentication platform settings (Web):
             </p>
-            <code style={{ display: 'block', marginTop: 8, padding: 8, background: 'var(--mm-main-bg)', borderRadius: 8, fontSize: 12, wordBreak: 'break-all' }}>
-              {typeof window !== 'undefined' ? `${window.location.origin}/api/auth/entra` : '/api/auth/entra'}
-            </code>
+            {providerId ? (
+              <code style={{ display: 'block', marginTop: 8, padding: 8, background: 'var(--mm-main-bg)', borderRadius: 8, fontSize: 12, wordBreak: 'break-all' }}>
+                {typeof window !== 'undefined'
+                  ? `${window.location.origin}/api/auth/sso/oidc/callback?provider=${providerId}`
+                  : `/api/auth/sso/oidc/callback?provider=${providerId}`}
+              </code>
+            ) : (
+              <p style={{ margin: '8px 0 0 0', fontSize: 12, color: 'var(--mm-muted)' }}>
+                Save your settings first to generate the exact redirect URI to register in Azure.
+              </p>
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
