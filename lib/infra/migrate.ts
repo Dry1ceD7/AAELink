@@ -3295,6 +3295,46 @@ async function migration029OauthCodes(pool: RunnerPool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_codes_code ON aaelink.oauth_codes(code)`)
 }
 
+/**
+ * 030 — Events-API fan-out read-path index.
+ *
+ * webhookEmitter.fanOutEventSubscriptions runs
+ *   SELECT ... FROM aaelink.event_subscriptions WHERE status = 'active'
+ * on EVERY message.created / message.deleted / reaction.added / reaction.removed
+ * emit — the hottest write path in the app. The base DDL for event_subscriptions
+ * defines no index on `status`, so that query was a sequential full-table scan
+ * per message. Add a partial index covering exactly the active rows the fan-out
+ * reads.
+ *
+ * The base table DDL lives in migration001 and is SKIPPED on already-initialized
+ * DBs, so re-declare the table with IF NOT EXISTS (no-op where it exists, creates
+ * it on a fresh runner DB) before adding the index this migration depends on.
+ * Forward-only; idempotent.
+ */
+async function migration030EventSubscriptionsActiveIndex(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.event_subscriptions (
+      id               TEXT PRIMARY KEY,
+      bot_id           TEXT,
+      endpoint_url     TEXT NOT NULL,
+      events           JSONB NOT NULL DEFAULT '[]',
+      signing_secret   TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'active',
+      workspace_id     TEXT,
+      description      TEXT NOT NULL DEFAULT '',
+      delivery_count   INTEGER NOT NULL DEFAULT 0,
+      failure_count    INTEGER NOT NULL DEFAULT 0,
+      last_delivery_at BIGINT DEFAULT 0,
+      created_by       TEXT,
+      created_at       BIGINT NOT NULL
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_event_subscriptions_active
+      ON aaelink.event_subscriptions(status) WHERE status = 'active'
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3325,4 +3365,5 @@ const MIGRATIONS: Migration[] = [
   { id: '027_webauthn_passkeys', up: migration027WebauthnPasskeys },
   { id: '028_unify_read_state', up: migration028UnifyReadState },
   { id: '029_oauth_codes', up: migration029OauthCodes },
+  { id: '030_event_subscriptions_active_index', up: migration030EventSubscriptionsActiveIndex },
 ]

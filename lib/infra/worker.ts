@@ -221,6 +221,75 @@ const handlers: Record<string, JobHandler> = {
     }
   },
 
+  // Events API deliver (from webhookEmitter → event_subscriptions fan-out).
+  // Mirrors webhook_deliver, plus: on success bump delivery_count/last_delivery_at;
+  // on failure bump failure_count, auto-disable runaway endpoints, then rethrow
+  // so the worker's retry/backoff machinery handles redelivery.
+  event_deliver: async (payload, pool) => {
+    const { subscription_id, endpoint_url, event_type, payload: body, signature, delivery_id } = payload as {
+      subscription_id: string; endpoint_url: string; event_type: string
+      payload: string; signature: string; delivery_id: string
+    }
+    log.info(`📡 [event_deliver] ${event_type} → ${endpoint_url} [${delivery_id?.slice(0, 8)}]`)
+
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+      const res = await fetch(endpoint_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'AAELink-Events/1.0',
+          'X-AAELink-Delivery-ID': delivery_id || '',
+          'X-AAELink-Event': event_type || '',
+          'X-AAELink-Signature-256': signature || '',
+        },
+        body,
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+
+      if (!res.ok) {
+        throw new Error(`endpoint returned ${res.status}`)
+      }
+
+      // Success: count delivery, stamp last_delivery_at, and clear a 'failing'
+      // status (the endpoint recovered). Failure_count is left as-is — it is a
+      // lifetime counter; recovery is signalled by the status flip back to active.
+      await pool.query(
+        `UPDATE aaelink.event_subscriptions
+            SET delivery_count = delivery_count + 1,
+                last_delivery_at = $2,
+                status = CASE WHEN status = 'failing' THEN 'active' ELSE status END
+          WHERE id = $1`,
+        [subscription_id, Date.now()]
+      )
+      log.info(`   ✅ Status: ${res.status}`)
+    } catch (err: unknown) {
+      // Failure: bump failure_count. Auto-disable a runaway endpoint (status →
+      // 'failing', never hard-delete) once it crosses the threshold with no
+      // recent success. We do NOT 'failing'-gate on every failure so transient
+      // blips recover on their own via worker retry.
+      const FAILURE_THRESHOLD = 50
+      const RECENT_SUCCESS_WINDOW_MS = 24 * 60 * 60 * 1000
+      await pool.query(
+        `UPDATE aaelink.event_subscriptions
+            SET failure_count = failure_count + 1,
+                status = CASE
+                  WHEN status = 'active'
+                   AND failure_count + 1 >= $2
+                   AND (last_delivery_at IS NULL OR last_delivery_at < $3)
+                  THEN 'failing'
+                  ELSE status
+                END
+          WHERE id = $1`,
+        [subscription_id, FAILURE_THRESHOLD, Date.now() - RECENT_SUCCESS_WINDOW_MS]
+      )
+      log.info(`   ❌ Delivery failed: ${err instanceof Error ? err.message : 'Unknown'}`)
+      throw err // let worker retry (and eventually dead-letter)
+    }
+  },
+
   // Audit log stream forward
   audit_stream: async (payload) => {
     const { destination_url, events } = payload as { destination_url: string; events: unknown[] }
