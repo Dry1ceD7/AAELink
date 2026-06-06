@@ -287,8 +287,8 @@ async function _POST(req: Request) {
   const passwordHash = hashPassword(tempPassword)
 
   await pool.query(
-    `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active, scim_last_sync, created_at, platform_role)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'member')`,
+    `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active, scim_last_sync, created_at, platform_role, password_changed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'member', $15)`,
     [id, body.userName, email, passwordHash, firstName, lastName, nickname, jobTitle, phone, timezone, avatarUrl, externalId, active, now, now]
   )
 

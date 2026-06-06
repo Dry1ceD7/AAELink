@@ -457,10 +457,48 @@ const handlers: Record<string, JobHandler> = {
     if (!once) {
       const intervalMs = Number(process.env.SAVED_SEARCH_ALERTS_INTERVAL_MS) || 60_000
       const { randomUUID } = await import('crypto')
+      // Idempotent re-arm: only insert when no pending 'saved_search_alerts' row
+      // already exists. The reschedule INSERT and the status='completed' UPDATE are
+      // not in one txn, so a crash-retry between them would otherwise double-arm the
+      // heartbeat (duplicate notifications). One-pending-per-type makes it safe.
       await pool.query(
         `INSERT INTO aaelink.jobs
            (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
-         VALUES ($1, 'saved_search_alerts', 'pending', 3, '{}', $2, 3, 0, $3)`,
+         SELECT $1, 'saved_search_alerts', 'pending', 3, '{}', $2, 3, 0, $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM aaelink.jobs WHERE type = 'saved_search_alerts' AND status = 'pending'
+          )`,
+        [randomUUID(), Date.now() + intervalMs, Date.now()]
+      )
+    }
+  },
+
+  // Missed-activity email digests (Notifications parity). Recurring heartbeat,
+  // same self-rescheduling pattern as saved_search_alerts: collect each due
+  // user's unread since-watermark notifications, send a summary via the SMTP
+  // sender (no-op when unconfigured), advance the watermark, then re-arm. Seed
+  // one 'email_digest' job to start the cadence; it keeps itself alive.
+  email_digest: async (payload, pool) => {
+    log.info(`📧 [email_digest] composing missed-activity digests`)
+    const { runEmailDigests } = await import('@/lib/notifications/emailDigest')
+    const res = await runEmailDigests(pool)
+    log.info(`   ✅ considered:${res.considered} sent:${res.sent} empty:${res.skipped_empty} watermarks:${res.watermarks_advanced}`)
+
+    // Self-reschedule unless explicitly told not to (tests pass once:true).
+    const once = (payload as { once?: boolean }).once === true
+    if (!once) {
+      const intervalMs = Number(process.env.EMAIL_DIGEST_INTERVAL_MS) || 15 * 60_000
+      const { randomUUID } = await import('crypto')
+      // Idempotent re-arm (see saved_search_alerts above): one pending 'email_digest'
+      // row at a time, so a crash between this INSERT and the completion UPDATE can't
+      // double-arm and double-send digests.
+      await pool.query(
+        `INSERT INTO aaelink.jobs
+           (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+         SELECT $1, 'email_digest', 'pending', 3, '{}', $2, 3, 0, $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM aaelink.jobs WHERE type = 'email_digest' AND status = 'pending'
+          )`,
         [randomUUID(), Date.now() + intervalMs, Date.now()]
       )
     }

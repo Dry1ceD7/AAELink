@@ -68,8 +68,15 @@ export async function emitWebhookEvent(
   data: Record<string, unknown>,
   actorId: string,
   channelId?: string,
-  workspaceId?: string
+  workspaceId?: string,
+  opts?: { createdBy?: string | null }
 ): Promise<{ queued: number; webhooks_v2: number; event_subscriptions: number }> {
+  // The job's created_by FK references aaelink.users(id). Most callers pass a real
+  // user as actorId, but app-originated emits (e.g. interactivity ingress) have a
+  // bot/app actor that is NOT a users row — they pass opts.createdBy:null so the
+  // nullable FK column is left empty while actorId still rides the event envelope.
+  const jobCreatedBy = opts && 'createdBy' in opts ? (opts.createdBy ?? null) : actorId
+
   // Find all active webhooks subscribed to this event type
   const { rows: webhooks } = await pool.query<{
     id: string; url: string; secret: string; events: string; channel_id: string
@@ -114,7 +121,7 @@ export async function emitWebhookEvent(
       event_type: eventType,
       payload,
       signature,
-    }), now, actorId])
+    }), now, jobCreatedBy])
 
     // Also log delivery record
     await pool.query(`
@@ -146,7 +153,7 @@ export async function emitWebhookEvent(
     } catch { /* best-effort: fall back to global-only subscriptions */ }
   }
   const eventSubsQueued = await fanOutEventSubscriptions(
-    pool, eventType, data, actorId, now, { channelId, workspaceId: resolvedWs }
+    pool, eventType, data, actorId, now, { channelId, workspaceId: resolvedWs, createdBy: jobCreatedBy }
   )
 
   return {
@@ -189,9 +196,12 @@ async function fanOutEventSubscriptions(
   data: Record<string, unknown>,
   actorId: string,
   now: number,
-  scope: { channelId?: string; workspaceId?: string } = {}
+  scope: { channelId?: string; workspaceId?: string; createdBy?: string | null } = {}
 ): Promise<number> {
   const { channelId, workspaceId } = scope
+  // created_by for the queued jobs (nullable users FK). Defaults to actorId for
+  // backwards-compat; app-originated emits pass null (bot actor is not a user).
+  const jobCreatedBy = 'createdBy' in scope ? (scope.createdBy ?? null) : actorId
   // Scope by workspace: global subs (NULL/empty workspace_id) always match;
   // workspace-bound subs match only when their workspace equals the event's.
   // `events` is stored as JSONB; pg returns it already-parsed as a JS array.
@@ -252,7 +262,7 @@ async function fanOutEventSubscriptions(
     valueTuples.push(
       `($${base + 1}, 'event_deliver', 'pending', 3, $${base + 2}, $${base + 3}, 6, 0, $${base + 4}, $${base + 3})`
     )
-    params.push(randomUUID(), jobPayload, now, actorId)
+    params.push(randomUUID(), jobPayload, now, jobCreatedBy)
     queued++
   }
 

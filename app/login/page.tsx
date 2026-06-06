@@ -218,8 +218,11 @@ export default function LoginPage() {
       setError('Sign-in failed.')
       return
     }
+    // Expired password (admin rotation policy): session is established, but send
+    // the user straight into Preferences (?prefs=1 opens the modal) to change it.
+    const okBody = (await res.json().catch(() => ({}))) as { password_expired?: boolean }
     // Full navigation so the browser reliably applies Set-Cookie before loading /workspaces (avoids soft-nav races).
-    window.location.assign('/workspaces')
+    window.location.assign(okBody.password_expired ? '/home?prefs=1' : '/workspaces')
   }
 
   const serverLine = conn ? `${conn.secure ? 'https' : 'http'}://${conn.host}` : ''

@@ -414,6 +414,31 @@ function ProfileTab({ user, loading, onUserUpdated, flash }: {
 /* ═══════════════════════════════════════════════════════════════════════
    Tab: Account & Security (password + sessions)
    ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Map the change-password route's `password_policy_violation` detail codes
+ * (lib/auth/passwordPolicy PasswordViolation + 'password_reused') to a single
+ * human-readable message. Falls back to a generic policy message for unknown
+ * codes or an empty detail array.
+ */
+const PW_VIOLATION_MESSAGES: Record<string, string> = {
+  too_short: 'be longer (minimum length not met)',
+  require_upper: 'include an uppercase letter',
+  require_lower: 'include a lowercase letter',
+  require_digit: 'include a number',
+  require_symbol: 'include a symbol',
+  contains_username: 'not contain your username',
+  contains_email: 'not contain your email address',
+  password_reused: 'not match a recently used password',
+}
+function describePasswordViolation(detail?: string[]): string {
+  const parts = (detail ?? [])
+    .map(code => PW_VIOLATION_MESSAGES[code])
+    .filter((m): m is string => Boolean(m))
+  if (parts.length === 0) return 'New password does not meet the password policy.'
+  return `New password must ${parts.join('; ')}.`
+}
+
 function AccountTab() {
   const [curPassword, setCurPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -445,10 +470,10 @@ function AccountTab() {
         setShowCurPw(false); setShowNewPw(false)
         setTimeout(() => setPwSuccess(''), 3000)
       } else {
-        let j: { error?: string } = {}
-        try { j = (await res.json()) as { error?: string } } catch { /* ignore */ }
+        let j: { error?: string; detail?: string[] } = {}
+        try { j = (await res.json()) as { error?: string; detail?: string[] } } catch { /* ignore */ }
         if (j.error === 'invalid_credentials') setPwError('Current password is incorrect.')
-        else if (j.error === 'password_too_short') setPwError('New password must be at least 8 characters.')
+        else if (j.error === 'password_policy_violation') setPwError(describePasswordViolation(j.detail))
         else if (j.error === 'password_same') setPwError('New password must be different from current password.')
         else setPwError('Could not change password. Try again or contact IT.')
       }
@@ -532,10 +557,19 @@ function AccountTab() {
 function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: Partial<UserPreferences>) => void }) {
   const [keywords, setKeywords] = useState(prefs.notifyKeywords.join(', '))
   // Server-side notification flags
-  const [serverFlags, setServerFlags] = useState({
+  const [serverFlags, setServerFlags] = useState<{
+    mentions_enabled: boolean
+    ticket_activity_enabled: boolean
+    system_notifications_enabled: boolean
+    digest_frequency: 'off' | 'daily' | 'weekly'
+  }>({
     mentions_enabled: true, ticket_activity_enabled: true, system_notifications_enabled: true,
+    digest_frequency: 'off',
   })
   const [serverLoading, setServerLoading] = useState(true)
+
+  const normalizeDigest = (v: unknown): 'off' | 'daily' | 'weekly' =>
+    v === 'daily' || v === 'weekly' ? v : 'off'
 
   useEffect(() => {
     void apiFetch('/api/auth/notification-prefs').then(r => r.ok ? r.json() : null).then(d => {
@@ -544,6 +578,7 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
           mentions_enabled: Boolean(d.mentions_enabled ?? true),
           ticket_activity_enabled: Boolean(d.ticket_activity_enabled ?? true),
           system_notifications_enabled: Boolean(d.system_notifications_enabled ?? true),
+          digest_frequency: normalizeDigest(d.digest_frequency),
         })
       }
     }).finally(() => setServerLoading(false))
@@ -561,6 +596,7 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
           mentions_enabled: Boolean(d.mentions_enabled ?? true),
           ticket_activity_enabled: Boolean(d.ticket_activity_enabled ?? true),
           system_notifications_enabled: Boolean(d.system_notifications_enabled ?? true),
+          digest_frequency: normalizeDigest(d.digest_frequency),
         })
       }
     })
@@ -587,6 +623,20 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
           checked={serverFlags.system_notifications_enabled}
           disabled={serverLoading}
           onChange={v => saveServerFlag({ system_notifications_enabled: v })} />
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <label htmlFor="pref-digest" className="pref-row-title">Email digest</label>
+            <p className="pref-row-desc">Get a summary email of unread mentions and DMs you missed.</p>
+          </div>
+          <select id="pref-digest" className="pref-select"
+            value={serverFlags.digest_frequency}
+            disabled={serverLoading}
+            onChange={e => saveServerFlag({ digest_frequency: normalizeDigest(e.target.value) })}>
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
         <ToggleRow id="pref-mute-all" title="Mute all sounds"
           desc="Silence all notification sounds globally."
           checked={prefs.muteAllSounds} onChange={v => save({ muteAllSounds: v })} />

@@ -10,6 +10,7 @@ import {
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { hashPassword } from '@/lib/auth/password'
+import { getPasswordPolicy, validatePassword } from '@/lib/auth/passwordPolicy'
 
 async function requireAdmin(): Promise<{ uid: string } | NextResponse> {
   const uid = await readSessionUserId()
@@ -76,8 +77,16 @@ async function _POST(req: Request) {
     return NextResponse.json(result)
   }
 
-  // Execute
-  const defaultPwHash = hashPassword(body.default_password || 'AAELink@2026')
+  // Execute. Enforce the password policy on the shared default password up front
+  // (the common admin lever); a weak org-wide default is rejected before any row
+  // is written so the whole batch fails fast rather than half-provisioning.
+  const policy = await getPasswordPolicy(pool)
+  const defaultPw = body.default_password || 'AAELink@2026'
+  const defaultDetail = validatePassword(policy, defaultPw, {})
+  if (defaultDetail.length > 0) {
+    return NextResponse.json({ error: 'password_policy_violation', detail: defaultDetail }, { status: 400 })
+  }
+  const defaultPwHash = hashPassword(defaultPw)
   const now = Date.now()
 
   const result = await engine.execute(
@@ -92,10 +101,20 @@ async function _POST(req: Request) {
     },
     // Create
     async (rec) => {
+      // Per-record passwords must satisfy the SAME policy as the org-wide default;
+      // otherwise an admin batch could set credentials that violate the configured
+      // policy. A violation throws → the engine records this row as an error and
+      // continues with the rest of the batch.
+      if (rec.password) {
+        const recDetail = validatePassword(policy, rec.password, { username: rec.username, email: rec.email })
+        if (recDetail.length > 0) {
+          throw new Error(`password_policy_violation: ${recDetail.join(',')}`)
+        }
+      }
       const pwHash = rec.password ? hashPassword(rec.password) : defaultPwHash
       await pool.query(
-        `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, platform_role, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, platform_role, created_at, password_changed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)`,
         [
           rec.id, rec.username, rec.email, pwHash,
           rec.first_name || '', rec.last_name || '', rec.nickname || '',

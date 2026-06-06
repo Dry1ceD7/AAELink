@@ -3864,6 +3864,124 @@ function deterministicUuid(seed: string): string {
  */
 export const __testConsolidateConversationCanvases = consolidateConversationCanvases
 
+/**
+ * Migration 037 — admin-configurable password policy (Identity parity §27).
+ *
+ * The audit found AAELink enforced only an 8-char minimum with no policy object,
+ * no reuse history, and no rotation. This adds the persistence the policy engine
+ * (lib/auth/passwordPolicy) needs:
+ *   - aaelink.password_history — last-N hashes per user, so a configured
+ *     history_count can reject reuse on change-password.
+ *   - aaelink.users.password_changed_at — epoch-ms watermark backfilled to NOW so
+ *     a freshly-enabled max_age_days does not instantly expire every account
+ *     (expiry is measured from this stamp; legacy rows with 0 are never expired).
+ *
+ * The policy VALUE itself lives in aaelink.system_config('password_policy'),
+ * created lazily by the policy module's upsert (same pattern as mfa_policy), so no
+ * column is added for it here.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration037PasswordPolicy(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.password_history (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      hash       TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_history_user
+      ON aaelink.password_history(user_id, created_at DESC);
+  `)
+  await pool.query(
+    `ALTER TABLE aaelink.users ADD COLUMN IF NOT EXISTS password_changed_at BIGINT NOT NULL DEFAULT 0`
+  )
+  // Backfill so newly-enabled rotation measures age from "now", not epoch 0
+  // (which would instantly expire everyone). Only stamp rows still at 0.
+  await pool.query(
+    `UPDATE aaelink.users SET password_changed_at = $1 WHERE password_changed_at = 0`,
+    [Date.now()]
+  )
+}
+
+/**
+ * Migration 038 — missed-activity email digests (Notifications parity §27).
+ *
+ * Adds the per-user digest preference + watermark where notification prefs already
+ * live (aaelink.user_notification_prefs):
+ *   - digest_frequency  'off' | 'daily' | 'weekly' (default 'off' — opt-in, no
+ *                       behavior change for existing users).
+ *   - last_digest_at    epoch-ms watermark; the worker collects unread
+ *                       mention/DM/keyword notifications created AFTER this stamp,
+ *                       composes a summary, sends, and advances it.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration038EmailDigests(pool: RunnerPool) {
+  await pool.query(`
+    ALTER TABLE aaelink.user_notification_prefs
+      ADD COLUMN IF NOT EXISTS digest_frequency TEXT NOT NULL DEFAULT 'off';
+    ALTER TABLE aaelink.user_notification_prefs
+      ADD COLUMN IF NOT EXISTS last_digest_at BIGINT NOT NULL DEFAULT 0;
+  `)
+  // Partial index so the worker's "users with digest on" scan stays cheap.
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_user_notification_prefs_digest
+       ON aaelink.user_notification_prefs(digest_frequency)
+       WHERE digest_frequency <> 'off'`
+  )
+}
+
+/**
+ * Migration 039 — digest cadence/watermark split + heartbeat seeds.
+ *
+ * Two corrections to the email-digest feature (038):
+ *
+ *  1. Cadence vs. watermark split. 038 overloaded `last_digest_at` as BOTH the
+ *     dedup watermark (advanced to the newest summarized notification's created_at,
+ *     a past message timestamp) AND the cadence timer (isDigestDue). That made the
+ *     interval drift off the message time instead of the send time. We add a
+ *     dedicated `last_digest_sent_at` (epoch-ms, always set to "now" on a run) used
+ *     ONLY by the cadence check; `last_digest_at` stays the content watermark.
+ *     Backfilled from the existing watermark so already-opted-in users don't all
+ *     immediately re-fire.
+ *
+ *  2. Heartbeat seeds. The 'email_digest' and 'saved_search_alerts' worker jobs are
+ *     self-rescheduling heartbeats, but nothing ever created the FIRST one, so in a
+ *     real deployment the cadence never started. Seed one pending row of each here,
+ *     idempotently (only if no pending/running row of that type already exists), so
+ *     the heartbeat begins on the next migrate/boot.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration039DigestCadenceAndSeeds(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.user_notification_prefs
+       ADD COLUMN IF NOT EXISTS last_digest_sent_at BIGINT NOT NULL DEFAULT 0`
+  )
+  // Seed the cadence timer from the legacy combined column so existing opted-in
+  // users measure their next interval from a sane starting point rather than 0
+  // (which would make them immediately due and dump their whole history).
+  await pool.query(
+    `UPDATE aaelink.user_notification_prefs
+        SET last_digest_sent_at = last_digest_at
+      WHERE last_digest_sent_at = 0 AND last_digest_at > 0`
+  )
+  // Idempotent heartbeat seeds: only insert when no pending/running row exists.
+  for (const type of ['email_digest', 'saved_search_alerts']) {
+    await pool.query(
+      `INSERT INTO aaelink.jobs
+         (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+       SELECT $1, $2, 'pending', 3, '{}', $3, 3, 0, $3
+        WHERE NOT EXISTS (
+          SELECT 1 FROM aaelink.jobs
+           WHERE type = $2 AND status IN ('pending', 'running')
+        )`,
+      [randomUUID(), type, Date.now()]
+    )
+  }
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -3901,4 +4019,7 @@ const MIGRATIONS: Migration[] = [
   { id: '034_file_storage_backend', up: migration034FileStorageBackend },
   { id: '035_saved_search_alerts', up: migration035SavedSearchAlerts },
   { id: '036_knowledge_access', up: migration036KnowledgeAccess },
+  { id: '037_password_policy', up: migration037PasswordPolicy },
+  { id: '038_email_digests', up: migration038EmailDigests },
+  { id: '039_digest_cadence_and_seeds', up: migration039DigestCadenceAndSeeds },
 ]

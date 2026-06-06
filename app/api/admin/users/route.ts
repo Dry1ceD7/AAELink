@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { getAdminSession } from '@/lib/auth/adminAuth'
 import { hashPassword } from '@/lib/auth/password'
+import { getPasswordPolicy, validatePassword } from '@/lib/auth/passwordPolicy'
 import { isItAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { autoJoinDefaultChannels } from '@/lib/channels/defaultChannel'
@@ -53,16 +54,22 @@ async function _POST(req: Request) {
   }
   const roleToStore =
     platform_role === 'it_admin' || platform_role === 'it_employee' ? platform_role : 'employee'
-  if (username.length < 2 || !email.includes('@') || password.length < 8) {
+  if (username.length < 2 || !email.includes('@')) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
+  }
+  // Enforce the admin-configured password policy on admin-created accounts too.
+  const policy = await getPasswordPolicy(pool)
+  const detail = validatePassword(policy, password, { username, email })
+  if (detail.length > 0) {
+    return NextResponse.json({ error: 'password_policy_violation', detail }, { status: 400 })
   }
   const id = randomUUID()
   const now = Date.now()
   const password_hash = hashPassword(password)
   try {
     await pool.query(
-      `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, created_at, last_seen_at, platform_role)
-       VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, $8)`,
+      `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, created_at, last_seen_at, platform_role, password_changed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, $8, $7)`,
       [id, username, email, password_hash, first_name, last_name, now, roleToStore]
     )
     await pool.query(

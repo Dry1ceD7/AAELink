@@ -7,6 +7,7 @@ import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
 import { attachCsrfCookie } from '@/lib/auth/csrf'
 import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
 import { getMfaPolicy, mfaEnrollmentRequired, userHasActiveMfa } from '@/lib/auth/mfaPolicy'
+import { getPasswordPolicy, isPasswordExpired } from '@/lib/auth/passwordPolicy'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
@@ -94,8 +95,8 @@ async function _POST(req: Request) {
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
     }
 
-    const { rows } = await pool.query<{ id: string; password_hash: string; platform_role: string; created_at: string }>(
-      `SELECT id, password_hash, platform_role, created_at::text FROM aaelink.users
+    const { rows } = await pool.query<{ id: string; password_hash: string; platform_role: string; created_at: string; password_changed_at: string }>(
+      `SELECT id, password_hash, platform_role, created_at::text, COALESCE(password_changed_at, 0)::text AS password_changed_at FROM aaelink.users
        WHERE lower(username) = lower($1) OR lower(email) = lower($1) LIMIT 1`,
       [String(login_id).trim()]
     )
@@ -168,7 +169,13 @@ async function _POST(req: Request) {
       [row.id]
     )
     const user = u.rows[0]
-    const res = NextResponse.json({ user })
+    // Password rotation (max_age_days): flag an expired password so the client can
+    // force a change-password redirect. The session is still established (the user
+    // must be signed in to reach the change-password screen); readSessionUserId is
+    // untouched. Defaults to never-expire, so this is false unless rotation is on.
+    const pwPolicy = await getPasswordPolicy(pool)
+    const passwordExpired = isPasswordExpired(pwPolicy, Number(row.password_changed_at || 0), now)
+    const res = NextResponse.json({ user, password_expired: passwordExpired })
     res.cookies.set(SESSION_COOKIE, sessionId, {
       httpOnly: true,
       sameSite: 'lax',

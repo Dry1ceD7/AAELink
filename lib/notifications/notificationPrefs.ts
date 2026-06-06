@@ -32,6 +32,8 @@ export async function filterUsersForNotification(
   return rows.map(r => r.user_id)
 }
 
+export type DigestFrequency = 'off' | 'daily' | 'weekly'
+
 export async function getNotificationPrefsForUser(
   pool: Pool,
   userId: string
@@ -39,11 +41,13 @@ export async function getNotificationPrefsForUser(
   mentions_enabled: boolean
   ticket_activity_enabled: boolean
   system_notifications_enabled: boolean
+  digest_frequency: DigestFrequency
 }> {
-  const { rows } = await pool.query<{ me: boolean; ta: boolean; sn: boolean }>(
+  const { rows } = await pool.query<{ me: boolean; ta: boolean; sn: boolean; df: string | null }>(
     `SELECT COALESCE(p.mentions_enabled, true) AS me,
             COALESCE(p.ticket_activity_enabled, true) AS ta,
-            COALESCE(p.system_notifications_enabled, true) AS sn
+            COALESCE(p.system_notifications_enabled, true) AS sn,
+            COALESCE(p.digest_frequency, 'off') AS df
      FROM (SELECT $1::text AS uid) x
      LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = x.uid`,
     [userId]
@@ -52,6 +56,12 @@ export async function getNotificationPrefsForUser(
   return {
     mentions_enabled: r?.me !== false,
     ticket_activity_enabled: r?.ta !== false,
-    system_notifications_enabled: r?.sn !== false
+    system_notifications_enabled: r?.sn !== false,
+    digest_frequency: normalizeDigestFrequency(r?.df)
   }
+}
+
+/** Coerce an arbitrary stored/input value into a valid DigestFrequency. */
+export function normalizeDigestFrequency(value: unknown): DigestFrequency {
+  return value === 'daily' || value === 'weekly' ? value : 'off'
 }

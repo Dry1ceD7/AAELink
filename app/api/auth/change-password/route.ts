@@ -4,6 +4,12 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import {
+  getPasswordPolicy,
+  validatePassword,
+  isPasswordReused,
+  recordPasswordHistory,
+} from '@/lib/auth/passwordPolicy'
 
 async function _POST(req: Request) {
   const pool = getPool()
@@ -24,15 +30,12 @@ async function _POST(req: Request) {
   if (!current || !next) {
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
-  if (next.length < 8) {
-    return NextResponse.json({ error: 'password_too_short' }, { status: 422 })
-  }
   if (current === next) {
     return NextResponse.json({ error: 'password_same' }, { status: 422 })
   }
 
-  const { rows } = await pool.query<{ password_hash: string }>(
-    `SELECT password_hash FROM aaelink.users WHERE id = $1`,
+  const { rows } = await pool.query<{ password_hash: string; username: string; email: string }>(
+    `SELECT password_hash, username, email FROM aaelink.users WHERE id = $1`,
     [uid]
   )
   const row = rows[0]
@@ -42,11 +45,29 @@ async function _POST(req: Request) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
   }
 
+  // Enforce the admin-configured password policy (complexity / username-email).
+  const policy = await getPasswordPolicy(pool)
+  const detail = validatePassword(policy, next, { username: row.username, email: row.email })
+  if (detail.length > 0) {
+    return NextResponse.json({ error: 'password_policy_violation', detail }, { status: 400 })
+  }
+
+  // History reuse prevention (no-op when history_count = 0).
+  if (await isPasswordReused(pool, uid, next, policy, verifyPassword)) {
+    return NextResponse.json({ error: 'password_policy_violation', detail: ['password_reused'] }, { status: 400 })
+  }
+
   const newHash = hashPassword(next)
+  const now = Date.now()
+  // Note: aaelink.users has no `updated_at` column (the prior `updated_at = now()`
+  // here referenced a non-existent column and 500'd any real change-password call);
+  // password_changed_at is the meaningful write and doubles as the rotation stamp.
   await pool.query(
-    `UPDATE aaelink.users SET password_hash = $1, updated_at = now() WHERE id = $2`,
-    [newHash, uid]
+    `UPDATE aaelink.users SET password_hash = $1, password_changed_at = $2 WHERE id = $3`,
+    [newHash, now, uid]
   )
+  // Record the OLD hash so a future change cannot reuse it; trims to the window.
+  await recordPasswordHistory(pool, uid, row.password_hash, policy, now)
 
   return NextResponse.json({ ok: true })
 }

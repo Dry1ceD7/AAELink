@@ -24,14 +24,19 @@ import { tracedRoute } from '@/lib/api/tracedRoute'
  *   - analytics_rollup    — aggregate analytics into daily summaries
  *   - webhook_dispatch    — retry failed webhook deliveries
  *   - invite_expire       — clean up expired invite links
+ *   - saved_search_alerts — self-rescheduling heartbeat: notify on saved-search hits
+ *   - email_digest        — self-rescheduling heartbeat: send missed-activity digests
  *
- * Workers poll this table and process jobs in priority order.
+ * Workers poll this table and process jobs in priority order. The two heartbeat
+ * jobs are seeded by migration 039; exposing them here lets an admin manually
+ * (re-)arm the cadence if a heartbeat row is ever lost.
  */
 
 const VALID_JOB_TYPES = [
   'email_send', 'retention_enforce', 'audit_export', 'backup_run',
   'file_scan', 'guest_expire', 'scheduled_send', 'index_rebuild',
   'analytics_rollup', 'webhook_dispatch', 'invite_expire',
+  'saved_search_alerts', 'email_digest',
 ] as const
 
 type JobType = typeof VALID_JOB_TYPES[number]
