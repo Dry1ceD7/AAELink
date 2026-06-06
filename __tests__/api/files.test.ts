@@ -189,6 +189,90 @@ describe('GET /api/files/preview', () => {
     expect(body.preview.file_url).toBe(`/api/files/${up.id}/download`)
     expect(body.preview.inline_url).toBe(`/api/files/${up.id}/download`)
   })
+
+  it('thumbnail_url points at the ?thumb=1 endpoint when thumbnail_key is set', async () => {
+    const up = await doUpload(owner, { channelId: channel.id, filename: 'thumbed.png', type: 'image/png' })
+    // Simulate the file_thumbnail worker having produced a thumbnail.
+    await ctx.pool.query(
+      `UPDATE aaelink.file_attachments SET thumbnail_key = $1 WHERE id = $2`,
+      [`${up.id}.thumb.webp`, up.id]
+    )
+    const res = await PREVIEW_GET(asRequest('GET', '/api/files/preview', {
+      cookie: owner.sessionCookie,
+      query: { file_id: up.id },
+    }))
+    const body = await expectSuccess<{ preview: { thumbnail_url: string | null } }>(res)
+    expect(body.preview.thumbnail_url).toBe(`/api/files/preview?file_id=${up.id}&thumb=1`)
+  })
+
+  it('thumbnail_url falls back to the download URL for an image without a thumbnail', async () => {
+    // Fresh image upload: thumbnail_key defaults to '' (no worker output yet).
+    const up = await doUpload(owner, { channelId: channel.id, filename: 'nothumb.png', type: 'image/png' })
+    const res = await PREVIEW_GET(asRequest('GET', '/api/files/preview', {
+      cookie: owner.sessionCookie,
+      query: { file_id: up.id },
+    }))
+    const body = await expectSuccess<{ preview: { thumbnail_url: string | null } }>(res)
+    expect(body.preview.thumbnail_url).toBe(`/api/files/${up.id}/download`)
+  })
+
+  it('?thumb=1 serves the thumbnail bytes (image/webp) when present, not the JSON body', async () => {
+    const up = await doUpload(owner, { channelId: channel.id, filename: 'serve.png', type: 'image/png' })
+    // Write a real thumbnail object to the local backend + point the row at it.
+    const thumbKey = `${up.id}.thumb.webp`
+    fs.writeFileSync(path.join(UPLOAD_DIR, thumbKey), Buffer.from('webp-thumb-bytes'))
+    await ctx.pool.query(
+      `UPDATE aaelink.file_attachments SET thumbnail_key = $1 WHERE id = $2`,
+      [thumbKey, up.id]
+    )
+    try {
+      const res = await PREVIEW_GET(asRequest('GET', '/api/files/preview', {
+        cookie: owner.sessionCookie,
+        query: { file_id: up.id, thumb: '1' },
+      }))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Type')).toBe('image/webp')
+      const buf = Buffer.from(await res.arrayBuffer())
+      expect(buf.toString()).toBe('webp-thumb-bytes')
+    } finally {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, thumbKey)) } catch { /* gone */ }
+    }
+  })
+
+  it('?thumb=1 returns 404 when no thumbnail has been generated', async () => {
+    const up = await doUpload(owner, { channelId: channel.id, filename: 'nothumb2.png', type: 'image/png' })
+    const res = await PREVIEW_GET(asRequest('GET', '/api/files/preview', {
+      cookie: owner.sessionCookie,
+      query: { file_id: up.id, thumb: '1' },
+    }))
+    expect(res.status).toBe(404)
+    const body = await res.json() as { error?: string }
+    expect(body.error).toBe('thumbnail_not_found')
+  })
+
+  it('?thumb=1 forbids a non-uploader without channel access', async () => {
+    // Private channel `other` is not a member of → thumbnail ACL must 403.
+    const priv = await createTestChannel(ctx.pool, owner.id, { type: 'private' })
+    const up = await doUpload(owner, { channelId: priv.id, filename: 'secret.png', type: 'image/png' })
+    const thumbKey = `${up.id}.thumb.webp`
+    fs.writeFileSync(path.join(UPLOAD_DIR, thumbKey), Buffer.from('x'))
+    await ctx.pool.query(
+      `UPDATE aaelink.file_attachments SET thumbnail_key = $1 WHERE id = $2`,
+      [thumbKey, up.id]
+    )
+    try {
+      const res = await PREVIEW_GET(asRequest('GET', '/api/files/preview', {
+        cookie: other.sessionCookie,
+        query: { file_id: up.id, thumb: '1' },
+      }))
+      expect(res.status).toBe(403)
+      const body = await res.json() as { error?: string }
+      expect(body.error).toBe('forbidden')
+    } finally {
+      try { fs.unlinkSync(path.join(UPLOAD_DIR, thumbKey)) } catch { /* gone */ }
+      await ctx.pool.query(`DELETE FROM aaelink.channels WHERE id = $1`, [priv.id])
+    }
+  })
 })
 
 describe('DELETE /api/files', () => {

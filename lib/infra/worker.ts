@@ -152,6 +152,16 @@ const handlers: Record<string, JobHandler> = {
     log.info(`   ${res.indexed ? '✅' : '⏭️'} indexed ${res.contentLength} chars`)
   },
 
+  // File metadata + thumbnail — backfill width/height (pure-JS sniff) and, when
+  // sharp is available + media policy allows, generate a WebP thumbnail.
+  file_thumbnail: async (payload, pool) => {
+    const { file_id } = payload as { file_id: string }
+    log.info(`🖼️ [file_thumbnail] File: ${file_id}`)
+    const { runFileThumbnail } = await import('@/lib/files/thumbnailJob')
+    const res = await runFileThumbnail(pool, payload as { file_id?: string })
+    log.info(`   ${res.dimensionsSaved ? `✅ ${res.width}x${res.height}` : '⏭️ no dims'}${res.thumbnailSaved ? ' + thumb' : ''}`)
+  },
+
   // Clip transcription
   clip_transcription: async (payload) => {
     const { clip_id } = payload as { clip_id: string }

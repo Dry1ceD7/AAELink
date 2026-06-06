@@ -4,11 +4,13 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { serveThumbnail } from '@/lib/files/previewThumbnail'
 
 /**
  * File Preview API — metadata, thumbnails, and inline preview support.
  *
  * GET /api/files/preview?file_id=...
+ * GET /api/files/preview?file_id=...&thumb=1  → serves thumbnail bytes (image/webp)
  *
  * Returns preview metadata for a file:
  *   - Content type / MIME detection
@@ -62,6 +64,12 @@ async function _GET(req: NextRequest) {
   const fileId = req.nextUrl.searchParams.get('file_id')?.trim() || ''
   if (!fileId) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
+  // ?thumb=1 → serve the generated thumbnail bytes (image/webp) instead of JSON,
+  // applying the same ACL + virus-scan gate as the full-download path.
+  if (req.nextUrl.searchParams.get('thumb') === '1') {
+    return serveThumbnail(pool, uid, fileId)
+  }
+
   // Fetch file metadata. Canonical table: aaelink.file_attachments
   // (migration 033). The legacy `aaelink.file_uploads` table this route used
   // never existed in the migration runner, so preview returned file_not_found
@@ -86,12 +94,16 @@ async function _GET(req: NextRequest) {
   const extension = file.filename.split('.').pop()?.toLowerCase() || ''
 
   // Build preview URLs from the canonical download route (/api/files/:id/download).
-  // The legacy /api/files/download?file_id= path has no handler. The download
-  // route does not honor a thumbnail param yet, so the thumbnail URL falls back
-  // to the full file for images (no dedicated thumbnail endpoint exists).
+  // The legacy /api/files/download?file_id= path has no handler. When the
+  // file_thumbnail worker has produced a thumbnail (thumbnail_key set) we point
+  // at the dedicated ?thumb=1 endpoint; otherwise images fall back to the full
+  // file so the client still has something to render.
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
   const fileUrl = `${baseUrl}/api/files/${fileId}/download`
-  const thumbnailUrl = previewCategory === 'image' ? fileUrl : null
+  const thumbUrl = `${baseUrl}/api/files/preview?file_id=${fileId}&thumb=1`
+  const thumbnailUrl = file.thumbnail_key
+    ? thumbUrl
+    : previewCategory === 'image' ? fileUrl : null
 
   return NextResponse.json({
     preview: {

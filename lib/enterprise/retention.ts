@@ -75,7 +75,13 @@ export const DEFAULT_RETENTION_POLICIES: RetentionPolicy[] = [
     respectLegalHolds: true,
     enabled: false,
     batchSize: 500,
-    table: 'aaelink.files',
+    // Canonical file row is aaelink.file_attachments (migration 033). The old
+    // aaelink.files target never existed in the migration runner, so previews
+    // and execute() silently caught the "relation does not exist" error and
+    // reported 0 — a phantom count. Repointed so admin previews/counts are
+    // truthful. (Byte + dependent-row cleanup lives in retentionJob.deleteFiles;
+    // this engine entry powers the on-demand admin preview/execute surface.)
+    table: 'aaelink.file_attachments',
     timestampColumn: 'created_at',
   },
   {
@@ -232,6 +238,22 @@ export class RetentionEngine {
     dryRun: boolean = false
   ): Promise<RetentionResult> {
     const start = Date.now()
+
+    // Hard guard: file purges MUST go through retentionJob.deleteFiles (the
+    // worker path), which is byte-aware (removes the underlying S3/disk object +
+    // thumbnail), dependent-row aware (file_index/file_scans/file_public_links/
+    // message_attachments/clips), and legal-hold aware (channel + custodian +
+    // the NULL-channel safety). This engine's generic batched DELETE has NONE of
+    // those, so a real DELETE here would orphan bytes, dangle dependent rows, and
+    // ignore active holds. Refuse to delete 'files'; degrade to a preview so the
+    // admin surface still reports a truthful count without destroying data.
+    // The guard sits BEFORE the enabled/keep-forever short-circuits so a files
+    // execute is ALWAYS reported as an honest dryRun:true — regardless of how
+    // the policy is configured now or in the future.
+    if (entity === 'files' && !dryRun) {
+      return this.preview(entity, queryFn)
+    }
+
     const policy = this.getPolicy(entity)
 
     if (!policy || !policy.enabled) {

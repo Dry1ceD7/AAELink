@@ -10,7 +10,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { storeFileBytes, readFileBytes, removeFileObject, UPLOAD_DIR } from '@/lib/files/storage'
+import {
+  storeFileBytes,
+  readFileBytes,
+  removeFileObject,
+  derivedThumbnailKey,
+  storeDerivedBytes,
+  UPLOAD_DIR,
+} from '@/lib/files/storage'
 
 let savedEndpoint: string | undefined
 
@@ -96,5 +103,52 @@ describe('storage — local backend (S3 unconfigured)', () => {
 
   it('UPLOAD_DIR is an absolute path', () => {
     expect(path.isAbsolute(UPLOAD_DIR)).toBe(true)
+  })
+})
+
+describe('storage — derived thumbnails', () => {
+  it('derivedThumbnailKey uses the s3 namespaced template', () => {
+    const id = randomUUID()
+    expect(derivedThumbnailKey(id, 's3')).toBe(`thumb/${id}.webp`)
+  })
+
+  it('derivedThumbnailKey uses the flat local template', () => {
+    const id = randomUUID()
+    expect(derivedThumbnailKey(id, 'local')).toBe(`${id}.thumb.webp`)
+  })
+
+  it('storeDerivedBytes writes to local disk and round-trips when backend=local', async () => {
+    const id = randomUUID()
+    const body = Buffer.from('derived-webp-bytes')
+    const out = await storeDerivedBytes({ fileId: id, body, contentType: 'image/webp', backend: 'local' })
+    expect(out).not.toBeNull()
+    expect(out!.backend).toBe('local')
+    expect(out!.storageKey).toBe(`${id}.thumb.webp`)
+    expect(fs.existsSync(path.join(UPLOAD_DIR, out!.storageKey))).toBe(true)
+
+    const read = await readFileBytes(out!.storageKey, 'local')
+    expect(read).not.toBeNull()
+    expect(Buffer.compare(read!, body)).toBe(0)
+    await removeFileObject(out!.storageKey, 'local')
+  })
+
+  it('storeDerivedBytes treats unknown/legacy backend as local disk', async () => {
+    const id = randomUUID()
+    const out = await storeDerivedBytes({ fileId: id, body: Buffer.from('x'), contentType: 'image/webp', backend: null })
+    expect(out).not.toBeNull()
+    expect(out!.backend).toBe('local')
+    expect(out!.storageKey).toBe(`${id}.thumb.webp`)
+    await removeFileObject(out!.storageKey, 'local')
+  })
+
+  it('storeDerivedBytes returns null for s3 backend when S3 is unconfigured (no orphan)', async () => {
+    // Source row says 's3' but no client is available → the thumbnail is NOT
+    // written to disk under an s3 key (which serve/retention would never find).
+    const id = randomUUID()
+    const out = await storeDerivedBytes({ fileId: id, body: Buffer.from('x'), contentType: 'image/webp', backend: 's3' })
+    expect(out).toBeNull()
+    // Nothing written to disk for either the s3 or local key shape.
+    expect(fs.existsSync(path.join(UPLOAD_DIR, `thumb/${id}.webp`))).toBe(false)
+    expect(fs.existsSync(path.join(UPLOAD_DIR, `${id}.thumb.webp`))).toBe(false)
   })
 })

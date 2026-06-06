@@ -7,9 +7,10 @@ import path from 'path'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { storeFileBytes } from '@/lib/files/storage'
 import { enqueueUploadJobs } from '@/lib/files/fileJobs'
+import { getScanPolicy } from '@/lib/files/scanGate'
 import { log } from '@/lib/infra/log'
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB (default cap when policy sets none)
 
 /**
  * POST /api/files/upload — upload a file attachment for a message.
@@ -36,8 +37,40 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'file_required' }, { status: 400 })
   }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: 'file_too_large', max: MAX_FILE_SIZE }, { status: 413 })
+  // Enforce the org scan policy BEFORE storing bytes: a policy size cap REPLACES
+  // the hardcoded 50MB default when set (max_file_size_mb > 0), otherwise the
+  // built-in default applies; blocked extensions are rejected outright. The same
+  // policy shape drives the access gate and the post-upload pipeline.
+  const policy = await getScanPolicy(pool)
+  const maxBytes = policy.max_file_size_mb > 0
+    ? policy.max_file_size_mb * 1024 * 1024
+    : MAX_FILE_SIZE
+  if (file.size > maxBytes) {
+    return NextResponse.json({ error: 'file_too_large', max: maxBytes }, { status: 413 })
+  }
+
+  if (policy.blocked_extensions.length) {
+    // Normalize the filename before extracting the extension, mirroring
+    // storage.ts safeName() + defending against extname() edge cases that slip
+    // a dangerous extension past an exact equality check while the OS/client
+    // later normalizes the name back to the dangerous form:
+    //   - NUL injection ('evil.exe\0.txt') — native consumers truncate at NUL.
+    //   - trailing dot ('evil.exe.')        — Windows/macOS strip it on save.
+    //   - trailing whitespace ('evil.exe ') — stripped on Windows.
+    // We strip NUL bytes and trailing dots/whitespace, then reject if the final
+    // extname OR ANY dot-delimited segment of the name is blocked (so a
+    // double-extension like 'report.exe.pdf' is also caught).
+    const cleanName = file.name.replace(/\0/g, '').replace(/[.\s]+$/, '')
+    const uploadExt = (path.extname(cleanName) || '').toLowerCase()
+    const blocked = policy.blocked_extensions
+    // Candidate extensions to test: the final extname plus every dot-delimited
+    // segment (so a double-extension like 'report.exe.pdf' is caught too).
+    const segments = cleanName.toLowerCase().split('.').slice(1).map((s) => `.${s.trim()}`)
+    const candidates = uploadExt ? [uploadExt, ...segments] : segments
+    const matched = candidates.find((c) => blocked.includes(c))
+    if (matched) {
+      return NextResponse.json({ error: 'extension_blocked', extension: matched }, { status: 415 })
+    }
   }
 
   // Resolve the owning workspace from the channel when one is provided, so the
