@@ -514,6 +514,36 @@ const handlers: Record<string, JobHandler> = {
     }
   },
 
+  // Resumable upload-session sweep (Files parity). Recurring heartbeat, same
+  // self-rescheduling pattern as saved_search_alerts/email_digest: expire +
+  // clean stale 'active' upload sessions past their 24h TTL (abort the S3
+  // multipart / unlink the local partial), then re-arm. Seeded once in
+  // migration 040; it keeps itself alive here.
+  upload_session_sweep: async (payload, pool) => {
+    log.info(`🧹 [upload_session_sweep] sweeping expired upload sessions`)
+    const { sweepExpiredUploadSessions } = await import('@/lib/files/uploadSessions')
+    const expired = await sweepExpiredUploadSessions(pool)
+    log.info(`   ✅ expired ${expired} stale upload session(s)`)
+
+    // Self-reschedule unless explicitly told not to (tests pass once:true).
+    const once = (payload as { once?: boolean }).once === true
+    if (!once) {
+      const intervalMs = Number(process.env.UPLOAD_SESSION_SWEEP_INTERVAL_MS) || 60 * 60_000
+      const { randomUUID } = await import('crypto')
+      // Idempotent re-arm (see saved_search_alerts): one pending row at a time
+      // so a crash between this INSERT and the completion UPDATE can't double-arm.
+      await pool.query(
+        `INSERT INTO aaelink.jobs
+           (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+         SELECT $1, 'upload_session_sweep', 'pending', 2, '{}', $2, 3, 0, $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM aaelink.jobs WHERE type = 'upload_session_sweep' AND status = 'pending'
+          )`,
+        [randomUUID(), Date.now() + intervalMs, Date.now()]
+      )
+    }
+  },
+
   // OAuth token cleanup (v0.0.8 — expire old tokens)
   oauth_token_cleanup: async (_payload, pool) => {
     log.info(`🔑 [oauth_token_cleanup] Removing expired tokens`)

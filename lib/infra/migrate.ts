@@ -3982,6 +3982,99 @@ async function migration039DigestCadenceAndSeeds(pool: RunnerPool) {
   }
 }
 
+/**
+ * Migration 040 — resumable / two-phase upload sessions (Files parity:
+ * Slack files.getUploadURLExternal → upload → files.completeUploadExternal).
+ *
+ * A single-shot POST /api/files/upload buffers the whole file in memory, capping
+ * practical uploads well below the 5 GB target. This table backs a chunked,
+ * resumable flow (lib/files/uploadSessions.ts): one session row tracks one
+ * in-progress upload — its declared size, fixed part size, the set of completed
+ * part numbers (parts_received), and the backend specifics (S3 multipart upload
+ * id + recorded ETags, or the local partial file). At complete it INSERTs the
+ * canonical aaelink.file_attachments row and the session is marked 'completed'.
+ *
+ * The partial index on (status, expires_at) WHERE status='active' keeps the
+ * worker sweep's "stale active sessions" scan cheap.
+ *
+ * Also seeds the recurring 'upload_session_sweep' worker heartbeat exactly like
+ * migration 039 seeded email_digest / saved_search_alerts: a never-seeded job
+ * type is a dead feature, so one pending row is inserted idempotently (only when
+ * no pending/running row of that type already exists). The handler
+ * self-reschedules thereafter (lib/infra/worker.ts).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration040UploadSessions(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.upload_sessions (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL,
+      workspace_id    TEXT,
+      channel_id      TEXT,
+      filename        TEXT NOT NULL,
+      content_type    TEXT NOT NULL DEFAULT '',
+      declared_size   BIGINT NOT NULL,
+      received_bytes  BIGINT NOT NULL DEFAULT 0,
+      part_size       INT NOT NULL,
+      parts_received  JSONB NOT NULL DEFAULT '[]'::jsonb,
+      backend         TEXT NOT NULL,
+      s3_upload_id    TEXT NOT NULL DEFAULT '',
+      s3_parts        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      storage_key     TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'active',
+      file_id         TEXT NOT NULL DEFAULT '',
+      version         BIGINT NOT NULL DEFAULT 0,
+      created_at      BIGINT NOT NULL,
+      updated_at      BIGINT NOT NULL,
+      expires_at      BIGINT NOT NULL
+    );
+  `)
+  // Partial index: the worker sweep scans only active+expired sessions.
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_upload_sessions_active_sweep
+       ON aaelink.upload_sessions(status, expires_at)
+       WHERE status = 'active'`
+  )
+  // Per-user lookup for resume.
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_upload_sessions_user
+       ON aaelink.upload_sessions(user_id, created_at DESC)`
+  )
+  // Seed the recurring sweep heartbeat (see migration039 seeds). Idempotent:
+  // only insert when no pending/running row of this type already exists.
+  await pool.query(
+    `INSERT INTO aaelink.jobs
+       (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+     SELECT $1, 'upload_session_sweep', 'pending', 2, '{}', $2, 3, 0, $2
+      WHERE NOT EXISTS (
+        SELECT 1 FROM aaelink.jobs
+         WHERE type = 'upload_session_sweep' AND status IN ('pending', 'running')
+      )`,
+    [randomUUID(), Date.now()]
+  )
+}
+
+/**
+ * Add the `version` optimistic-concurrency token to upload_sessions. Migration
+ * 040 adds it in the CREATE TABLE for fresh DBs; this migration ALTERs it onto
+ * DBs that already ran 040 before the column existed (idempotent, NULL-safe).
+ *
+ * `version` is a monotonic counter bumped on every successful appendPart UPDATE.
+ * It replaces the wall-clock `updated_at` as the concurrency guard: two appends
+ * reading the same base row within the same millisecond could both match an
+ * `updated_at = $prev` guard (the winning write left updated_at unchanged) and
+ * the loser would overwrite parts_received/received_bytes — silently dropping a
+ * part. A `version = version + 1` bump is guaranteed distinct per write, so the
+ * loser's `version = $prev` guard always fails and the retry loop re-merges.
+ */
+async function migration041UploadSessionVersion(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.upload_sessions
+       ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4022,4 +4115,6 @@ const MIGRATIONS: Migration[] = [
   { id: '037_password_policy', up: migration037PasswordPolicy },
   { id: '038_email_digests', up: migration038EmailDigests },
   { id: '039_digest_cadence_and_seeds', up: migration039DigestCadenceAndSeeds },
+  { id: '040_upload_sessions', up: migration040UploadSessions },
+  { id: '041_upload_session_version', up: migration041UploadSessionVersion },
 ]
