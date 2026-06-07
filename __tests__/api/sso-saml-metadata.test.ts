@@ -119,3 +119,72 @@ describe('SAML metadata refresh (cert rotation)', () => {
     await expectError(res, 403, 'super_admin_only')
   })
 })
+
+describe('GET /api/auth/sso/saml/metadata — SP metadata endpoint', () => {
+  let spMetadataProviderId = ''
+
+  beforeAll(async () => {
+    // Create a fresh SAML provider with a known audience so metadata assertions
+    // are deterministic regardless of what other suites create.
+    fetchMock.mockResolvedValueOnce({
+      entityId: 'https://idp.test/entity',
+      entryPoint: 'https://idp.test/sso/redirect',
+      certs: ['CERT_SP_META'],
+    })
+    const res = await createProvider(admin.sessionCookie, {
+      name: 'SP Metadata SAML',
+      type: 'saml',
+      metadata_url: 'https://idp.test/metadata',
+      saml_audience: 'sp-metadata-entity',
+    })
+    const body = await res.json()
+    spMetadataProviderId = body.provider?.id || ''
+    if (spMetadataProviderId) providerIds.push(spMetadataProviderId)
+  })
+
+  it('returns 200 with application/samlmetadata+xml for an active provider', async () => {
+    const { GET } = await import('@/app/api/auth/sso/saml/metadata/route')
+    const res = await GET(asRequest('GET', '/api/auth/sso/saml/metadata', {
+      query: { provider: spMetadataProviderId },
+    }))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/samlmetadata+xml')
+  })
+
+  it('response contains EntityDescriptor and SPSSODescriptor', async () => {
+    const { GET } = await import('@/app/api/auth/sso/saml/metadata/route')
+    const res = await GET(asRequest('GET', '/api/auth/sso/saml/metadata', {
+      query: { provider: spMetadataProviderId },
+    }))
+    const xml = await res.text()
+    expect(xml).toContain('EntityDescriptor')
+    expect(xml).toContain('SPSSODescriptor')
+  })
+
+  it('ACS Location uses HTTP-POST binding and matches samlCallbackUrl convention', async () => {
+    const { GET } = await import('@/app/api/auth/sso/saml/metadata/route')
+    const res = await GET(asRequest('GET', '/api/auth/sso/saml/metadata', {
+      query: { provider: spMetadataProviderId },
+    }))
+    const xml = await res.text()
+    expect(xml).toContain('urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST')
+    // ACS must reference this provider's acs route
+    expect(xml).toContain(`/api/auth/sso/saml/acs?provider=${encodeURIComponent(spMetadataProviderId)}`)
+  })
+
+  it('returns 404 for an unknown provider id', async () => {
+    const { GET } = await import('@/app/api/auth/sso/saml/metadata/route')
+    const res = await GET(asRequest('GET', '/api/auth/sso/saml/metadata', {
+      query: { provider: 'does-not-exist' },
+    }))
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toBe('provider_not_found')
+  })
+
+  it('returns 404 when no provider query param supplied', async () => {
+    const { GET } = await import('@/app/api/auth/sso/saml/metadata/route')
+    const res = await GET(asRequest('GET', '/api/auth/sso/saml/metadata'))
+    expect(res.status).toBe(404)
+  })
+})

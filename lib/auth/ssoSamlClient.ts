@@ -13,6 +13,19 @@ import type { SsoProviderConfig } from '@/lib/auth/ssoProvider'
  * outstanding request IDs across processes; the route checks it explicitly.
  */
 
+/**
+ * Generate the SP metadata XML for this provider configuration.
+ *
+ * Uses the same SamlConfig as buildSaml() so entityID and ACS Location exactly
+ * match what the start/acs flow presents to the IdP. Both decryption and signing
+ * cert args are null because this SP neither signs AuthnRequests nor decrypts
+ * EncryptedAssertions.
+ */
+export function generateSamlSpMetadata(cfg: SsoProviderConfig, callbackUrl: string): string {
+  const saml = buildSaml(cfg, callbackUrl)
+  return saml.generateServiceProviderMetadata(null, null)
+}
+
 function buildSaml(cfg: SsoProviderConfig, callbackUrl: string): SAML {
   // Cert rotation: validate against the full discovered signing-cert set when
   // present, else the legacy single cert. node-saml's idpCert accepts an array
