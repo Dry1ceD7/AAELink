@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { filterSearchBlocked } from '@/lib/enterprise/barrierGuard'
 
 /**
  * GET /api/search/users?q=...&workspace_id=...&limit=...
@@ -73,10 +74,13 @@ async function _GET(req: NextRequest) {
 
   const { rows } = await pool.query(query, params)
 
+  const blocked = await filterSearchBlocked(pool, uid, rows.map((r: { id: string }) => r.id))
+  const users = rows.filter((r: { id: string }) => !blocked.has(r.id))
+
   return NextResponse.json({
-    users: rows,
+    users,
     query: q,
-    count: rows.length,
+    count: users.length,
     workspace_scoped: !!workspaceId
   })
 }

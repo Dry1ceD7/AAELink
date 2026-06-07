@@ -21,6 +21,18 @@
  *     the caller's org(s), org-wide channels in the caller's org(s), DMs).
  *
  * AI/ML semantic search is out of scope; this is lexical PG FTS only.
+ *
+ * Date operators (before:/after:/on:/during:) — TIME ZONE CONTRACT:
+ *   All calendar-day operators are interpreted in **UTC**, NOT server-local time.
+ *   `before:YYYY-MM-DD`, `after:YYYY-MM-DD`, `on:YYYY-MM-DD`, and `during:YYYY[-MM]`
+ *   are converted to epoch-ms window bounds via `new Date('<ymd>T00:00:00.000Z')` /
+ *   `Date.UTC(...)` — the trailing `Z` / `Date.UTC` pins the boundary to UTC
+ *   midnight, so the result is independent of the server's TZ env. `created_at` is
+ *   compared as epoch-ms, so the windows are exact regardless of where the process
+ *   runs. Concretely: `on:2025-03-04` matches `[2025-03-04T00:00:00Z, 2025-03-05T00:00:00Z)`.
+ *   This is deliberate (deterministic across deploys); a user in UTC+7 asking for
+ *   `on:2025-03-04` gets the UTC day, not their local day. Pinned by
+ *   tests/searchDateWindows.test.ts.
  */
 import type { Pool } from 'pg'
 
@@ -35,9 +47,9 @@ export interface SearchEngineFilters {
   channelId?: string
   /** Restrict to a single channel by human name — resolved to readable channels only. */
   channelName?: string
-  /** before:YYYY-MM-DD — strictly-before end-of-day (inclusive of the day). */
+  /** before:YYYY-MM-DD — strictly-before end-of-day (inclusive of the day). UTC day (see module TIME ZONE CONTRACT). */
   before?: string
-  /** after:YYYY-MM-DD — at/after start-of-day. */
+  /** after:YYYY-MM-DD — at/after start-of-day. UTC day (see module TIME ZONE CONTRACT). */
   after?: string
   /**
    * Epoch-ms exclusive lower bound on created_at (created_at > afterMs). Unlike
@@ -105,12 +117,17 @@ const DEFAULT_LIMIT = 25
 const HEADLINE_OPTS = 'StartSel=<mark>, StopSel=</mark>, MaxFragments=2, MaxWords=24, MinWords=8, ShortWord=2'
 
 /** YYYY-MM-DD */
-function isYmd(s: string): boolean {
+export function isYmd(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
-/** Day window [start, endExclusive) in epoch ms for a YYYY-MM-DD. Returns null if invalid. */
-function dayWindow(ymd: string): { start: number; end: number } | null {
+/**
+ * Day window [start, endExclusive) in epoch ms for a YYYY-MM-DD. Returns null if
+ * invalid. The boundary is **UTC midnight** (the trailing `Z`), NOT server-local —
+ * see the module-level TIME ZONE CONTRACT. This makes the window deterministic
+ * regardless of the process TZ.
+ */
+export function dayWindow(ymd: string): { start: number; end: number } | null {
   if (!isYmd(ymd)) return null
   const start = new Date(`${ymd}T00:00:00.000Z`).getTime()
   if (Number.isNaN(start)) return null
@@ -121,7 +138,7 @@ function dayWindow(ymd: string): { start: number; end: number } | null {
  * Month/year window [start, endExclusive) in epoch ms for during:YYYY or during:YYYY-MM.
  * Returns null if malformed.
  */
-function duringWindow(spec: string): { start: number; end: number } | null {
+export function duringWindow(spec: string): { start: number; end: number } | null {
   if (/^\d{4}$/.test(spec)) {
     const y = Number(spec)
     const start = Date.UTC(y, 0, 1)
