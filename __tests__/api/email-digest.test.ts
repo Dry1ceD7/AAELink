@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'crypto'
 import { createTestContext, createTestUser, ensureSystemWorkspace, asRequest, TestContext } from '../helpers'
-import { collectDigestItems, composeDigest, runEmailDigests } from '@/lib/notifications/emailDigest'
+import { collectAllDigestItems, collectDigestItems, composeDigest, runEmailDigests } from '@/lib/notifications/emailDigest'
 import { GET as getPrefs, PATCH as patchPrefs } from '@/app/api/auth/notification-prefs/route'
 
 let ctx: TestContext
@@ -20,6 +20,15 @@ async function seedNotification(userId: string, kind: string, title: string, bod
     `INSERT INTO aaelink.notifications (id, user_id, kind, title, body, workspace_id, channel_id, message_id, ticket_id, read_at, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, $7, $8)`,
     [randomUUID(), userId, kind, title, body, workspaceId, readAt, createdAt]
+  )
+}
+
+/** Seed with an EXPLICIT id so a test can control (created_at, id) keyset ordering. */
+async function seedNotificationWithId(id: string, userId: string, kind: string, title: string, body: string, createdAt: number, readAt = 0) {
+  await ctx.pool.query(
+    `INSERT INTO aaelink.notifications (id, user_id, kind, title, body, workspace_id, channel_id, message_id, ticket_id, read_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, $7, $8)`,
+    [id, userId, kind, title, body, workspaceId, readAt, createdAt]
   )
 }
 
@@ -156,6 +165,83 @@ describe('runEmailDigests', () => {
       `SELECT last_digest_at::text FROM aaelink.user_notification_prefs WHERE user_id = $1`, [u.id]
     )
     expect(Number(rows[0].last_digest_at)).toBe(now)
+  })
+})
+
+describe('runEmailDigests — same-millisecond watermark (migration 042 id companion)', () => {
+  it('does not lose a same-ms sibling with a higher id arriving after the first run', async () => {
+    const u = await createTestUser(ctx.pool, { role: 'employee' })
+    userIds.push(u.id)
+    const now = Date.now()
+    const ts = now - 3600_000 // a single shared created_at millisecond
+
+    // Two notifications at the EXACT same created_at, summarized in run 1. Ids are
+    // chosen so the watermark advances to the LARGER id ('...aa02').
+    await seedNotificationWithId('11111111-1111-1111-1111-aaaaaaaaaa01', u.id, 'mention', 'Tie A', 'first', ts)
+    await seedNotificationWithId('11111111-1111-1111-1111-aaaaaaaaaa02', u.id, 'mention', 'Tie B', 'second', ts)
+
+    await ctx.pool.query(
+      `INSERT INTO aaelink.user_notification_prefs (user_id, digest_frequency, last_digest_at, last_digest_sent_at, updated_at)
+       VALUES ($1, 'daily', 0, 0, $2)
+       ON CONFLICT (user_id) DO UPDATE SET digest_frequency = 'daily', last_digest_at = 0, last_digest_id = NULL, last_digest_sent_at = 0, updated_at = $2`,
+      [u.id, now - 2 * 86_400_000]
+    )
+
+    const res1 = await runEmailDigests(ctx.pool, now)
+    expect(res1.sent).toBeGreaterThanOrEqual(1)
+
+    // Watermark advanced to the shared ts and the LARGER id; the strict-timestamp
+    // fallback alone (created_at > ts) would now skip ANY other row at ts.
+    const { rows: w } = await ctx.pool.query<{ last_digest_at: string; last_digest_id: string | null }>(
+      `SELECT last_digest_at::text, last_digest_id FROM aaelink.user_notification_prefs WHERE user_id = $1`, [u.id]
+    )
+    expect(Number(w[0].last_digest_at)).toBe(ts)
+    expect(w[0].last_digest_id).toBe('11111111-1111-1111-1111-aaaaaaaaaa02')
+
+    // A THIRD notification lands at the SAME created_at with a higher id ('...aa03').
+    // With a single-timestamp watermark and `created_at > ts` it would be lost
+    // forever; the (created_at, id) keyset tuple boundary collects it.
+    await seedNotificationWithId('11111111-1111-1111-1111-aaaaaaaaaa03', u.id, 'mention', 'Tie C', 'late same-ms', ts)
+
+    // collectAllDigestItems with the persisted (ts, id) companion must see Tie C.
+    const collected = await collectAllDigestItems(ctx.pool, u.id, ts, w[0].last_digest_id)
+    expect(collected.map(i => i.title)).toContain('Tie C')
+    expect(collected.map(i => i.title)).not.toContain('Tie A') // already summarized — not re-collected
+    expect(collected.map(i => i.title)).not.toContain('Tie B')
+
+    // And a full second run summarizes Tie C and advances the id companion to it.
+    const later = now + 2 * 86_400_000
+    await runEmailDigests(ctx.pool, later)
+    const { rows: w2 } = await ctx.pool.query<{ last_digest_at: string; last_digest_id: string | null }>(
+      `SELECT last_digest_at::text, last_digest_id FROM aaelink.user_notification_prefs WHERE user_id = $1`, [u.id]
+    )
+    expect(Number(w2[0].last_digest_at)).toBe(ts) // still the shared ms (Math.max keeps it)
+    expect(w2[0].last_digest_id).toBe('11111111-1111-1111-1111-aaaaaaaaaa03')
+  })
+
+  it('within-run page-boundary same-ms cluster is fully drained, never re-summarized', async () => {
+    const u = await createTestUser(ctx.pool, { role: 'employee' })
+    userIds.push(u.id)
+    const now = Date.now()
+    const ts = now - 7200_000
+    // 60 notifications (> DIGEST_PAGE_SIZE 50) ALL at the same created_at: the page
+    // boundary lands inside a same-ms cluster. The keyset must drain all 60.
+    for (let i = 0; i < 60; i++) {
+      const idx = String(i).padStart(2, '0')
+      await seedNotificationWithId(`22222222-2222-2222-2222-bbbbbbbbbb${idx}`, u.id, 'mention', `Cluster ${i}`, `b${i}`, ts)
+    }
+    await ctx.pool.query(
+      `INSERT INTO aaelink.user_notification_prefs (user_id, digest_frequency, last_digest_at, last_digest_sent_at, updated_at)
+       VALUES ($1, 'daily', 0, 0, $2)
+       ON CONFLICT (user_id) DO UPDATE SET digest_frequency = 'daily', last_digest_at = 0, last_digest_id = NULL, last_digest_sent_at = 0, updated_at = $2`,
+      [u.id, now]
+    )
+
+    const all = await collectAllDigestItems(ctx.pool, u.id, 0, null)
+    expect(all.length).toBe(60) // every same-ms row drained across the 50-row page boundary
+    // ascending (created_at, id) order preserved
+    expect(all[0].id).toBe('22222222-2222-2222-2222-bbbbbbbbbb00')
+    expect(all[59].id).toBe('22222222-2222-2222-2222-bbbbbbbbbb59')
   })
 })
 

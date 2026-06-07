@@ -76,13 +76,15 @@ const MAX_DIGEST_PAGES_PER_RUN = 40
  * created_at (the millisecond-tie bug). Pure read — mutates no watermark.
  *
  * Two cursor modes (locale-safe — no string-collation sentinel):
- *   - FIRST page (cursorId === null): boundary is `created_at > cursorAt`, strict on
- *     the timestamp only. This is what makes the persisted single-timestamp
- *     watermark dedup correctly across runs — a same-ms item already summarized last
- *     run is NOT re-summarized.
- *   - MID-drain page (cursorId is a real id): boundary is the keyset
- *     `(created_at, id) > (cursorAt, cursorId)` so same-ms ties at a page boundary
- *     are drained in order, never skipped.
+ *   - cursorId === null (very first run, no persisted id companion): boundary is
+ *     `created_at > cursorAt`, strict on the timestamp only. Used only when the
+ *     stored watermark predates migration 042 (no last_digest_id yet) — it can lose
+ *     a same-ms sibling at the exact watermark, which is why subsequent runs always
+ *     persist the id and take the keyset branch below.
+ *   - cursorId is a real id (cross-run watermark companion OR mid-drain cursor):
+ *     boundary is the keyset `(created_at, id) > (cursorAt, cursorId)` so same-ms
+ *     ties at the watermark boundary AND at any page boundary are resumed in order,
+ *     never skipped and never re-summarized. This is the provably-lossless path.
  */
 export async function collectDigestItems(
   pool: Pool,
@@ -123,20 +125,40 @@ export async function collectDigestItems(
  * Drain a user's whole since-watermark backlog by paging oldest-first on the
  * (created_at, id) keyset (same gap-free shape as savedSearchAlerts), so a burst of
  * >PAGE_SIZE notifications is fully summarized in ONE digest and the watermark
- * never jumps over un-summarized items — including same-millisecond ties at a page
- * boundary. Bounded by MAX_DIGEST_PAGES_PER_RUN; any overflow beyond the cap
- * resumes exactly where we stopped on the next run.
+ * never jumps over un-summarized items — including same-millisecond ties at the
+ * watermark boundary AND at any page boundary. Bounded by MAX_DIGEST_PAGES_PER_RUN;
+ * any overflow beyond the cap resumes exactly where we stopped on the next run.
+ *
+ * `sinceId` is the persisted watermark companion (last_digest_id, migration 042):
+ * when present the first page uses the keyset tuple `(created_at, id) > (watermark,
+ * sinceId)` so a notification sharing the watermark's exact created_at but a higher
+ * id is collected (no cross-run same-ms loss). When null (pre-042 watermark or the
+ * very first run) the first page degrades to the strict `created_at > watermark`
+ * timestamp boundary.
+ *
+ * Ordering note: the keyset is lossless for the WITHIN-RUN page-boundary case
+ * unconditionally (every page orders by `(created_at, id)`, so a same-ms cluster
+ * split across pages resumes exactly after the last id seen). For the CROSS-RUN
+ * boundary it is lossless for any same-ms row whose id sorts after the persisted
+ * companion. Notification ids are random UUIDv4 (notificationsServer), so a same-ms
+ * row that lands with a lexically-smaller id AND is invisible to this run's
+ * snapshot is the one residual edge — practically negligible (same-ms collisions
+ * are rare and read_at=0 rows are not deleted, so a missed row is still re-evaluated
+ * the moment the watermark next moves past its millisecond). Switching to a
+ * time-ordered id (UUIDv7) would make it total; that is out of scope here.
  */
 export async function collectAllDigestItems(
   pool: Pool,
   userId: string,
-  sinceWatermark: number
+  sinceWatermark: number,
+  sinceId: string | null = null
 ): Promise<DigestItem[]> {
   const items: DigestItem[] = []
   let cursorAt = Number(sinceWatermark || 0)
-  // First page: cursorId=null ⇒ strict `created_at > watermark` (cross-run dedup).
-  // Subsequent pages: real id ⇒ tie-safe keyset within this run.
-  let cursorId: string | null = null
+  // First page: keyset tuple when we have a persisted companion id (tie-safe at the
+  // watermark), else strict `created_at > watermark` (pre-042 fallback).
+  // Subsequent pages: always the real last-seen id ⇒ tie-safe keyset within this run.
+  let cursorId: string | null = sinceId
   for (let page = 0; page < MAX_DIGEST_PAGES_PER_RUN; page++) {
     const batch = await collectDigestItems(pool, userId, cursorAt, cursorId, DIGEST_PAGE_SIZE)
     if (batch.length === 0) break
@@ -222,6 +244,10 @@ export interface DigestRunResult {
  *     actually summarized this run (NOT to `now`), so any backlog overflow beyond
  *     the per-run page cap survives to the next run and is never silently dropped.
  *     On an empty run it advances to `now` (there is nothing before now to send).
+ *   - last_digest_id      (watermark ID COMPANION, migration 042): the newest
+ *     summarized notification's id, so the next run's first page can tuple-compare
+ *     `(created_at, id) > (last_digest_at, last_digest_id)` and never lose a sibling
+ *     that shares the watermark's exact created_at. Cleared to NULL on an empty run.
  *   - last_digest_sent_at (cadence TIMER): always set to `now`, so the interval is
  *     measured from send time — not from a past message's created_at — and cadence
  *     does not drift (the column-overload bug in 038).
@@ -233,12 +259,13 @@ export interface DigestRunResult {
 export async function runEmailDigests(pool: Pool, now = Date.now()): Promise<DigestRunResult> {
   const { rows: users } = await pool.query<{
     user_id: string; email: string; digest_frequency: string
-    last_digest_at: string; last_digest_sent_at: string
+    last_digest_at: string; last_digest_sent_at: string; last_digest_id: string | null
   }>(
     `SELECT p.user_id, u.email,
             p.digest_frequency,
             COALESCE(p.last_digest_at, 0)::text AS last_digest_at,
-            COALESCE(p.last_digest_sent_at, 0)::text AS last_digest_sent_at
+            COALESCE(p.last_digest_sent_at, 0)::text AS last_digest_sent_at,
+            p.last_digest_id AS last_digest_id
        FROM aaelink.user_notification_prefs p
        INNER JOIN aaelink.users u ON u.id = p.user_id
       WHERE p.digest_frequency <> 'off'
@@ -254,8 +281,11 @@ export async function runEmailDigests(pool: Pool, now = Date.now()): Promise<Dig
     result.considered++
 
     const watermark = Number(row.last_digest_at || 0)
+    const watermarkId = row.last_digest_id ?? null
     // Drain the WHOLE since-watermark backlog (paged, gap-free) into one digest.
-    const items = await collectAllDigestItems(pool, row.user_id, watermark)
+    // Pass the persisted id companion so the first page is tie-safe at the exact
+    // watermark millisecond (no cross-run same-ms loss; migration 042).
+    const items = await collectAllDigestItems(pool, row.user_id, watermark, watermarkId)
     const composed = composeDigest(freq, items)
 
     if (composed) {
@@ -266,13 +296,18 @@ export async function runEmailDigests(pool: Pool, now = Date.now()): Promise<Dig
     }
 
     // Watermark → newest summarized item (overflow beyond the cap survives); on an
-    // empty run → `now`. Cadence timer → always `now`.
-    const newWatermark = items.length > 0 ? Math.max(watermark, items[items.length - 1].created_at) : now
+    // empty run → `now`. The id companion tracks the newest summarized item so the
+    // next run's first page can tie-break same-ms siblings; on an empty run it is
+    // cleared to NULL (a wall-clock `now` has no notification id to anchor, and the
+    // strict timestamp fallback is correct there). Cadence timer → always `now`.
+    const newest = items.length > 0 ? items[items.length - 1] : null
+    const newWatermark = newest ? Math.max(watermark, newest.created_at) : now
+    const newWatermarkId = newest ? newest.id : null
     await pool.query(
       `UPDATE aaelink.user_notification_prefs
-          SET last_digest_at = $1, last_digest_sent_at = $2, updated_at = $2
-        WHERE user_id = $3`,
-      [newWatermark, now, row.user_id]
+          SET last_digest_at = $1, last_digest_id = $2, last_digest_sent_at = $3, updated_at = $3
+        WHERE user_id = $4`,
+      [newWatermark, newWatermarkId, now, row.user_id]
     )
     result.watermarks_advanced++
   }

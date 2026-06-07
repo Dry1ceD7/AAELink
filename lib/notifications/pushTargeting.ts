@@ -73,6 +73,16 @@ export async function selectPushTargets(
     }
   }
 
+  // Manual status='dnd' also suppresses push (expires_at=0 means never-expires;
+  // positive value is a ms-epoch cutoff). In-app notifications are unaffected.
+  const { rows: statusDnd } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.user_status
+       WHERE user_id = ANY($1) AND status = 'dnd'
+         AND (expires_at = 0 OR expires_at > $2)`,
+    [uniq, now],
+  )
+  for (const r of statusDnd) dndSet.add(r.user_id)
+
   return uniq.filter(u => !mutedSet.has(u) && !dndSet.has(u))
 }
 

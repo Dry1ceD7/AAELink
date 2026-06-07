@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 
-export type NotificationPrefRule = 'mentions' | 'ticket_activity' | 'system'
+export type NotificationPrefRule = 'mentions' | 'ticket_activity' | 'system' | 'thread_replies'
 
 /**
  * Returns user ids from `userIds` who are allowed to receive notifications for the given rule.
@@ -13,21 +13,28 @@ export async function filterUsersForNotification(
 ): Promise<string[]> {
   const uniq = [...new Set(userIds.filter(Boolean))]
   if (uniq.length === 0) return []
-  const sql =
-    rule === 'mentions'
-      ? `SELECT t.user_id::text AS user_id
-         FROM unnest($1::text[]) AS t(user_id)
-         LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
-         WHERE COALESCE(p.mentions_enabled, true) = true`
-      : rule === 'ticket_activity'
-        ? `SELECT t.user_id::text AS user_id
-         FROM unnest($1::text[]) AS t(user_id)
-         LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
-         WHERE COALESCE(p.ticket_activity_enabled, true) = true`
-        : `SELECT t.user_id::text AS user_id
-         FROM unnest($1::text[]) AS t(user_id)
-         LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
-         WHERE COALESCE(p.system_notifications_enabled, true) = true`
+  let sql: string
+  if (rule === 'mentions') {
+    sql = `SELECT t.user_id::text AS user_id
+           FROM unnest($1::text[]) AS t(user_id)
+           LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
+           WHERE COALESCE(p.mentions_enabled, true) = true`
+  } else if (rule === 'ticket_activity') {
+    sql = `SELECT t.user_id::text AS user_id
+           FROM unnest($1::text[]) AS t(user_id)
+           LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
+           WHERE COALESCE(p.ticket_activity_enabled, true) = true`
+  } else if (rule === 'thread_replies') {
+    sql = `SELECT t.user_id::text AS user_id
+           FROM unnest($1::text[]) AS t(user_id)
+           LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
+           WHERE COALESCE(p.thread_replies_enabled, true) = true`
+  } else {
+    sql = `SELECT t.user_id::text AS user_id
+           FROM unnest($1::text[]) AS t(user_id)
+           LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
+           WHERE COALESCE(p.system_notifications_enabled, true) = true`
+  }
   const { rows } = await pool.query<{ user_id: string }>(sql, [uniq])
   return rows.map(r => r.user_id)
 }

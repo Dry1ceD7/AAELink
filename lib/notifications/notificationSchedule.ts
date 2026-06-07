@@ -12,6 +12,7 @@
  */
 
 import { readPreferences, type UserPreferences, getEffectiveTimezone } from '@/lib/ui/userPreferences'
+import { matchKeywords } from '@/lib/notifications/keywords'
 
 interface NotificationDecision {
   /** Should the notification be shown? */
@@ -82,12 +83,13 @@ export function evaluateNotification(
 
 /**
  * Check if a message should trigger a keyword notification.
+ * Delegates to matchKeywords (whole-word, case-insensitive) so client-side
+ * behaviour matches the server-side dispatch in notificationsServer.ts.
  */
 export function checkKeywordMatch(message: string, prefs?: UserPreferences): boolean {
   const p = prefs || readPreferences()
   if (!p.notifyKeywords || p.notifyKeywords.length === 0) return false
-  const lower = message.toLowerCase()
-  return p.notifyKeywords.some(kw => kw && lower.includes(kw.toLowerCase()))
+  return matchKeywords(message, p.notifyKeywords).length > 0
 }
 
 /**

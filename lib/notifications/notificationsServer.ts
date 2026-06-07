@@ -1,9 +1,10 @@
 import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
-import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { userCanReadChannel, filterUsersCanReadChannel } from '@/lib/enterprise/collab-access'
 import { filterUsersForNotification } from '@/lib/notifications/notificationPrefs'
 import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
+import type { BroadcastToken } from '@/lib/messaging/mentionParse'
 import { matchKeywords } from '@/lib/notifications/keywords'
 import { selectPushTargets, enqueuePush, dropLevelNothing, dropMuted, channelMembersLevelAll } from '@/lib/notifications/pushTargeting'
 
@@ -462,6 +463,203 @@ export async function notifyTicketSlaBreach(args: {
       ticket_id: args.ticketId
     }))
   )
+}
+
+/**
+ * Fan-out broadcast mention notifications (@here / @channel / @everyone).
+ *
+ * Rules (per task spec):
+ *  - Skip entirely if channels.allow_broadcast_mentions = false.
+ *  - @channel / @everyone → all channel members except sender.
+ *  - @here → channel members whose user_status.status = 'online'
+ *    (absent row defaults to 'online', matching the table DEFAULT).
+ *  - Filter out users with user_notification_prefs.broadcast_mentions_enabled = false.
+ *  - Dedup against directMentionUserIds (direct @mention wins; no second row).
+ *  - Notification kind = 'broadcast'.
+ *  - Push gated by selectPushTargets (mute + DND) same as mention path.
+ *
+ * Returns the list of user ids that received a broadcast notification.
+ */
+export async function notifyBroadcastMentions(args: {
+  pool: Pool
+  workspaceId: string
+  channelId: string
+  channelLabel: string
+  messageId: string
+  senderId: string
+  senderLabel: string
+  body: string
+  tokens: Set<BroadcastToken>
+  directMentionUserIds?: string[]
+}): Promise<string[]> {
+  if (args.tokens.size === 0) return []
+
+  // 1. Check channel-level gate.
+  const { rows: chRows } = await args.pool.query<{ allow_broadcast_mentions: boolean }>(
+    `SELECT allow_broadcast_mentions FROM aaelink.channels WHERE id = $1`,
+    [args.channelId]
+  )
+  if (chRows[0]?.allow_broadcast_mentions === false) return []
+
+  // 2. Determine audience: @here uses online-only; @channel/@everyone uses all members.
+  const needAll = args.tokens.has('channel') || args.tokens.has('everyone')
+
+  let candidates: string[]
+  if (needAll) {
+    // All channel members except sender.
+    const { rows } = await args.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM aaelink.channel_members WHERE channel_id = $1 AND user_id <> $2`,
+      [args.channelId, args.senderId]
+    )
+    candidates = rows.map(r => r.user_id)
+  } else {
+    // @here only — members currently online (status = 'online' or no row → default 'online').
+    const { rows } = await args.pool.query<{ user_id: string }>(
+      `SELECT cm.user_id
+         FROM aaelink.channel_members cm
+         LEFT JOIN aaelink.user_status us ON us.user_id = cm.user_id
+        WHERE cm.channel_id = $1
+          AND cm.user_id <> $2
+          AND COALESCE(us.status, 'online') = 'online'`,
+      [args.channelId, args.senderId]
+    )
+    candidates = rows.map(r => r.user_id)
+  }
+
+  if (candidates.length === 0) return []
+
+  // 3. Filter out users who have broadcast_mentions_enabled = false.
+  const { rows: prefRows } = await args.pool.query<{ user_id: string }>(
+    `SELECT t.user_id::text AS user_id
+       FROM unnest($1::text[]) AS t(user_id)
+       LEFT JOIN aaelink.user_notification_prefs p ON p.user_id = t.user_id
+      WHERE COALESCE(p.broadcast_mentions_enabled, true) = true`,
+    [candidates]
+  )
+  let targets = prefRows.map(r => r.user_id)
+  if (targets.length === 0) return []
+
+  // 4. Dedup against direct-mention recipients (direct mention wins).
+  const directSet = new Set(args.directMentionUserIds ?? [])
+  targets = targets.filter(u => !directSet.has(u))
+  if (targets.length === 0) return []
+
+  // 5. Respect channel-level 'nothing' (notifications off for this channel).
+  targets = await dropLevelNothing(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+
+  const title = `Broadcast mention in ${args.channelLabel}`
+  const body = `${args.senderLabel}: ${snippet(args.body)}`
+
+  await insertNotifications(
+    args.pool,
+    targets.map(user_id => ({
+      user_id,
+      kind: 'broadcast',
+      title,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: args.channelId,
+      message_id: args.messageId,
+      ticket_id: null
+    }))
+  )
+
+  // 6. Push, gated by selectPushTargets (mute + DND).
+  const pushable = await selectPushTargets(args.pool, targets, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      { userIds: pushable, title, body, channelId: args.channelId, priority: 'high' },
+      args.senderId
+    )
+  }
+
+  return targets
+}
+
+/**
+ * Notify followers of a thread when a new reply is posted.
+ *
+ * Rules:
+ *  - Fetch all users from thread_followers for the given thread_id.
+ *  - Exclude the replier (they just posted — no self-notify).
+ *  - Exclude users already notified via direct @mention (directMentionUserIds).
+ *  - Drop followers who can no longer READ the channel (lost access → no leak).
+ *  - Filter by thread_replies_enabled pref (default true).
+ *  - Respect per-channel level='nothing' (in-app off).
+ *  - Push gated by selectPushTargets (mute + DND) — same as mention path.
+ *  - Notification kind = 'thread_reply'.
+ *
+ * Returns the list of user ids that received a thread_reply notification.
+ */
+export async function notifyThreadFollowers(args: {
+  pool: Pool
+  workspaceId: string
+  channelId: string
+  channelLabel: string
+  threadId: string
+  replyId: string
+  replierId: string
+  replierLabel: string
+  body: string
+  directMentionUserIds?: string[]
+}): Promise<string[]> {
+  // 1. Fetch thread followers, excluding the replier.
+  const { rows: followerRows } = await args.pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.thread_followers
+     WHERE thread_id = $1 AND user_id <> $2`,
+    [args.threadId, args.replierId]
+  )
+  if (followerRows.length === 0) return []
+
+  // 2. Dedup against direct-mention recipients (direct mention wins).
+  const directSet = new Set(args.directMentionUserIds ?? [])
+  let targets = followerRows.map(r => r.user_id).filter(u => !directSet.has(u))
+  if (targets.length === 0) return []
+
+  // 3. Drop followers who can no longer READ the channel — a user who lost
+  //    channel access must not keep receiving reply notifications (info leak).
+  //    Batched single query (no N+1) even for large follower lists.
+  targets = await filterUsersCanReadChannel(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+
+  // 4. Filter by thread_replies_enabled pref.
+  targets = await filterUsersForNotification(args.pool, targets, 'thread_replies')
+  if (targets.length === 0) return []
+
+  // 5. Respect per-channel level='nothing'.
+  targets = await dropLevelNothing(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+
+  const title = `New reply in ${args.channelLabel}`
+  const body = `${args.replierLabel}: ${snippet(args.body)}`
+
+  await insertNotifications(
+    args.pool,
+    targets.map(user_id => ({
+      user_id,
+      kind: 'thread_reply',
+      title,
+      body,
+      workspace_id: args.workspaceId,
+      channel_id: args.channelId,
+      message_id: args.replyId,
+      ticket_id: null
+    }))
+  )
+
+  // 6. Push, gated by selectPushTargets (mute + DND).
+  const pushable = await selectPushTargets(args.pool, targets, args.channelId)
+  if (pushable.length > 0) {
+    await enqueuePush(
+      args.pool,
+      { userIds: pushable, title, body, channelId: args.channelId, priority: 'high' },
+      args.replierId
+    )
+  }
+
+  return targets
 }
 
 /** Notify the original ticket requester when their ticket status changes. */

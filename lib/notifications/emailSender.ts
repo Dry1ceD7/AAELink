@@ -174,8 +174,8 @@ async function smtpDeliver(cfg: SmtpConfig, msg: EmailMessage): Promise<void> {
 
     if (cfg.user && cfg.pass) {
       await cmd(sock, `AUTH LOGIN`, 334)
-      await cmd(sock, Buffer.from(cfg.user).toString('base64'), 334)
-      await cmd(sock, Buffer.from(cfg.pass).toString('base64'), 235)
+      await cmd(sock, encodeSmtpAuth(cfg.user), 334)
+      await cmd(sock, encodeSmtpAuth(cfg.pass), 235)
     }
 
     await cmd(sock, `MAIL FROM:<${cfg.from}>`, 250)
@@ -245,6 +245,24 @@ async function expect(sock: SmtpSocket, code: number): Promise<string> {
   const got = Number(line.trim().slice(0, 3))
   if (got !== code) throw new Error(`expected SMTP ${code}, got: ${line.trim().slice(0, 120)}`)
   return line
+}
+
+/**
+ * Base64-encode one AUTH LOGIN credential token (username or password) for the
+ * SMTP AUTH LOGIN exchange (RFC 4954).
+ *
+ * INVARIANT (verified by tests/emailSender.test.ts): the result is a SINGLE LINE
+ * with no embedded CR/LF. SMTP commands are CRLF-terminated, so a base64 string
+ * carrying an interior line break would be split across two command lines and the
+ * AUTH exchange would desync (the server would read the second chunk as a bogus
+ * command). Node's `Buffer.toString('base64')` is a pure RFC 4648 encoding — it
+ * does NOT apply the 76-char MIME line wrapping of RFC 2045 — so even a 100+ char
+ * credential encodes to one unbroken line. This helper exists to (a) make that
+ * invariant unit-testable without a live socket and (b) document why no manual
+ * line-unwrapping is needed here. `cmd()` appends the single trailing CRLF.
+ */
+export function encodeSmtpAuth(credential: string): string {
+  return Buffer.from(credential, 'utf8').toString('base64')
 }
 
 async function cmd(sock: SmtpSocket, command: string, code: number): Promise<string> {
