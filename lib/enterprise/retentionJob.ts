@@ -17,6 +17,10 @@ import {
   cutoffForPolicy, loadActiveHolds, buildHoldExclusion, buildFileHoldExclusion,
   type RetentionPolicyRow, type RetentionResult,
 } from './retentionEnforcer'
+import {
+  loadActiveChannelOverrides, deleteOverriddenChannelMessages,
+  type ChannelRetentionOverride,
+} from './retentionOverrides'
 import { removeFileObject } from '@/lib/files/storage'
 import { writeAuditLog } from './auditLog'
 
@@ -30,7 +34,8 @@ const CHANNEL_TYPE_BY_SCOPE: Record<string, string[]> = {
 const FILE_BATCH = 500
 
 async function deleteMessages(
-  pool: Pool, cutoffMs: number, channelTypes: string[], holdsClause: string, holdsParams: unknown[]
+  pool: Pool, cutoffMs: number, channelTypes: string[], holdsClause: string, holdsParams: unknown[],
+  excludeChannelIds: string[] = []
 ): Promise<number> {
   const params: unknown[] = [cutoffMs]
   let typeFilter = ''
@@ -38,12 +43,20 @@ async function deleteMessages(
     params.push(channelTypes)
     typeFilter = ` AND c.type = ANY($${params.length}::text[])`
   }
+  // Channels with a per-channel override are excluded here — their override
+  // window governs them via deleteOverriddenChannelMessages, not the scope
+  // window. Without this exclusion the scope delete would race the override.
+  let excludeFilter = ''
+  if (excludeChannelIds.length > 0) {
+    params.push(excludeChannelIds)
+    excludeFilter = ` AND m.channel_id <> ALL($${params.length}::text[])`
+  }
   // Hold params follow the message params; re-number happens at call site.
   const { rowCount } = await pool.query(
     `DELETE FROM aaelink.messages m
        USING aaelink.channels c
       WHERE m.channel_id = c.id
-        AND m.created_at < $1${typeFilter}${holdsClause}`,
+        AND m.created_at < $1${typeFilter}${excludeFilter}${holdsClause}`,
     [...params, ...holdsParams]
   )
   return rowCount || 0
@@ -170,9 +183,15 @@ export async function runRetentionEnforcement(pool: Pool): Promise<RetentionResu
        FROM aaelink.retention_policies
       WHERE enabled = true AND retention_days > 0`
   )
-  if (policies.length === 0) return []
+  // Per-channel overrides win over scope policy for their channel: the scope
+  // delete skips these channels and each override drives its own delete below.
+  // Overrides are independent rules, so an override can purge its channel even
+  // when no scope policy is enabled — only bail when there is nothing to do.
+  const overrides = await loadActiveChannelOverrides(pool)
+  if (policies.length === 0 && overrides.length === 0) return []
 
   const holds = await loadActiveHolds(pool)
+  const overrideChannelIds = overrides.map((o) => o.channelId)
   const results: RetentionResult[] = []
 
   for (const p of policies) {
@@ -186,11 +205,15 @@ export async function runRetentionEnforcement(pool: Pool): Promise<RetentionResu
     if (isMessageScope) {
       // Message hold exclusion keys off m.channel_id / m.created_at / m.user_id
       // (custodian). messages.channel_id is NOT NULL so no NULL-channel guard is
-      // needed here (the file path handles that). Params already used: $1 cutoff,
-      // then optional channelTypes.
-      const nextIdx = channelTypes.length > 0 ? 3 : 2
+      // needed here (the file path handles that). Params used before the holds:
+      // $1 cutoff, optional channelTypes, optional override-exclude list.
+      let nextIdx = 2
+      if (channelTypes.length > 0) nextIdx++
+      if (overrideChannelIds.length > 0) nextIdx++
       const ex = buildHoldExclusion(holds, 'm.channel_id', 'm.created_at', nextIdx, 'm.user_id')
-      messagesDeleted = await deleteMessages(pool, cutoffMs, channelTypes, ex.clause, ex.params)
+      messagesDeleted = await deleteMessages(
+        pool, cutoffMs, channelTypes, ex.clause, ex.params, overrideChannelIds
+      )
     }
 
     if (p.scope === 'file' || p.delete_files) {
@@ -207,7 +230,28 @@ export async function runRetentionEnforcement(pool: Pool): Promise<RetentionResu
       metadata: {
         scope: p.scope, retention_days: p.retention_days,
         messages_deleted: messagesDeleted, files_deleted: filesDeleted,
-        active_holds: holds.length,
+        active_holds: holds.length, channel_overrides: overrides.length,
+      },
+    })
+  }
+
+  // Apply each per-channel override (hold-aware). Runs regardless of whether a
+  // scope message policy is enabled — an override is an independent rule for its
+  // channel. The scope deletes above already excluded these channels.
+  for (const o of overrides) {
+    const messagesDeleted = await deleteOverriddenChannelMessages(pool, o, holds)
+    results.push({
+      scope: `channel:${o.channelId}`, cutoffMs: cutoffForPolicy(o.retentionDays),
+      messagesDeleted, filesDeleted: 0,
+    })
+    writeAuditLog({
+      pool,
+      action: 'retention.enforce',
+      resourceKind: 'channel_override',
+      resourceId: o.channelId,
+      metadata: {
+        channel_id: o.channelId, retention_days: o.retentionDays,
+        messages_deleted: messagesDeleted, active_holds: holds.length,
       },
     })
   }
