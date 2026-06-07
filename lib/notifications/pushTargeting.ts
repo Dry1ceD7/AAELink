@@ -14,6 +14,7 @@
 import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { isDndActiveNow } from '@/lib/notifications/dndWindow'
+import { getPushPolicy, applyQuietHours, applyMaxRate } from '@/lib/notifications/pushPolicy'
 
 export type PushPriority = 'high' | 'normal' | 'low'
 
@@ -25,8 +26,10 @@ export function jobPriorityFor(p: PushPriority): number {
 /**
  * Filter `userIds` to those eligible for a push on `channelId`: drops users who
  * muted the channel (channel_notification_prefs.muted OR a channel_mutes row)
- * or are currently in DND (active snooze, or enabled schedule window). Returns
- * the allowed subset (deduped; order not significant).
+ * or are currently in DND (active snooze, or enabled schedule window). When an
+ * admin push policy is active, also drops everyone during org quiet hours and
+ * caps each user at the policy's per-hour rate. Returns the allowed subset
+ * (deduped; order not significant). Absent/disabled policy → no policy effect.
  */
 export async function selectPushTargets(
   pool: Pool,
@@ -36,6 +39,10 @@ export async function selectPushTargets(
 ): Promise<string[]> {
   const uniq = [...new Set(userIds.filter(Boolean))]
   if (uniq.length === 0) return []
+
+  // Admin push policy: org quiet hours drop everyone before any per-user work.
+  const policy = await getPushPolicy(pool)
+  if (applyQuietHours(policy, uniq, new Date(now)).length === 0) return []
 
   // Suppressed = channel muted, an explicit mute row, OR notification level
   // 'nothing' (the user turned this channel's notifications off entirely).
@@ -83,7 +90,10 @@ export async function selectPushTargets(
   )
   for (const r of statusDnd) dndSet.add(r.user_id)
 
-  return uniq.filter(u => !mutedSet.has(u) && !dndSet.has(u))
+  const survivors = uniq.filter(u => !mutedSet.has(u) && !dndSet.has(u))
+  // Per-user max-rate cap runs last so only real (non-muted, non-DND) pushes
+  // consume a rate-limit count. Absent/disabled policy → unchanged.
+  return applyMaxRate(policy, survivors)
 }
 
 export interface EnqueuePushArgs {
