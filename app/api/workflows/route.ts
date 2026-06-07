@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -27,8 +26,6 @@ async function _GET(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureWorkflowTables(pool)
 
   const workflowId = req.nextUrl.searchParams.get('workflow_id') || ''
   const view = req.nextUrl.searchParams.get('view') || 'list'
@@ -98,8 +95,6 @@ async function _POST(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureWorkflowTables(pool)
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: string; workflow_id?: string; name?: string; description?: string; icon?: string
@@ -224,49 +219,6 @@ async function _POST(req: NextRequest) {
 function parseJSON(val: unknown): unknown {
   if (typeof val === 'string') { try { return JSON.parse(val) } catch { return val } }
   return val
-}
-
-async function ensureWorkflowTables(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.workflows (
-      id          TEXT PRIMARY KEY,
-      name        TEXT NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT '',
-      icon        TEXT NOT NULL DEFAULT '⚡',
-      status      TEXT NOT NULL DEFAULT 'active',
-      is_featured BOOLEAN NOT NULL DEFAULT false,
-      created_by  TEXT NOT NULL DEFAULT '',
-      created_at  BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS aaelink.workflow_steps (
-      id          TEXT PRIMARY KEY,
-      workflow_id TEXT NOT NULL,
-      position    INTEGER NOT NULL DEFAULT 0,
-      type        TEXT NOT NULL DEFAULT 'function',
-      function_id TEXT NOT NULL DEFAULT '',
-      config      JSONB NOT NULL DEFAULT '{}',
-      created_at  BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS aaelink.workflow_triggers (
-      id          TEXT PRIMARY KEY,
-      workflow_id TEXT NOT NULL,
-      type        TEXT NOT NULL DEFAULT 'webhook',
-      config      JSONB NOT NULL DEFAULT '{}',
-      created_at  BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS aaelink.workflow_executions (
-      id           TEXT PRIMARY KEY,
-      workflow_id  TEXT NOT NULL,
-      status       TEXT NOT NULL DEFAULT 'pending',
-      triggered_by TEXT NOT NULL DEFAULT '',
-      error        TEXT NOT NULL DEFAULT '',
-      created_at   BIGINT NOT NULL DEFAULT 0,
-      completed_at BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_wf_steps ON aaelink.workflow_steps(workflow_id);
-    CREATE INDEX IF NOT EXISTS idx_wf_triggers ON aaelink.workflow_triggers(workflow_id);
-    CREATE INDEX IF NOT EXISTS idx_wf_execs ON aaelink.workflow_executions(workflow_id, created_at DESC);
-  `)
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

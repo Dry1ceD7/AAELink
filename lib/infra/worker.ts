@@ -23,6 +23,7 @@
 import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { log } from '@/lib/infra/log'
+import { pruneExpiredOAuthTokens, pruneOAuthCodes } from '@/lib/auth/oauthCleanup'
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -243,9 +244,16 @@ const handlers: Record<string, JobHandler> = {
   },
 
   // Events API deliver (from webhookEmitter → event_subscriptions fan-out).
-  // Mirrors webhook_deliver, plus: on success bump delivery_count/last_delivery_at;
-  // on failure bump failure_count, auto-disable runaway endpoints, then rethrow
-  // so the worker's retry/backoff machinery handles redelivery.
+  // Mirrors webhook_deliver, plus: on success bump delivery_count/last_delivery_at
+  // AND reset failure_count to 0; on failure bump failure_count, auto-disable
+  // runaway endpoints, then rethrow so the worker's retry/backoff machinery
+  // handles redelivery. failure_count therefore tracks CONSECUTIVE failures, not
+  // lifetime: a single success restarts the count so a healthy endpoint that has
+  // accumulated occasional failures over months never trips the runaway disable.
+  // CONTRACT MIRROR: the success/failure UPDATEs below are replicated byte-for-byte
+  // (incl. FAILURE_THRESHOLD/RECENT_SUCCESS_WINDOW_MS) in the failure-semantics
+  // fixtures of __tests__/api/event-subscription-dispatch.test.ts — keep both in
+  // lockstep (this handler is inline + non-exported, so it cannot be imported).
   event_deliver: async (payload, pool) => {
     const { subscription_id, endpoint_url, event_type, payload: body, signature, delivery_id } = payload as {
       subscription_id: string; endpoint_url: string; event_type: string
@@ -274,23 +282,27 @@ const handlers: Record<string, JobHandler> = {
         throw new Error(`endpoint returned ${res.status}`)
       }
 
-      // Success: count delivery, stamp last_delivery_at, and clear a 'failing'
-      // status (the endpoint recovered). Failure_count is left as-is — it is a
-      // lifetime counter; recovery is signalled by the status flip back to active.
+      // Success: count delivery, stamp last_delivery_at, RESET failure_count to 0,
+      // and clear a 'failing' status (the endpoint recovered). Resetting the count
+      // makes the auto-disable threshold count CONSECUTIVE failures — a healthy
+      // endpoint that has logged scattered failures over its lifetime never trips
+      // the runaway disable as long as deliveries keep succeeding in between.
       await pool.query(
         `UPDATE aaelink.event_subscriptions
             SET delivery_count = delivery_count + 1,
                 last_delivery_at = $2,
+                failure_count = 0,
                 status = CASE WHEN status = 'failing' THEN 'active' ELSE status END
           WHERE id = $1`,
         [subscription_id, Date.now()]
       )
       log.info(`   ✅ Status: ${res.status}`)
     } catch (err: unknown) {
-      // Failure: bump failure_count. Auto-disable a runaway endpoint (status →
-      // 'failing', never hard-delete) once it crosses the threshold with no
-      // recent success. We do NOT 'failing'-gate on every failure so transient
-      // blips recover on their own via worker retry.
+      // Failure: bump failure_count (reset to 0 by the success path above, so this
+      // counts CONSECUTIVE failures). Auto-disable a runaway endpoint (status →
+      // 'failing', never hard-delete) once consecutive failures cross the threshold
+      // with no recent success. We do NOT 'failing'-gate on every failure so
+      // transient blips recover on their own via worker retry.
       const FAILURE_THRESHOLD = 50
       const RECENT_SUCCESS_WINDOW_MS = 24 * 60 * 60 * 1000
       await pool.query(
@@ -548,11 +560,12 @@ const handlers: Record<string, JobHandler> = {
   oauth_token_cleanup: async (_payload, pool) => {
     log.info(`🔑 [oauth_token_cleanup] Removing expired tokens`)
     const now = Date.now()
-    const { rowCount } = await pool.query(
-      `DELETE FROM aaelink.oauth_tokens WHERE expires_at > 0 AND expires_at < $1`,
-      [now]
-    )
-    log.info(`   ✅ Removed ${rowCount || 0} expired tokens`)
+    // Prune predicates live in lib/auth/oauthCleanup.ts so they are unit-testable
+    // (the handlers map here is module-local and not exported).
+    const tokenCount = await pruneExpiredOAuthTokens(pool, now)
+    log.info(`   ✅ Removed ${tokenCount} expired tokens`)
+    const codeCount = await pruneOAuthCodes(pool, now)
+    log.info(`   ✅ Removed ${codeCount} expired/consumed authorization codes`)
   },
 }
 

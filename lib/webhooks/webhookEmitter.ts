@@ -211,6 +211,7 @@ async function fanOutEventSubscriptions(
     SELECT id, endpoint_url, events, signing_secret
     FROM aaelink.event_subscriptions
     WHERE status = 'active'
+      AND verified = true
       AND (workspace_id IS NULL OR workspace_id = '' OR workspace_id = $1)
   `, [workspaceId ?? ''])
 
