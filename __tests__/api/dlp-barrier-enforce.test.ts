@@ -197,6 +197,147 @@ describe('information-barrier enforcement', () => {
   })
 })
 
+describe('information-barrier block_search enforcement', () => {
+  it('hides barred users from /api/search/users both directions', async () => {
+    // barrier: alice (group_a) ↔ bob (group_b), block_search=true
+    const searchBarrierId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.information_barriers
+         (id, name, type, description, group_a_ids, group_b_ids, block_dm, block_channels, block_search, block_file_share, is_active, created_by, created_at)
+       VALUES ($1, $2, 'custom', '', $3, $4, false, false, true, false, true, $5, $6)`,
+      [searchBarrierId, `sb-${searchBarrierId.slice(0, 8)}`, JSON.stringify([alice.id]), JSON.stringify([bob.id]), alice.id, Date.now()]
+    )
+    barrierIds.push(searchBarrierId)
+
+    const { GET } = await import('@/app/api/search/users/route')
+
+    // alice searches for bob — should not appear
+    const resAlice = await GET(asRequest('GET', `/api/search/users?q=${bob.id.slice(0, 8)}&workspace_id=${wsId}`, { cookie: alice.sessionCookie }))
+    const bodyAlice = await expectSuccess<{ users: { id: string }[] }>(resAlice)
+    expect(bodyAlice.users.map((u) => u.id)).not.toContain(bob.id)
+
+    // bob searches for alice — should not appear
+    const resBob = await GET(asRequest('GET', `/api/search/users?q=${alice.id.slice(0, 8)}&workspace_id=${wsId}`, { cookie: bob.sessionCookie }))
+    const bodyBob = await expectSuccess<{ users: { id: string }[] }>(resBob)
+    expect(bodyBob.users.map((u) => u.id)).not.toContain(alice.id)
+  })
+
+  it('hides barred users from /api/users/directory both directions', async () => {
+    const { GET } = await import('@/app/api/users/directory/route')
+
+    // alice lists directory — bob should not appear
+    const resAlice = await GET(asRequest('GET', `/api/users/directory?search=${bob.id.slice(0, 8)}`, { cookie: alice.sessionCookie }))
+    const bodyAlice = await expectSuccess<{ members: { id: string }[] }>(resAlice)
+    expect(bodyAlice.members.map((m) => m.id)).not.toContain(bob.id)
+
+    // bob lists directory — alice should not appear
+    const resBob = await GET(asRequest('GET', `/api/users/directory?search=${alice.id.slice(0, 8)}`, { cookie: bob.sessionCookie }))
+    const bodyBob = await expectSuccess<{ members: { id: string }[] }>(resBob)
+    expect(bodyBob.members.map((m) => m.id)).not.toContain(alice.id)
+  })
+
+  it('does NOT hide non-barred users from search results', async () => {
+    const dave = await createTestUser(ctx.pool, { role: 'employee' })
+    createdIds.push(dave.id)
+    const { GET } = await import('@/app/api/search/users/route')
+
+    // alice is not barriered from dave — should appear
+    const res = await GET(asRequest('GET', `/api/search/users?q=${dave.id.slice(0, 8)}&workspace_id=${wsId}`, { cookie: alice.sessionCookie }))
+    const body = await expectSuccess<{ users: { id: string }[] }>(res)
+    expect(body.users.map((u) => u.id)).toContain(dave.id)
+  })
+})
+
+describe('information-barrier block_file_share enforcement', () => {
+  it('blocks attaching a file to a message in a channel shared with a barriered member (403)', async () => {
+    // barrier: alice (group_a) ↔ bob (group_b), block_file_share=true
+    const fsBarrierId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.information_barriers
+         (id, name, type, description, group_a_ids, group_b_ids, block_dm, block_channels, block_search, block_file_share, is_active, created_by, created_at)
+       VALUES ($1, $2, 'custom', '', $3, $4, false, false, false, true, true, $5, $6)`,
+      [fsBarrierId, `fs-${fsBarrierId.slice(0, 8)}`, JSON.stringify([alice.id]), JSON.stringify([bob.id]), alice.id, Date.now()]
+    )
+    barrierIds.push(fsBarrierId)
+
+    // Create a channel with both alice and bob as members
+    const channel = await createTestChannel(ctx.pool, alice.id, { workspaceId: wsId })
+    await ctx.pool.query(
+      `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at)
+       VALUES ($1, $2, 'member', $3) ON CONFLICT DO NOTHING`,
+      [channel.id, bob.id, Date.now()]
+    )
+
+    // Insert a test message from alice
+    const msgId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $5)`,
+      [msgId, channel.id, alice.id, 'file share test', Date.now()]
+    )
+
+    // Upload a fake file record
+    const fileId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.file_attachments (id, filename, content_type, size, storage_key, user_id, channel_id, workspace_id, deleted_at, created_at)
+       VALUES ($1, 'test.txt', 'text/plain', 10, $2, $3, $4, $5, 0, $6)`,
+      [fileId, `test-${fileId}`, alice.id, channel.id, wsId, Date.now()]
+    )
+
+    const { POST } = await import('@/app/api/messages/attachments/route')
+    const res = await POST(asRequest('POST', '/api/messages/attachments', {
+      cookie: alice.sessionCookie,
+      body: { message_id: msgId, file_ids: [fileId] },
+    }))
+    await expectError(res, 403, 'blocked_by_information_barrier')
+
+    // cleanup
+    await ctx.pool.query(`DELETE FROM aaelink.file_attachments WHERE id = $1`, [fileId])
+    await ctx.pool.query(`DELETE FROM aaelink.messages WHERE id = $1`, [msgId])
+    await ctx.pool.query(`DELETE FROM aaelink.channel_members WHERE channel_id = $1`, [channel.id])
+  })
+
+  it('allows attaching a file when no barrier applies (200)', async () => {
+    const eve = await createTestUser(ctx.pool, { role: 'employee' })
+    createdIds.push(eve.id)
+
+    // Channel with only alice and eve (not barriered)
+    const channel = await createTestChannel(ctx.pool, alice.id, { workspaceId: wsId })
+    await ctx.pool.query(
+      `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at)
+       VALUES ($1, $2, 'member', $3) ON CONFLICT DO NOTHING`,
+      [channel.id, eve.id, Date.now()]
+    )
+
+    const msgId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $5)`,
+      [msgId, channel.id, alice.id, 'safe file share', Date.now()]
+    )
+
+    const fileId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.file_attachments (id, filename, content_type, size, storage_key, user_id, channel_id, workspace_id, deleted_at, created_at)
+       VALUES ($1, 'safe.txt', 'text/plain', 5, $2, $3, $4, $5, 0, $6)`,
+      [fileId, `safe-${fileId}`, alice.id, channel.id, wsId, Date.now()]
+    )
+
+    const { POST } = await import('@/app/api/messages/attachments/route')
+    const res = await POST(asRequest('POST', '/api/messages/attachments', {
+      cookie: alice.sessionCookie,
+      body: { message_id: msgId, file_ids: [fileId] },
+    }))
+    await expectSuccess(res)
+
+    // cleanup
+    await ctx.pool.query(`DELETE FROM aaelink.message_attachments WHERE message_id = $1`, [msgId])
+    await ctx.pool.query(`DELETE FROM aaelink.file_attachments WHERE id = $1`, [fileId])
+    await ctx.pool.query(`DELETE FROM aaelink.messages WHERE id = $1`, [msgId])
+    await ctx.pool.query(`DELETE FROM aaelink.channel_members WHERE channel_id = $1`, [channel.id])
+  })
+})
+
 describe('information-barrier type enforcement', () => {
   it('rejects creating a department-type barrier (400 barrier_type_not_supported)', async () => {
     const admin = await createTestUser(ctx.pool, { role: 'super_admin' })
@@ -212,5 +353,54 @@ describe('information-barrier type enforcement', () => {
       },
     }))
     await expectError(res, 400, 'barrier_type_not_supported')
+  })
+})
+
+describe('information-barrier enforcement on POST /api/channels', () => {
+  it('blocks a 1:1 DM created via POST /api/channels when a barrier separates the pair (403)', async () => {
+    // barrier between alice and bob is already active from addBarrier() in the earlier suite
+    const { POST } = await import('@/app/api/channels/route')
+    const res = await POST(asRequest('POST', '/api/channels', {
+      cookie: alice.sessionCookie,
+      body: { workspace_id: wsId, peer_user_id: bob.id },
+    }))
+    await expectError(res, 403, 'blocked_by_information_barrier')
+  })
+
+  it('blocks a group DM created via POST /api/channels when a barrier separates any pair (403)', async () => {
+    const carol = await createTestUser(ctx.pool, { role: 'employee' })
+    createdIds.push(carol.id)
+    // carol is outside both barrier groups but alice and bob are barriered
+    const { POST } = await import('@/app/api/channels/route')
+    const res = await POST(asRequest('POST', '/api/channels', {
+      cookie: carol.sessionCookie,
+      body: { workspace_id: wsId, peer_user_ids: [alice.id, bob.id] },
+    }))
+    await expectError(res, 403, 'blocked_by_information_barrier')
+  })
+
+  it('allows a 1:1 DM via POST /api/channels when no barrier applies (200)', async () => {
+    const dave = await createTestUser(ctx.pool, { role: 'employee' })
+    createdIds.push(dave.id)
+    // dave is not in any barrier group
+    const { POST } = await import('@/app/api/channels/route')
+    const res = await POST(asRequest('POST', '/api/channels', {
+      cookie: alice.sessionCookie,
+      body: { workspace_id: wsId, peer_user_id: dave.id },
+    }))
+    await expectSuccess<{ channel: { id: string } }>(res)
+  })
+
+  it('allows a group DM via POST /api/channels when no barrier applies (200)', async () => {
+    const eve = await createTestUser(ctx.pool, { role: 'employee' })
+    const frank = await createTestUser(ctx.pool, { role: 'employee' })
+    createdIds.push(eve.id, frank.id)
+    // eve and frank are not in any barrier group
+    const { POST } = await import('@/app/api/channels/route')
+    const res = await POST(asRequest('POST', '/api/channels', {
+      cookie: alice.sessionCookie,
+      body: { workspace_id: wsId, peer_user_ids: [eve.id, frank.id] },
+    }))
+    await expectSuccess<{ channel: { id: string } }>(res)
   })
 })

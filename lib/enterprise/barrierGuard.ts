@@ -137,6 +137,45 @@ export async function isBlocked(
   return false
 }
 
+/**
+ * Batch-filter a list of user IDs, returning the subset that the requesting
+ * user (uid) is search-blocked from seeing.  A single query loads all active
+ * barriers with block_search=true; group membership is checked in-process so
+ * there is no N+1 loop.
+ *
+ * Usage: drop returned IDs from search/directory result sets.
+ */
+export async function filterSearchBlocked(
+  pool: import('pg').Pool,
+  uid: string,
+  userIds: string[]
+): Promise<Set<string>> {
+  if (!userIds.length) return new Set()
+
+  const { rows } = await pool.query<Pick<InformationBarrier, 'group_a_ids' | 'group_b_ids'>>(
+    `SELECT group_a_ids, group_b_ids
+       FROM aaelink.information_barriers
+      WHERE is_active = true AND block_search = true`
+  )
+
+  const blocked = new Set<string>()
+
+  for (const b of rows) {
+    const aInA = b.group_a_ids.includes(uid)
+    const aInB = b.group_b_ids.includes(uid)
+    if (!aInA && !aInB) continue   // uid not in this barrier at all
+
+    for (const otherId of userIds) {
+      if (otherId === uid) continue
+      const oInA = b.group_a_ids.includes(otherId)
+      const oInB = b.group_b_ids.includes(otherId)
+      if ((aInA && oInB) || (aInB && oInA)) blocked.add(otherId)
+    }
+  }
+
+  return blocked
+}
+
 /** Standard user-facing error message for barrier violations. */
 export function getBarrierViolationMessage(): string {
   return 'This action is blocked by an information barrier policy. Contact your organization administrator for details.'
