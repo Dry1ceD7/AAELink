@@ -3,11 +3,13 @@
  *
  * A user saves any message they can see to a personal list and moves it through
  * states (saved -> in_progress -> completed -> archived), the Slack "Later"
- * surface. Saving is visibility-gated: the user must belong to the message's
- * channel. One row per (user, message); re-saving refreshes the timestamp but
- * preserves the existing state and note.
+ * surface. Saving is visibility-gated: the user must be able to read the
+ * message's channel (open, private-member, DM participant, or workspace admin).
+ * One row per (user, message); re-saving refreshes the timestamp but preserves
+ * the existing state and note.
  */
 import type { Pool } from 'pg'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 export type SavedItemState = 'saved' | 'in_progress' | 'completed' | 'archived'
 export const SAVED_ITEM_STATES: SavedItemState[] = ['saved', 'in_progress', 'completed', 'archived']
@@ -16,22 +18,19 @@ export function isSavedItemState(v: string): v is SavedItemState {
   return (SAVED_ITEM_STATES as string[]).includes(v)
 }
 
-/** Load a message's channel and whether the user is a member of it. */
+/** Resolve whether a message exists and whether the user can read its channel. */
 async function messageVisibleTo(
   pool: Pool,
   uid: string,
   messageId: string
 ): Promise<{ exists: boolean; visible: boolean }> {
-  const { rows } = await pool.query<{ is_member: boolean }>(
-    `SELECT (cm.user_id IS NOT NULL) AS is_member
-       FROM aaelink.messages m
-       LEFT JOIN aaelink.channel_members cm
-         ON cm.channel_id = m.channel_id AND cm.user_id = $1
-      WHERE m.id = $2`,
-    [uid, messageId]
+  const { rows } = await pool.query<{ channel_id: string }>(
+    `SELECT channel_id FROM aaelink.messages WHERE id = $1`,
+    [messageId]
   )
   if (rows.length === 0) return { exists: false, visible: false }
-  return { exists: true, visible: rows[0].is_member }
+  const visible = await userCanReadChannel(pool, uid, rows[0].channel_id)
+  return { exists: true, visible }
 }
 
 export type SaveItemResult =
@@ -105,7 +104,9 @@ export interface SavedItem {
 /**
  * List the user's saved items (optionally filtered by state), newest first, with
  * a snapshot of the message. Excludes items whose message has since been deleted
- * (the FK cascade removes those rows anyway).
+ * (the FK cascade removes those rows anyway). Also excludes items whose channel
+ * the user can no longer read (e.g. since-privatized channels) — message body is
+ * not leaked for those items.
  */
 export async function listSavedItems(
   pool: Pool,
@@ -127,14 +128,23 @@ export async function listSavedItems(
       ORDER BY s.saved_at DESC`,
     [uid, filterState]
   )
-  return rows.map(r => ({
-    message_id: r.message_id,
-    channel_id: r.channel_id,
-    state: r.state,
-    note: r.note,
-    saved_at: Number(r.saved_at),
-    body: r.body,
-    author_id: r.author_id,
-    message_created_at: Number(r.message_created_at),
-  }))
+
+  // Filter out items from channels the user can no longer read, to avoid
+  // leaking message bodies from since-privatized channels.
+  const accessible: SavedItem[] = []
+  for (const r of rows) {
+    if (await userCanReadChannel(pool, uid, r.channel_id)) {
+      accessible.push({
+        message_id: r.message_id,
+        channel_id: r.channel_id,
+        state: r.state,
+        note: r.note,
+        saved_at: Number(r.saved_at),
+        body: r.body,
+        author_id: r.author_id,
+        message_created_at: Number(r.message_created_at),
+      })
+    }
+  }
+  return accessible
 }

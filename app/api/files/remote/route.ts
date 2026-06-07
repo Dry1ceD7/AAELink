@@ -1,7 +1,6 @@
 // keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -28,8 +27,6 @@ async function _GET(req: NextRequest) {
   const channelId = req.nextUrl.searchParams.get('channel_id') || ''
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit') || 50), 200)
   const cursor = req.nextUrl.searchParams.get('cursor') || ''
-
-  await ensureRemoteFilesTable(pool)
 
   if (externalId) {
     const { rows } = await pool.query(
@@ -72,8 +69,6 @@ async function _POST(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureRemoteFilesTable(pool)
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: 'add' | 'update' | 'remove' | 'share'
@@ -151,23 +146,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'action must be add/update/remove/share' }, { status: 400 })
-}
-
-async function ensureRemoteFilesTable(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.files_remote (
-      id              TEXT PRIMARY KEY,
-      external_id     TEXT UNIQUE NOT NULL,
-      external_url    TEXT NOT NULL DEFAULT '',
-      title           TEXT NOT NULL DEFAULT '',
-      filetype        TEXT NOT NULL DEFAULT 'link',
-      preview_image   TEXT NOT NULL DEFAULT '',
-      indexable_text  TEXT NOT NULL DEFAULT '',
-      channels        TEXT[] NOT NULL DEFAULT '{}',
-      created_by      TEXT NOT NULL DEFAULT '',
-      created_at      BIGINT NOT NULL DEFAULT 0
-    );
-  `)
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
@@ -129,8 +128,6 @@ async function _POST(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureListsTables(pool)
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: 'create_list' | 'update_list' | 'delete_list' | 'add_item' | 'update_item' | 'delete_item' | 'add_column' | 'update_column' | 'delete_column'
@@ -284,30 +281,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
-}
-
-async function ensureListsTables(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.lists (
-      id          TEXT PRIMARY KEY,
-      name        TEXT NOT NULL DEFAULT '',
-      description TEXT NOT NULL DEFAULT '',
-      columns     JSONB NOT NULL DEFAULT '[]',
-      channel_id  TEXT NOT NULL DEFAULT '',
-      view_type   TEXT NOT NULL DEFAULT 'table',
-      created_by  TEXT NOT NULL DEFAULT '',
-      created_at  BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS aaelink.list_items (
-      id          TEXT PRIMARY KEY,
-      list_id     TEXT NOT NULL REFERENCES aaelink.lists(id) ON DELETE CASCADE,
-      values      JSONB NOT NULL DEFAULT '{}',
-      position    INTEGER NOT NULL DEFAULT 0,
-      created_by  TEXT NOT NULL DEFAULT '',
-      created_at  BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_list_items_list ON aaelink.list_items(list_id);
-  `)
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

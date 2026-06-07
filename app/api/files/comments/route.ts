@@ -23,8 +23,6 @@ async function _GET(req: NextRequest) {
   const fileId = req.nextUrl.searchParams.get('file_id') || ''
   if (!fileId) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
-  await ensureFileCommentsTable(pool)
-
   const { rows } = await pool.query(
     `SELECT fc.id, fc.file_id, fc.user_id, fc.comment, fc.created_at, fc.updated_at,
             u.username, u.display_name, u.avatar_url
@@ -54,7 +52,6 @@ async function _POST(req: NextRequest) {
 
   if (!body.file_id) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
-  await ensureFileCommentsTable(pool)
   const now = Date.now()
 
   if (body.action === 'add' || !body.action) {
@@ -90,20 +87,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 })
-}
-
-async function ensureFileCommentsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.file_comments (
-      id         TEXT PRIMARY KEY,
-      file_id    TEXT NOT NULL,
-      user_id    TEXT NOT NULL,
-      comment    TEXT NOT NULL DEFAULT '',
-      created_at BIGINT NOT NULL DEFAULT 0,
-      updated_at BIGINT NOT NULL DEFAULT 0
-    )
-  `).catch(() => {})
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_comments_file ON aaelink.file_comments(file_id)`).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/files/comments', _GET)

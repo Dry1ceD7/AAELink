@@ -7,6 +7,7 @@ import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { removeFileObject } from '@/lib/files/storage'
+import { enforceScope, SCOPES } from '@/lib/api/oauthScopes'
 
 /**
  * File Management API — Slack files.list / files.info / files.delete parity.
@@ -32,7 +33,12 @@ async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (files:read). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.FILES_READ)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const uid = scopeResult.kind === 'ok'
+    ? scopeResult.grant.user_id
+    : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const fileId = req.nextUrl.searchParams.get('file_id') || ''
@@ -176,12 +182,21 @@ function serializeFile(r: FileRow) {
 }
 
 async function _DELETE(req: NextRequest) {
-  const csrf = await verifyCsrf(req)
-  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (files:write): token IS the auth credential — skip CSRF.
+  // No-token path falls through to standard session + CSRF guards.
+  const scopeResult = await enforceScope(pool, req, SCOPES.FILES_WRITE)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  let uid: string | null
+  if (scopeResult.kind === 'ok') {
+    uid = scopeResult.grant.user_id
+  } else {
+    const csrf = await verifyCsrf(req)
+    if (csrf) return csrf
+    uid = await readSessionUserId()
+  }
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const body = (await req.json().catch(() => ({}))) as { file_id?: string }

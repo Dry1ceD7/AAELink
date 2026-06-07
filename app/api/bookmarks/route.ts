@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 interface BookmarkRow {
   id: string
@@ -27,6 +28,10 @@ async function _GET(req: NextRequest) {
 
   const channelId = req.nextUrl.searchParams.get('channel_id') || ''
   if (!channelId) return NextResponse.json({ error: 'channel_id_required' }, { status: 400 })
+
+  if (!(await userCanReadChannel(pool, uid, channelId))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const { rows } = await pool.query<BookmarkRow>(
     `SELECT id, channel_id, title, link_url, emoji, sort_order, added_by, created_at
@@ -59,6 +64,10 @@ async function _POST(req: NextRequest) {
 
   if (!channelId || !title || !linkUrl) {
     return NextResponse.json({ error: 'channel_id, title, and link_url are required' }, { status: 400 })
+  }
+
+  if (!(await userCanReadChannel(pool, uid, channelId))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   // Validate URL
@@ -101,6 +110,17 @@ async function _DELETE(req: NextRequest) {
 
   const id = req.nextUrl.searchParams.get('id') || ''
   if (!id) return NextResponse.json({ error: 'id_required' }, { status: 400 })
+
+  // Look up the bookmark to check channel membership before deleting.
+  const { rows: bkRows } = await pool.query<{ channel_id: string }>(
+    `SELECT channel_id FROM aaelink.channel_bookmarks WHERE id = $1`,
+    [id]
+  )
+  if (bkRows.length === 0) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+
+  if (!(await userCanReadChannel(pool, uid, bkRows[0].channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   await pool.query(
     `DELETE FROM aaelink.channel_bookmarks WHERE id = $1`,

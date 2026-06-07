@@ -44,6 +44,14 @@ async function mkChannel(wsId: string): Promise<string> {
   return id
 }
 
+async function addWorkspaceMember(wsId: string, uid: string): Promise<void> {
+  await ctx.pool.query(
+    `INSERT INTO aaelink.workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
+    [wsId, uid]
+  )
+}
+
 async function addChannelMember(chId: string, uid: string): Promise<void> {
   await ctx.pool.query(
     `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at)
@@ -96,6 +104,8 @@ describe('saveItem', () => {
 
   it('rejects a message in a channel the user is not a member of (forbidden)', async () => {
     const ws = await mkWorkspace()
+    await addWorkspaceMember(ws, owner.id)
+    // outsider is NOT added to the workspace, so userCanReadChannel returns false
     const ch = await mkChannel(ws)
     await addChannelMember(ch, owner.id)
     const msg = await mkMessage(ch, owner.id)
@@ -104,6 +114,7 @@ describe('saveItem', () => {
 
   it('saves a visible message and is idempotent (re-save keeps state)', async () => {
     const ws = await mkWorkspace()
+    await addWorkspaceMember(ws, owner.id)
     const ch = await mkChannel(ws)
     await addChannelMember(ch, owner.id)
     const msg = await mkMessage(ch, owner.id)
@@ -120,6 +131,7 @@ describe('saveItem', () => {
 describe('setSavedItemState', () => {
   it('rejects an invalid state and a non-saved message', async () => {
     const ws = await mkWorkspace()
+    await addWorkspaceMember(ws, owner.id)
     const ch = await mkChannel(ws)
     await addChannelMember(ch, owner.id)
     const msg = await mkMessage(ch, owner.id)
@@ -135,6 +147,7 @@ describe('setSavedItemState', () => {
 describe('listSavedItems', () => {
   it('filters by state, carries a message snapshot, and is per-user', async () => {
     const ws = await mkWorkspace()
+    await addWorkspaceMember(ws, owner.id)
     const ch = await mkChannel(ws)
     await addChannelMember(ch, owner.id)
     const a = await mkMessage(ch, owner.id, 'alpha')
@@ -160,6 +173,7 @@ describe('listSavedItems', () => {
 describe('unsaveItem', () => {
   it('removes a saved item and reports missing ones', async () => {
     const ws = await mkWorkspace()
+    await addWorkspaceMember(ws, owner.id)
     const ch = await mkChannel(ws)
     await addChannelMember(ch, owner.id)
     const msg = await mkMessage(ch, owner.id)
