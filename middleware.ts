@@ -14,6 +14,14 @@ import { applySecurityHeaders, generateNonce } from '@/lib/auth/csp'
  * N replicas the effective rate was N× the configured limit. The Redis
  * store added in `lib/rateLimitStore.ts` closes that gap; the in-process
  * Map is the fallback when `REDIS_URL` is unset or `ioredis` is absent.
+ *
+ * IP allowlist (Admin parity §31): NOT enforced here. This file runs on the
+ * Edge runtime, where `getPool()`/`pg` are unavailable (`pg` is in
+ * next.config `serverExternalPackages`), so the DB-backed allowlist config
+ * cannot be read from middleware. Enforcement therefore lives at the
+ * Node-runtime chokepoint `tracedRoute()` (lib/api/tracedRoute.ts), which
+ * wraps every app+API handler and calls `enforceIpAllowlist`. The client IP
+ * is still extracted here, but only for rate-limiting.
  */
 
 interface RateLimitRule {

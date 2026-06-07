@@ -104,6 +104,14 @@ export function extractClientIp(headers: Record<string, string | string[] | unde
   return '127.0.0.1'
 }
 
+// ── Enforcement gate ─────────────────────────────────────────────────
+// DB-backed loader + TTL cache + enforceIpAllowlist(req) live in ipAccessGate
+// (keeps the Node-only getPool dep out of this primitives module). Re-exported
+// so the gate's canonical import path stays '@/lib/auth/ipAccess'.
+export {
+  enforceIpAllowlist, loadIpAccessConfig, invalidateIpAccessCache, IP_ACCESS_CONFIG_KEY,
+} from '@/lib/auth/ipAccessGate'
+
 // ── Access Controller ────────────────────────────────────────────────
 
 export class IpAccessController {

@@ -35,11 +35,34 @@ import { trace } from '@/lib/infra/tracing'
 import { verifyCsrf } from '@/lib/auth/csrf'
 import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { getPool } from '@/lib/infra/db'
+import { enforceIpAllowlist } from '@/lib/auth/ipAccessGate'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RouteHandler<C = any> = (req: NextRequest, ctx: C) => Promise<Response>
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * Routes exempt from IP-allowlist enforcement (Admin parity §31). Two classes:
+ *  1. Lockout-prevention: admin/ip-access MUST stay reachable so an admin whose
+ *     IP is not on a misconfigured allowlist can still log in and fix it —
+ *     otherwise a bad allowlist bricks the only console that repairs it.
+ *  2. Public unauthenticated endpoints that must stay reachable regardless of
+ *     the allowlist: health/ping, the inbound webhook receiver, and SSO/SAML/
+ *     OIDC callbacks (the IdP/external callers are not the users it scopes).
+ * Matched by prefix against the canonical routePath (covers dynamic segments).
+ */
+const IP_ALLOWLIST_EXEMPT_PREFIXES: string[] = [
+  '/api/admin/ip-access',   // lockout-prevention: admins must reach the fix
+  '/api/health',
+  '/api/ping',
+  '/api/webhooks',          // inbound receiver /api/webhooks/[token]
+  '/api/auth/sso',          // SAML/OIDC start + ACS/callback + metadata/refresh
+]
+
+function isIpAllowlistExempt(routePath: string): boolean {
+  return IP_ALLOWLIST_EXEMPT_PREFIXES.some(p => routePath.startsWith(p))
+}
 
 /** Build a stable audit-log action key from the route path. */
 function actionKey(method: string, routePath: string): string {
@@ -70,6 +93,26 @@ export function tracedRoute<C = any>(
     const span = trace.startSpan(routePath, parentCtx)
     span.setAttribute('http.method', method)
     span.setAttribute('http.url', req.url)
+
+    // ── IP allowlist: enforce the admin/ip-access config (parity §31) ──
+    // Edge middleware cannot read the DB-backed config; this Node-runtime
+    // chokepoint can. Exempt the ip-access console (lockout-prevention) and
+    // public unauthenticated endpoints.
+    if (!isIpAllowlistExempt(routePath)) {
+      const ipDenied = await enforceIpAllowlist(req, routePath)
+      if (ipDenied) {
+        span.setAttribute('http.status_code', ipDenied.status)
+        span.setStatus('error')
+        span.end()
+        const headers = new Headers(ipDenied.headers)
+        headers.set('traceparent', trace.formatTraceparent(span.context))
+        return new Response(ipDenied.body, {
+          status: ipDenied.status,
+          statusText: ipDenied.statusText,
+          headers,
+        })
+      }
+    }
 
     // ── CSRF: short-circuit before the handler runs ────────────────────
     if (isMutation) {
