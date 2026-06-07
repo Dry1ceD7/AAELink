@@ -55,9 +55,9 @@ async function _POST(req: NextRequest) {
     const now = Date.now()
 
     await pool.query(`
-      INSERT INTO aaelink.messages (id, channel_id, user_id, content, type, root_id, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-    `, [id, body.channel, uid, body.text, 'message', body.thread_ts || null, now])
+      INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $6)
+    `, [id, body.channel, uid, body.text, body.thread_ts || '', now])
 
     return NextResponse.json({
       ok: true,
@@ -90,7 +90,7 @@ async function _POST(req: NextRequest) {
     }
     const now = Date.now()
     await pool.query(`
-      UPDATE aaelink.messages SET content = $1, updated_at = $2
+      UPDATE aaelink.messages SET body = $1, updated_at = $2
       WHERE channel_id = $3 AND id = $4 AND user_id = $5
     `, [body.text, now, body.channel, body.ts, uid])
 
@@ -141,8 +141,8 @@ async function _POST(req: NextRequest) {
     const now = Date.now()
 
     await pool.query(`
-      INSERT INTO aaelink.messages (id, channel_id, user_id, content, type, created_at)
-      VALUES ($1, $2, $3, $4, 'me_message', $5)
+      INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, '', $5, $5)
     `, [id, body.channel, uid, body.text, now])
 
     return NextResponse.json({ ok: true, channel: body.channel, ts: String(now) })
@@ -165,7 +165,7 @@ async function _POST(req: NextRequest) {
     const now = Date.now()
 
     await pool.query(`
-      INSERT INTO aaelink.scheduled_messages (id, channel_id, user_id, content, scheduled_at, created_at)
+      INSERT INTO aaelink.scheduled_messages (id, channel_id, user_id, body, send_at, created_at)
       VALUES ($1, $2, $3, $4, $5, $6)
     `, [id, body.channel, uid, body.text, body.post_at, now])
 

@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /** GET /api/pins?channel_id=... — list pinned messages for a channel. */
 async function _GET(req: NextRequest) {
@@ -16,6 +17,10 @@ async function _GET(req: NextRequest) {
 
   const channelId = req.nextUrl.searchParams.get('channel_id') || ''
   if (!channelId) return NextResponse.json({ error: 'channel_id_required' }, { status: 400 })
+
+  if (!(await userCanReadChannel(pool, uid, channelId))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const { rows } = await pool.query(
     `SELECT p.message_id, p.pinned_by, p.pinned_at,
@@ -53,6 +58,10 @@ async function _POST(req: NextRequest) {
 
   const { channel_id, message_id } = body
   if (!channel_id || !message_id) return NextResponse.json({ error: 'channel_id_and_message_id_required' }, { status: 400 })
+
+  if (!(await userCanReadChannel(pool, uid, channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   const now = Date.now()
   await pool.query(
@@ -97,6 +106,10 @@ async function _DELETE(req: NextRequest) {
   try { body = await req.json() } catch { return NextResponse.json({ error: 'invalid_body' }, { status: 400 }) }
 
   if (!body.channel_id || !body.message_id) return NextResponse.json({ error: 'channel_id_and_message_id_required' }, { status: 400 })
+
+  if (!(await userCanReadChannel(pool, uid, body.channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   await pool.query(
     `DELETE FROM aaelink.pinned_messages WHERE channel_id = $1 AND message_id = $2`,
