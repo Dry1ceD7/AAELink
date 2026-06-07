@@ -4,6 +4,8 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readMfaPendingSession, clearMfaPending } from '@/lib/auth/session'
 import { generateTotpSecret, verifyTotp, otpauthUri } from '@/lib/auth/totp'
+import { consumeBackupCode } from '@/lib/auth/backupCodes'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
@@ -69,34 +71,53 @@ async function _POST(req: Request) {
 
   // action === 'verify'
   const code = String(body.code || '').trim()
-  if (code.length !== 6) return NextResponse.json({ error: 'code_required' }, { status: 400 })
+  if (!code) return NextResponse.json({ error: 'code_required' }, { status: 400 })
+  const ip = extractIp(req)
+  const userAgent = req.headers.get('user-agent') || ''
 
-  // Prefer the active factor; fall back to a pending (unverified) one from 'begin'.
-  let enrollment = active[0]
-  if (!enrollment) {
-    const { rows: pendingEnr } = await pool.query<{ id: string; secret_hash: string }>(
-      `SELECT id, secret_hash FROM aaelink.mfa_enrollments
-        WHERE user_id = $1 AND method = 'totp' AND is_active = false
-        ORDER BY created_at DESC LIMIT 1`,
-      [uid]
-    )
-    enrollment = pendingEnr[0]
+  // A 6-digit code is a TOTP attempt; anything else is a backup (recovery) code.
+  // Prefer the active TOTP factor; fall back to a pending one from 'begin'.
+  if (/^\d{6}$/.test(code)) {
+    let enrollment = active[0]
+    if (!enrollment) {
+      const { rows: pendingEnr } = await pool.query<{ id: string; secret_hash: string }>(
+        `SELECT id, secret_hash FROM aaelink.mfa_enrollments
+          WHERE user_id = $1 AND method = 'totp' AND is_active = false
+          ORDER BY created_at DESC LIMIT 1`,
+        [uid]
+      )
+      enrollment = pendingEnr[0]
+    }
+    if (enrollment && verifyTotp(enrollment.secret_hash, code)) {
+      const now = Date.now()
+      await pool.query(
+        `UPDATE aaelink.mfa_enrollments SET is_active = true, is_verified = true, last_used_at = $1
+          WHERE id = $2 AND user_id = $3`,
+        [now, enrollment.id, uid]
+      )
+      await clearMfaPending(pool, pending.sessionId)
+      return NextResponse.json({ ok: true, mfa_verified: true, verified_at: now })
+    }
   }
-  if (!enrollment) return NextResponse.json({ error: 'mfa_enrollment_required' }, { status: 403 })
 
-  if (!verifyTotp(enrollment.secret_hash, code)) {
-    return NextResponse.json({ error: 'invalid_code' }, { status: 400 })
+  // Backup code: accepted wherever TOTP is, burned single-use, reuse rejected.
+  const burn = await consumeBackupCode(pool, uid, code)
+  if (burn.consumed) {
+    await clearMfaPending(pool, pending.sessionId)
+    try {
+      writeAuditLog({
+        pool, actorId: uid, action: 'mfa.backup_code_used',
+        resourceKind: 'mfa_enrollment', resourceId: uid,
+        ipAddress: ip, userAgent, metadata: { remaining: burn.remaining },
+      })
+    } catch { /* best-effort */ }
+    return NextResponse.json({
+      ok: true, mfa_verified: true, method: 'backup_code',
+      backup_codes_remaining: burn.remaining, verified_at: Date.now(),
+    })
   }
 
-  const now = Date.now()
-  await pool.query(
-    `UPDATE aaelink.mfa_enrollments SET is_active = true, is_verified = true, last_used_at = $1
-      WHERE id = $2 AND user_id = $3`,
-    [now, enrollment.id, uid]
-  )
-  await clearMfaPending(pool, pending.sessionId)
-
-  return NextResponse.json({ ok: true, mfa_verified: true, verified_at: now })
+  return NextResponse.json({ error: 'invalid_code' }, { status: 400 })
 }
 
 export const POST = tracedRoute('POST', '/api/auth/mfa/stepup', _POST)
