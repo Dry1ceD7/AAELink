@@ -567,6 +567,39 @@ const handlers: Record<string, JobHandler> = {
     const codeCount = await pruneOAuthCodes(pool, now)
     log.info(`   ✅ Removed ${codeCount} expired/consumed authorization codes`)
   },
+
+  // Guest account expiry (Admin parity 29). Recurring heartbeat, same
+  // self-rescheduling pattern as saved_search_alerts/email_digest/upload_session_sweep:
+  // find guests past expires_at and run the SHARED revoke path the manual
+  // DELETE /api/admin/guests handler uses (lib/comms/guestAccounts), which drops
+  // channel + workspace membership AND kills live sessions, then re-arm. Seeded
+  // once in migration 049; it keeps itself alive here. Idempotent — an
+  // already-revoked guest is skipped, so a crash-retry double-runs harmlessly.
+  guest_expire: async (payload, pool) => {
+    log.info(`🕓 [guest_expire] revoking expired guest accounts`)
+    const { runGuestExpiry } = await import('@/lib/comms/guestAccounts')
+    const res = await runGuestExpiry(pool)
+    log.info(`   ✅ considered:${res.considered} revoked:${res.revoked}`)
+
+    // Self-reschedule unless explicitly told not to (tests pass once:true to run
+    // a single pass without re-arming the heartbeat).
+    const once = (payload as { once?: boolean }).once === true
+    if (!once) {
+      const intervalMs = Number(process.env.GUEST_EXPIRE_INTERVAL_MS) || 60 * 60_000
+      const { randomUUID } = await import('crypto')
+      // Idempotent re-arm (see saved_search_alerts): one pending row at a time
+      // so a crash between this INSERT and the completion UPDATE can't double-arm.
+      await pool.query(
+        `INSERT INTO aaelink.jobs
+           (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+         SELECT $1, 'guest_expire', 'pending', 2, '{}', $2, 3, 0, $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM aaelink.jobs WHERE type = 'guest_expire' AND status = 'pending'
+          )`,
+        [randomUUID(), Date.now() + intervalMs, Date.now()]
+      )
+    }
+  },
 }
 
 // Legacy alias: POST /api/search/files enqueues 'index_rebuild' jobs (no handler

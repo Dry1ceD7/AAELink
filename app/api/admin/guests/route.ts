@@ -5,6 +5,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { revokeGuestAccount } from '@/lib/comms/guestAccounts'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
@@ -147,42 +148,11 @@ async function _DELETE(req: NextRequest) {
   const guestId = String(body.guest_id || '').trim()
   if (!guestId) return NextResponse.json({ error: 'guest_id_required' }, { status: 400 })
 
-  // Get guest info before deletion
-  const { rows: guestRows } = await pool.query<{ user_id: string; workspace_id: string }>(
-    `SELECT user_id, workspace_id FROM aaelink.guest_accounts WHERE id = $1`,
-    [guestId]
-  )
-  if (!guestRows[0]) return NextResponse.json({ error: 'guest_not_found' }, { status: 404 })
-
-  const guest = guestRows[0]
-
-  // Remove channel access and membership
-  const { rows: access } = await pool.query<{ channel_id: string }>(
-    `SELECT channel_id FROM aaelink.guest_channel_access WHERE guest_id = $1`,
-    [guestId]
-  )
-  for (const a of access) {
-    await pool.query(
-      `DELETE FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`,
-      [a.channel_id, guest.user_id]
-    )
-  }
-
-  // Remove guest account and workspace membership
-  await pool.query(`DELETE FROM aaelink.guest_accounts WHERE id = $1`, [guestId])
-  await pool.query(
-    `DELETE FROM aaelink.workspace_members WHERE workspace_id = $1 AND user_id = $2 AND role = 'guest'`,
-    [guest.workspace_id, guest.user_id]
-  )
-
-  // Audit log
-  try {
-    await pool.query(
-      `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
-       VALUES ($1, $2, $3, 'guest.revoke', $4, $5, $6)`,
-      [randomUUID(), guest.workspace_id, uid, guestId, JSON.stringify({ user_id: guest.user_id }), Date.now()]
-    )
-  } catch { /* best-effort */ }
+  // Shared revoke path (also used by the worker 'guest_expire' job): removes
+  // channel memberships, the guest_accounts row, the workspace 'guest'
+  // membership, kills the guest's sessions, and writes a best-effort audit row.
+  const revoked = await revokeGuestAccount(pool, guestId, { actorId: uid, action: 'guest.revoke' })
+  if (!revoked) return NextResponse.json({ error: 'guest_not_found' }, { status: 404 })
 
   return NextResponse.json({ ok: true })
 }
