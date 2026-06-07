@@ -37,7 +37,7 @@ async function _PATCH(req: Request) {
   if (typeof body.system_notifications_enabled === 'boolean') systemN = body.system_notifications_enabled
   // Validate digest_frequency strictly: a bad value is a 400, not a silent reset.
   if (body.digest_frequency !== undefined) {
-    if (!['off', 'daily', 'weekly'].includes(String(body.digest_frequency))) {
+    if (!['off', 'hourly', 'daily', 'weekly'].includes(String(body.digest_frequency))) {
       return NextResponse.json({ error: 'invalid_digest_frequency' }, { status: 400 })
     }
     digest = normalizeDigestFrequency(body.digest_frequency)

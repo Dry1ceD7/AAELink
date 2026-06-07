@@ -33,7 +33,13 @@ describe('isDigestDue', () => {
     expect(isDigestDue('weekly', now - 7 * 86_400_000, now)).toBe(true)
     expect(isDigestDue('weekly', now - 6 * 86_400_000, now)).toBe(false)
   })
+  it('hourly is due after 1h, not before', () => {
+    const now = 100 * 3_600_000
+    expect(isDigestDue('hourly', now - 3_600_000, now)).toBe(true)
+    expect(isDigestDue('hourly', now - 3_599_000, now)).toBe(false)
+  })
   it('intervals are correct', () => {
+    expect(digestIntervalMs('hourly')).toBe(3_600_000)
     expect(digestIntervalMs('daily')).toBe(86_400_000)
     expect(digestIntervalMs('weekly')).toBe(7 * 86_400_000)
     expect(digestIntervalMs('off')).toBe(Number.POSITIVE_INFINITY)
@@ -62,6 +68,12 @@ describe('composeDigest', () => {
     expect(out.subject).toContain('weekly')
     expect(out.subject).toContain('1 new item')
     expect(out.subject).not.toContain('1 new items')
+  })
+
+  it('uses an hourly period label in the subject', () => {
+    const out = composeDigest('hourly', items)!
+    expect(out.subject).toContain('hourly')
+    expect(out.subject).toContain('4 new items')
   })
 
   it('escapes HTML in item content', () => {

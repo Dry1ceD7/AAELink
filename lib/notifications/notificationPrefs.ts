@@ -39,7 +39,7 @@ export async function filterUsersForNotification(
   return rows.map(r => r.user_id)
 }
 
-export type DigestFrequency = 'off' | 'daily' | 'weekly'
+export type DigestFrequency = 'off' | 'hourly' | 'daily' | 'weekly'
 
 export async function getNotificationPrefsForUser(
   pool: Pool,
@@ -70,5 +70,5 @@ export async function getNotificationPrefsForUser(
 
 /** Coerce an arbitrary stored/input value into a valid DigestFrequency. */
 export function normalizeDigestFrequency(value: unknown): DigestFrequency {
-  return value === 'daily' || value === 'weekly' ? value : 'off'
+  return value === 'hourly' || value === 'daily' || value === 'weekly' ? value : 'off'
 }

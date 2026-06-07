@@ -259,9 +259,68 @@ describe('notification-prefs route digest_frequency', () => {
     expect(ok.status).toBe(200)
     expect((await ok.json()).digest_frequency).toBe('weekly')
 
-    const bad = await patchPrefs(asRequest('PATCH', '/api/auth/notification-prefs', {
+    // 'hourly' is a valid frequency (BLUEPRINT §2.1.5 / parity Notifications 27).
+    const hourly = await patchPrefs(asRequest('PATCH', '/api/auth/notification-prefs', {
       cookie: u.sessionCookie, body: { digest_frequency: 'hourly' },
     }) as never)
+    expect(hourly.status).toBe(200)
+    expect((await hourly.json()).digest_frequency).toBe('hourly')
+
+    // An unknown frequency is still a 400, not a silent reset.
+    const bad = await patchPrefs(asRequest('PATCH', '/api/auth/notification-prefs', {
+      cookie: u.sessionCookie, body: { digest_frequency: 'yearly' },
+    }) as never)
     expect(bad.status).toBe(400)
+    expect((await bad.json()).error).toBe('invalid_digest_frequency')
+  })
+})
+
+describe('runEmailDigests — hourly frequency (1h watermark window)', () => {
+  it('digests an hourly user due after 1h while leaving a recent daily user untouched', async () => {
+    const hourly = await createTestUser(ctx.pool, { role: 'employee' })
+    const daily = await createTestUser(ctx.pool, { role: 'employee' })
+    userIds.push(hourly.id, daily.id)
+
+    const now = Date.now()
+    // hourly: last SENT 90 min ago → due (cadence interval is 1h).
+    await ctx.pool.query(
+      `INSERT INTO aaelink.user_notification_prefs (user_id, digest_frequency, last_digest_at, last_digest_sent_at, updated_at)
+       VALUES ($1, 'hourly', $2, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE SET digest_frequency = 'hourly', last_digest_at = $2, last_digest_sent_at = $2, last_digest_id = NULL, updated_at = $3`,
+      [hourly.id, now - 90 * 60_000, now]
+    )
+    // daily: last SENT 30 min ago → NOT due on the daily cadence (proves the 1h
+    // window only affects hourly users).
+    await ctx.pool.query(
+      `INSERT INTO aaelink.user_notification_prefs (user_id, digest_frequency, last_digest_at, last_digest_sent_at, updated_at)
+       VALUES ($1, 'daily', $2, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE SET digest_frequency = 'daily', last_digest_at = $2, last_digest_sent_at = $2, last_digest_id = NULL, updated_at = $3`,
+      [daily.id, now - 30 * 60_000, now]
+    )
+
+    // hourly user has an unread mention from 30 min ago (above the 90-min watermark).
+    await seedNotification(hourly.id, 'mention', 'H1', 'hourly hello', now - 30 * 60_000)
+    // daily user has an equally recent mention, but is not due → must not be sent.
+    await seedNotification(daily.id, 'mention', 'D1', 'daily hello', now - 30 * 60_000)
+
+    const beforeDaily = await ctx.pool.query<{ last_digest_sent_at: string }>(
+      `SELECT last_digest_sent_at::text FROM aaelink.user_notification_prefs WHERE user_id = $1`, [daily.id]
+    )
+
+    const res = await runEmailDigests(ctx.pool, now)
+    expect(res.sent).toBeGreaterThanOrEqual(1)
+
+    // hourly user: digested, watermark advanced to the collected item, timer → now.
+    const { rows: h } = await ctx.pool.query<{ last_digest_at: string; last_digest_sent_at: string }>(
+      `SELECT last_digest_at::text, last_digest_sent_at::text FROM aaelink.user_notification_prefs WHERE user_id = $1`, [hourly.id]
+    )
+    expect(Number(h[0].last_digest_at)).toBe(now - 30 * 60_000)
+    expect(Number(h[0].last_digest_sent_at)).toBe(now)
+
+    // daily user: NOT due → completely untouched (timer unchanged, item not sent).
+    const { rows: d } = await ctx.pool.query<{ last_digest_sent_at: string }>(
+      `SELECT last_digest_sent_at::text FROM aaelink.user_notification_prefs WHERE user_id = $1`, [daily.id]
+    )
+    expect(d[0].last_digest_sent_at).toBe(beforeDaily.rows[0].last_digest_sent_at)
   })
 })

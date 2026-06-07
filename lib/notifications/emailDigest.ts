@@ -12,14 +12,14 @@
  *   - "Unread" = notifications.read_at = 0; "since watermark" = created_at >
  *     last_digest_at. We intentionally only summarize the high-signal kinds Slack
  *     digests (mentions, DMs, keyword) — not every channel_message.
- *   - Email sends regardless of DND (digests are a daily/weekly summary, not a
+ *   - Email sends regardless of DND (digests are an hourly/daily/weekly summary, not a
  *     realtime ping); we do not gate on dnd_settings here.
  */
 
 import type { Pool } from 'pg'
 import { sendEmail } from '@/lib/notifications/emailSender'
 
-export type DigestFrequency = 'off' | 'daily' | 'weekly'
+export type DigestFrequency = 'off' | 'hourly' | 'daily' | 'weekly'
 
 /** The notification kinds a digest summarizes (high-signal only). */
 export const DIGEST_KINDS = ['mention', 'dm', 'keyword'] as const
@@ -43,6 +43,7 @@ export interface DigestPayload {
   high_watermark: number
 }
 
+const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
 
@@ -50,6 +51,7 @@ const WEEK_MS = 7 * DAY_MS
 export function digestIntervalMs(freq: DigestFrequency): number {
   if (freq === 'weekly') return WEEK_MS
   if (freq === 'daily') return DAY_MS
+  if (freq === 'hourly') return HOUR_MS
   return Number.POSITIVE_INFINITY
 }
 
@@ -188,7 +190,7 @@ export function composeDigest(
 ): { subject: string; text: string; html: string } | null {
   if (items.length === 0) return null
 
-  const period = freq === 'weekly' ? 'weekly' : 'daily'
+  const period = freq === 'weekly' ? 'weekly' : freq === 'hourly' ? 'hourly' : 'daily'
   const subject = `Your AAELink ${period} digest — ${items.length} new ${items.length === 1 ? 'item' : 'items'}`
 
   const textLines: string[] = [

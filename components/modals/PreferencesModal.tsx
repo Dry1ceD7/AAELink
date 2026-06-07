@@ -563,15 +563,15 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
     mentions_enabled: boolean
     ticket_activity_enabled: boolean
     system_notifications_enabled: boolean
-    digest_frequency: 'off' | 'daily' | 'weekly'
+    digest_frequency: 'off' | 'hourly' | 'daily' | 'weekly'
   }>({
     mentions_enabled: true, ticket_activity_enabled: true, system_notifications_enabled: true,
     digest_frequency: 'off',
   })
   const [serverLoading, setServerLoading] = useState(true)
 
-  const normalizeDigest = (v: unknown): 'off' | 'daily' | 'weekly' =>
-    v === 'daily' || v === 'weekly' ? v : 'off'
+  const normalizeDigest = (v: unknown): 'off' | 'hourly' | 'daily' | 'weekly' =>
+    v === 'hourly' || v === 'daily' || v === 'weekly' ? v : 'off'
 
   useEffect(() => {
     void apiFetch('/api/auth/notification-prefs').then(r => r.ok ? r.json() : null).then(d => {
@@ -645,6 +645,7 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
             disabled={serverLoading}
             onChange={e => saveServerFlag({ digest_frequency: normalizeDigest(e.target.value) })}>
             <option value="off">Off</option>
+            <option value="hourly">Hourly</option>
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
           </select>
