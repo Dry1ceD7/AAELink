@@ -404,3 +404,59 @@ describe('information-barrier enforcement on POST /api/channels', () => {
     await expectSuccess<{ channel: { id: string } }>(res)
   })
 })
+
+describe('forward source-read authz (IDOR guard)', () => {
+  async function seedMessage(channelId: string, authorId: string, bodyText: string): Promise<string> {
+    const msgId = randomUUID()
+    await ctx.pool.query(
+      `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '', $5, $5)`,
+      [msgId, channelId, authorId, bodyText, Date.now()]
+    )
+    return msgId
+  }
+
+  it('denies forwarding from a private channel the requester cannot read (404 message_not_found)', async () => {
+    // alice owns a PRIVATE source channel; bob is a workspace member but NOT a
+    // channel member, so userCanReadChannel(bob, source) is false.
+    const src = await createTestChannel(ctx.pool, alice.id, { workspaceId: wsId, type: 'private' })
+    const dst = await createTestChannel(ctx.pool, bob.id, { workspaceId: wsId })
+    const msgId = await seedMessage(src.id, alice.id, 'private source secret')
+
+    const { POST } = await import('@/app/api/messages/forward/route')
+    const res = await POST(asRequest('POST', '/api/messages/forward', {
+      cookie: bob.sessionCookie,
+      body: { message_id: msgId, target_channel_id: dst.id },
+    }))
+    // Same shape as a missing message — no existence oracle.
+    await expectError(res, 404, 'message_not_found')
+
+    // The forwarded message must NOT have been created in the target channel.
+    const { rows } = await ctx.pool.query(
+      `SELECT 1 FROM aaelink.messages WHERE channel_id = $1 AND body LIKE '%private source secret%'`,
+      [dst.id]
+    )
+    expect(rows.length).toBe(0)
+  })
+
+  it('allows a member to forward from a private channel they can read (200)', async () => {
+    // alice owns a PRIVATE source channel and is a member, so she can read it.
+    const src = await createTestChannel(ctx.pool, alice.id, { workspaceId: wsId, type: 'private' })
+    const dst = await createTestChannel(ctx.pool, alice.id, { workspaceId: wsId })
+    const msgId = await seedMessage(src.id, alice.id, 'forwardable private content')
+
+    const { POST } = await import('@/app/api/messages/forward/route')
+    const res = await POST(asRequest('POST', '/api/messages/forward', {
+      cookie: alice.sessionCookie,
+      body: { message_id: msgId, target_channel_id: dst.id },
+    }))
+    const out = await expectSuccess<{ message_id: string; target_channel_id: string }>(res)
+    expect(out.target_channel_id).toBe(dst.id)
+
+    const { rows } = await ctx.pool.query(
+      `SELECT 1 FROM aaelink.messages WHERE id = $1 AND channel_id = $2`,
+      [out.message_id, dst.id]
+    )
+    expect(rows.length).toBe(1)
+  })
+})

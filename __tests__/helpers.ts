@@ -411,5 +411,7 @@ export async function cleanupTestData(pool: Pool, userIds: string[]) {
   await pool.query(`DELETE FROM aaelink.workspace_members WHERE user_id IN (${placeholders})`, userIds)
   // Tickets created by these users block the delete via tickets_created_by_fkey.
   await pool.query(`DELETE FROM aaelink.tickets WHERE created_by IN (${placeholders})`, userIds).catch(() => {})
+  // Message-forward log rows reference the forwarder via message_forwards_forwarded_by_fkey.
+  await pool.query(`DELETE FROM aaelink.message_forwards WHERE forwarded_by IN (${placeholders})`, userIds).catch(() => {})
   await pool.query(`DELETE FROM aaelink.users WHERE id IN (${placeholders})`, userIds)
 }

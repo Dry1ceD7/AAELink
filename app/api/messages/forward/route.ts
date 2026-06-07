@@ -7,7 +7,8 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
-import { isChannelArchived, userCanPostToChannel } from '@/lib/enterprise/collab-access'
+import { isChannelArchived, userCanPostToChannel, userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 
 /**
  * Message Forwarding API (Slack "Share message" / "Forward to channel").
@@ -51,6 +52,14 @@ async function _POST(req: NextRequest) {
   if (!msgRows[0]) return NextResponse.json({ error: 'message_not_found' }, { status: 404 })
 
   const original = msgRows[0]
+
+  // Source-read authz (IDOR guard): the requester must be able to read the
+  // channel the original message lives in before they may forward its content.
+  // Deny with the SAME shape as message-not-found so this never reveals whether
+  // a message exists in a channel the caller cannot see (no existence oracle).
+  if (!(await userCanReadChannel(pool, uid, original.channel_id))) {
+    return NextResponse.json({ error: 'message_not_found' }, { status: 404 })
+  }
 
   // Get the original author info
   const { rows: authorRows } = await pool.query<{ username: string; first_name: string; last_name: string }>(
@@ -114,6 +123,21 @@ async function _POST(req: NextRequest) {
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [randomUUID(), messageId, newId, original.channel_id, targetChannelId, uid, now]
   ).catch(() => { /* best-effort tracking */ })
+
+  // Audit: forwarding moves content across channel boundaries (compliance scope).
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'message.forward',
+    resourceKind: 'message',
+    resourceId: newId,
+    ipAddress: extractIp(req),
+    metadata: {
+      original_message_id: messageId,
+      source_channel_id: original.channel_id,
+      target_channel_id: targetChannelId,
+    },
+  })
 
   return NextResponse.json({
     ok: true,
