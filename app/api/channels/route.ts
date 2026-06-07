@@ -6,6 +6,8 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { slugifySegment } from '@/lib/ui/slug'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isDmBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
+import { enforceScope, SCOPES, grantWorkspaceMatches, type OAuthGrant } from '@/lib/api/oauthScopes'
 
 async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: string) {
   const { rows } = await pool.query<{ ok: number }>(
@@ -30,12 +32,19 @@ function peerDisplayName(row: {
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:read). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHANNELS_READ)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const grant: OAuthGrant | null = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  const uid = grant ? grant.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const workspace_id = String(url.searchParams.get('workspace_id') || url.searchParams.get('team_id') || '')
   if (!workspace_id) return NextResponse.json({ error: 'workspace_id_required' }, { status: 400 })
   await ensureSchema()
+  if (grant && !grantWorkspaceMatches(grant, workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
   if (!(await assertWorkspaceMember(pool, uid, workspace_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -144,7 +153,11 @@ async function _GET(req: Request) {
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const grantPost: OAuthGrant | null = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  const uid = grantPost ? grantPost.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
   const body = (await req.json()) as {
@@ -160,6 +173,9 @@ async function _POST(req: Request) {
   const workspace_id = String(body.workspace_id || body.team_id || '')
   if (!workspace_id) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
+  }
+  if (grantPost && !grantWorkspaceMatches(grantPost, workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
   if (!(await assertWorkspaceMember(pool, uid, workspace_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -186,6 +202,14 @@ async function _POST(req: Request) {
     if (allIds.length <= 2) {
       // Normal DM (1:1)
       const actualPeer = allIds.find(id => id !== uid) || uid
+
+      if (await isDmBlocked(uid, actualPeer, workspace_id)) {
+        return NextResponse.json(
+          { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+          { status: 403 }
+        )
+      }
+
       const dm_user_a = uid < actualPeer ? uid : actualPeer
       const dm_user_b = uid < actualPeer ? actualPeer : uid
 
@@ -226,6 +250,17 @@ async function _POST(req: Request) {
       return NextResponse.json({ channel: { id, team_id: workspace_id, name, display_name, type: 'D', dm_peer_id: actualPeer, dm_peer_display: display_name } })
     } else {
       // Group DM (MPDM)
+      for (let i = 0; i < allIds.length; i++) {
+        for (let j = i + 1; j < allIds.length; j++) {
+          if (await isDmBlocked(allIds[i], allIds[j], workspace_id)) {
+            return NextResponse.json(
+              { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+              { status: 403 }
+            )
+          }
+        }
+      }
+
       const nameHash = createHash('sha256').update(allIds.join(',')).digest('hex').slice(0, 40)
       const name = `mpdm-${nameHash}`
       
@@ -316,7 +351,11 @@ async function _POST(req: Request) {
 async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResultPatch = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResultPatch.kind === 'error') return scopeResultPatch.response
+  const grantPatch: OAuthGrant | null = scopeResultPatch.kind === 'ok' ? scopeResultPatch.grant : null
+  const uid = grantPatch ? grantPatch.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
 
@@ -339,6 +378,9 @@ async function _PATCH(req: Request) {
       `SELECT workspace_id FROM aaelink.channels WHERE id = $1`, [channelId]
     )
     if (!chRows[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+    if (grantPatch && !grantWorkspaceMatches(grantPatch, chRows[0].workspace_id)) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     if (!(await assertWorkspaceMember(pool, uid, chRows[0].workspace_id))) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
@@ -375,6 +417,10 @@ async function _PATCH(req: Request) {
   )
   const ch = chRows[0]
   if (!ch) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+
+  if (grantPatch && !grantWorkspaceMatches(grantPatch, ch.workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   // Don't allow archiving DM channels
   if (ch.type === 'D') {
@@ -462,7 +508,11 @@ async function _PATCH(req: Request) {
 async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResultDel = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResultDel.kind === 'error') return scopeResultDel.response
+  const grantDel: OAuthGrant | null = scopeResultDel.kind === 'ok' ? scopeResultDel.grant : null
+  const uid = grantDel ? grantDel.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
 
@@ -482,6 +532,10 @@ async function _DELETE(req: Request) {
   if (!rows[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
 
   const ch = rows[0]
+
+  if (grantDel && !grantWorkspaceMatches(grantDel, ch.workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   // Protect default channels from deletion
   if (ch.is_default) {

@@ -12,6 +12,32 @@
  */
 import type { Pool } from 'pg'
 import { randomUUID } from 'crypto'
+import { NextResponse } from 'next/server'
+
+// ── Scope catalog ────────────────────────────────────────────────────────────
+// Mirrors Slack scope naming. Add new scopes here and map them to routes below.
+//
+//   chat:write        POST /api/messages
+//   chat:read         GET  /api/messages
+//   channels:read     GET  /api/channels
+//   channels:write    POST /api/channels, PATCH /api/channels, DELETE /api/channels
+//   users:read        GET  /api/users/directory
+//   files:read        GET  /api/files
+//   files:write       DELETE /api/files
+//   search:read       GET  /api/search/*  (wired separately — see follow-ups)
+//
+export const SCOPES = {
+  CHAT_WRITE:     'chat:write',
+  CHAT_READ:      'chat:read',
+  CHANNELS_READ:  'channels:read',
+  CHANNELS_WRITE: 'channels:write',
+  USERS_READ:     'users:read',
+  FILES_READ:     'files:read',
+  FILES_WRITE:    'files:write',
+  SEARCH_READ:    'search:read',
+} as const
+
+export type Scope = (typeof SCOPES)[keyof typeof SCOPES]
 
 /** Split a stored scope string (space- or comma-separated) into a clean list. */
 export function parseScopes(scope: string): string[] {
@@ -28,6 +54,21 @@ export function scopeSatisfied(granted: string[], required: string): boolean {
   if (granted.includes('admin')) return true
   const resource = required.split(':')[0]
   return granted.includes(`${resource}:*`)
+}
+
+/**
+ * Tenant binding for a bearer-token grant. A token minted for one workspace
+ * must not act on resources in another workspace, even when the underlying
+ * user/bot has cross-workspace membership. An empty grant.workspace_id means
+ * the token is not workspace-scoped (legacy/unscoped grant) and imposes no
+ * tenant restriction. A non-empty grant.workspace_id must match the resource's
+ * workspace exactly. An empty/absent resource workspace never matches a scoped
+ * grant (fail closed).
+ */
+export function grantWorkspaceMatches(grant: OAuthGrant, resourceWorkspaceId: string): boolean {
+  const granted = String(grant.workspace_id || '').trim()
+  if (!granted) return true
+  return granted === String(resourceWorkspaceId || '').trim()
 }
 
 export interface OAuthGrant {
@@ -103,4 +144,121 @@ export async function rotateToken(pool: Pool, oldToken: string, now = Date.now()
   )
   if (!rows[0]) return { ok: false, code: 'invalid_token' }
   return { ok: true, token: newToken, tokenId: rows[0].id }
+}
+
+// ── Bot-token resolution ─────────────────────────────────────────────────────
+// Bot users store their own api_token (xbot-* prefix) in bot_users.api_token.
+// They also carry a JSONB scopes array on the bot_users row. We normalise them
+// into the same OAuthGrant shape so enforceScope can treat them uniformly.
+
+async function resolveBotToken(pool: Pool, token: string): Promise<OAuthGrant | null> {
+  const { rows } = await pool.query<{
+    id: string; created_by: string | null; workspace_id: string | null
+    scopes: string | string[]; status: string
+  }>(
+    `SELECT id, created_by, workspace_id, scopes, status
+       FROM aaelink.bot_users WHERE api_token = $1`,
+    [token]
+  )
+  const row = rows[0]
+  if (!row || row.status !== 'active') return null
+  // scopes is stored as JSONB — pg driver returns it already parsed
+  const rawScopes: unknown = row.scopes
+  const scopeList: string[] = Array.isArray(rawScopes)
+    ? rawScopes.filter((s): s is string => typeof s === 'string')
+    : parseScopes(String(rawScopes || ''))
+  return {
+    token_id: row.id,
+    app_id:   row.id,
+    user_id:  row.created_by ?? row.id,
+    workspace_id: row.workspace_id ?? '',
+    token_type: 'bot',
+    scopes: scopeList,
+    expires_at: 0, // bot tokens don't expire
+  }
+}
+
+// ── enforceScope ─────────────────────────────────────────────────────────────
+
+export type EnforceScopeResult =
+  | { kind: 'no_token' }
+  | { kind: 'ok'; grant: OAuthGrant }
+  | { kind: 'error'; response: NextResponse }
+
+/**
+ * Dual-auth scope gate for bearer-token API routes.
+ *
+ * Reads the `Authorization: Bearer <token>` header from `req`.
+ *
+ * - No bearer header → returns `{ kind: 'no_token' }` so the caller falls
+ *   through to normal cookie-session auth (unchanged behaviour for browsers).
+ * - Valid token with required scope → `{ kind: 'ok', grant }`. The caller
+ *   MUST use `grant.user_id` as the acting user and SKIP session + CSRF checks
+ *   (the bearer token IS the authentication credential).
+ * - Invalid/expired/insufficient → `{ kind: 'error', response }` with the
+ *   appropriate HTTP response (401 with WWW-Authenticate, or 403).
+ *
+ * Bot tokens (xbot-* prefix) are resolved through the bot_users table;
+ * OAuth user tokens are resolved through oauth_tokens.
+ */
+export async function enforceScope(
+  pool: Pool,
+  req: Request,
+  requiredScope: string,
+  now = Date.now()
+): Promise<EnforceScopeResult> {
+  const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? ''
+  const match = /^Bearer\s+(\S+)$/i.exec(authHeader.trim())
+  if (!match) return { kind: 'no_token' }
+
+  const token = match[1]
+
+  // Try bot token first (xbot-* prefix, stored in bot_users.api_token)
+  const isBotToken = token.startsWith('xbot-')
+  const grant = isBotToken
+    ? await resolveBotToken(pool, token)
+    : await resolveOAuthToken(pool, token)
+
+  if (!grant) {
+    return {
+      kind: 'error',
+      response: NextResponse.json(
+        { error: 'invalid_token' },
+        {
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer error="invalid_token"' },
+        }
+      ),
+    }
+  }
+
+  if (grant.expires_at > 0 && grant.expires_at <= now) {
+    return {
+      kind: 'error',
+      response: NextResponse.json(
+        { error: 'token_expired' },
+        {
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer error="token_expired"' },
+        }
+      ),
+    }
+  }
+
+  if (!scopeSatisfied(grant.scopes, requiredScope)) {
+    return {
+      kind: 'error',
+      response: NextResponse.json(
+        { error: 'insufficient_scope', required: requiredScope },
+        {
+          status: 403,
+          headers: {
+            'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${requiredScope}"`,
+          },
+        }
+      ),
+    }
+  }
+
+  return { kind: 'ok', grant }
 }

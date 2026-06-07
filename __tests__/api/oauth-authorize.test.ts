@@ -18,6 +18,7 @@ import {
 } from '../helpers'
 import { GET as AUTHORIZE_GET, POST as AUTHORIZE_POST } from '@/app/api/oauth/authorize/route'
 import { POST as ACCESS_POST, GET as ACCESS_GET } from '@/app/api/oauth/access/route'
+import { hashAppSecret } from '@/lib/auth/oauthAppSecret'
 
 let ctx: TestContext
 let user: TestUser
@@ -215,7 +216,7 @@ describe('POST /api/oauth/access exchange — rejections', () => {
     return (await parseResponse<{ code: string }>(res)).code
   }
 
-  it('rejects a wrong client_secret with 401 invalid_client (no dev fallback)', async () => {
+  it('rejects a wrong client_secret with 401 invalid_client (no dev fallback) and leaves the code usable', async () => {
     const app = await mkApp()
     const code = await issueCode(app)
     const res = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
@@ -227,6 +228,18 @@ describe('POST /api/oauth/access exchange — rejections', () => {
     }))
     expect(res.status).toBe(401)
     expect((await parseResponse(res)).error).toBe('invalid_client')
+
+    // The secret check runs BEFORE the code-consume UPDATE, so a bad-secret
+    // guess must NOT burn a still-valid pending code: the real owner can still
+    // exchange it with the correct secret.
+    const legit = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(legit.status).toBe(200)
   })
 
   it('rejects an unknown client with 401 invalid_client', async () => {
@@ -241,10 +254,10 @@ describe('POST /api/oauth/access exchange — rejections', () => {
     expect((await parseResponse(res)).error).toBe('invalid_client')
   })
 
-  it('rejects a redirect_uri mismatch at exchange with 400 invalid_grant', async () => {
+  it('rejects a redirect_uri mismatch at exchange with 400 invalid_grant and leaves the code live', async () => {
     // Register both URIs so authorize succeeds, then exchange with the other one.
     const app = await mkApp({ redirectUris: [REDIRECT_URI, OTHER_REDIRECT] })
-    const code = await issueCode(app)
+    const code = await issueCode(app) // issued bound to REDIRECT_URI
     const res = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
       cookie: user.sessionCookie,
       body: {
@@ -254,6 +267,18 @@ describe('POST /api/oauth/access exchange — rejections', () => {
     }))
     expect(res.status).toBe(400)
     expect((await parseResponse(res)).error).toBe('invalid_grant')
+
+    // redirect_uri is folded into the atomic consume WHERE, so a mismatch matches
+    // no row and does NOT burn the code (same DoS-resistance as the client
+    // dimension). The legitimate redirect_uri must still exchange the live code.
+    const legit = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(legit.status).toBe(200)
   })
 
   it('rejects an expired code with 400 invalid_code', async () => {
@@ -305,5 +330,152 @@ describe('POST /api/oauth/access exchange — rejections', () => {
     }))
     expect(res.status).toBe(400)
     expect((await parseResponse(res)).error).toBe('invalid_request')
+  })
+
+  // SECURITY (client substitution / code-binding DoS): a code issued to app A,
+  // exchanged with app B's credentials, must be REJECTED and must NOT burn A's
+  // code — A must still be able to exchange it. The binding check lives inside
+  // the atomic consume WHERE clause, so a mismatched request matches no row.
+  it('rejects exchange with another app\'s credentials and leaves the code usable by its owner', async () => {
+    const appA = await mkApp()
+    const appB = await mkApp({ secret: 'app-b-secret' })
+    const code = await issueCode(appA)
+
+    // App B tries to exchange app A's code with B's own (valid, but wrong-app)
+    // credentials. invalid_grant per RFC 6749 (don't leak which field), and the
+    // code must survive.
+    const substituted = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: appB.client_id,
+        client_secret: 'app-b-secret', redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(substituted.status).toBe(400)
+    expect((await parseResponse(substituted)).error).toBe('invalid_grant')
+
+    // The legitimate owner (app A) can still exchange the un-burned code.
+    const legit = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: appA.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(legit.status).toBe(200)
+    expect((await parseResponse<{ ok: boolean; app_id: string }>(legit)).app_id).toBe(appA.id)
+  })
+
+  it('rejects exchange when the wrong client_id presents the right secret (code survives)', async () => {
+    const appA = await mkApp()
+    const appB = await mkApp() // same CLIENT_SECRET, different client_id
+    const code = await issueCode(appA)
+
+    const wrongClient = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: appB.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(wrongClient.status).toBe(400)
+    expect((await parseResponse(wrongClient)).error).toBe('invalid_grant')
+
+    // Code still exchangeable by app A.
+    const legit = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: appA.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(legit.status).toBe(200)
+  })
+})
+
+describe('POST /api/oauth/access exchange — client_secret hashing + back-compat', () => {
+  async function issueCode(app: { client_id: string }): Promise<string> {
+    const res = await AUTHORIZE_POST(asRequest('POST', '/api/oauth/authorize', {
+      cookie: user.sessionCookie,
+      body: { client_id: app.client_id, redirect_uri: REDIRECT_URI, scope: 'chat:write' },
+    }))
+    return (await parseResponse<{ code: string }>(res)).code
+  }
+
+  async function storedSecret(appId: string): Promise<string> {
+    const { rows } = await ctx.pool.query<{ client_secret: string }>(
+      `SELECT client_secret FROM aaelink.oauth_apps WHERE id = $1`,
+      [appId],
+    )
+    return rows[0]?.client_secret ?? ''
+  }
+
+  it('exchanges against a pre-hashed client_secret', async () => {
+    const app = await mkApp({ secret: hashAppSecret(CLIENT_SECRET) })
+    const code = await issueCode(app)
+    const res = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(res.status).toBe(200)
+    // Already hashed — stays hashed, unchanged.
+    expect(await storedSecret(app.id)).toBe(hashAppSecret(CLIENT_SECRET))
+  })
+
+  it('rejects a wrong secret against a hashed row with 401 invalid_client and keeps the code live', async () => {
+    const app = await mkApp({ secret: hashAppSecret(CLIENT_SECRET) })
+    const code = await issueCode(app)
+    const res = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: 'wrong-secret', redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(res.status).toBe(401)
+    expect((await parseResponse(res)).error).toBe('invalid_client')
+
+    // A bad-secret guess against a hashed row also returns before the consume —
+    // the code survives and the correct secret still exchanges it.
+    const legit = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(legit.status).toBe(200)
+  })
+
+  it('verifies a legacy plaintext row and lazily upgrades it to a hash in place', async () => {
+    // mkApp stores CLIENT_SECRET as plaintext (legacy shape).
+    const app = await mkApp()
+    expect(await storedSecret(app.id)).toBe(CLIENT_SECRET) // plaintext on disk
+
+    const code = await issueCode(app)
+    const res = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(res.status).toBe(200)
+    // The row was lazily upgraded to the hashed form on successful verify.
+    expect(await storedSecret(app.id)).toBe(hashAppSecret(CLIENT_SECRET))
+
+    // And it still verifies after upgrade (now via the hashed path).
+    const code2 = await issueCode(app)
+    const res2 = await ACCESS_POST(asRequest('POST', '/api/oauth/access', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'exchange', code: code2, client_id: app.client_id,
+        client_secret: CLIENT_SECRET, redirect_uri: REDIRECT_URI,
+      },
+    }))
+    expect(res2.status).toBe(200)
   })
 })

@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyAppSecret, hashAppSecret } from '@/lib/auth/oauthAppSecret'
 
 /**
  * OAuth2 API — Slack oauth.v2.access / auth.revoke parity.
@@ -92,38 +93,70 @@ async function _POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_request' }, { status: 400 })
     }
 
-    // Verify app credentials — no dev fallback. An unknown client or a bad
-    // secret is rejected outright (Slack/OAuth2 invalid_client).
-    const { rows: appRows } = await pool.query<{ id: string; is_active: boolean }>(
-      `SELECT id, is_active FROM aaelink.oauth_apps
-        WHERE client_id = $1 AND client_secret = $2`,
-      [clientId, clientSecret]
+    // Verify app credentials — no dev fallback. Look the app up by client_id
+    // only, then verify the secret in JS with a constant-time compare (never a
+    // SQL `WHERE client_secret = $2` equality, which leaks via timing and only
+    // works for plaintext). client_secret is stored as a prefixed sha256 hash
+    // (lib/auth/oauthAppSecret.ts); legacy plaintext rows still verify and are
+    // lazily upgraded to the hashed form on a successful match.
+    const { rows: appRows } = await pool.query<{ id: string; is_active: boolean; client_secret: string }>(
+      `SELECT id, is_active, client_secret FROM aaelink.oauth_apps WHERE client_id = $1`,
+      [clientId]
     )
     const app = appRows[0]
     if (!app || app.is_active === false) {
       return NextResponse.json({ error: 'invalid_client' }, { status: 401 })
     }
+    const secretCheck = verifyAppSecret(clientSecret, app.client_secret || '')
+    if (!secretCheck.ok) {
+      return NextResponse.json({ error: 'invalid_client' }, { status: 401 })
+    }
+    // Lazily migrate a legacy plaintext secret to the hashed form, in place.
+    if (secretCheck.needsUpgrade) {
+      try {
+        await pool.query(
+          `UPDATE aaelink.oauth_apps SET client_secret = $2 WHERE id = $1`,
+          [app.id, hashAppSecret(clientSecret)]
+        )
+      } catch { /* upgrade is best-effort; verification already succeeded */ }
+    }
 
     const now = Date.now()
 
-    // Atomically consume the authorization code: single-use + not expired.
+    // Atomically consume the authorization code with the FULL client binding in
+    // the WHERE clause: code + client_id + redirect_uri + unexpired + unconsumed.
+    // Folding the binding into the consume means a mismatched request (wrong
+    // client or redirect_uri) does NOT match the row and therefore does NOT burn
+    // a victim's still-valid code (the prior order consumed first, then checked
+    // binding — a DoS footgun). On no match we disambiguate below.
     const { rows: codeRows } = await pool.query<{
       app_id: string; client_id: string; user_id: string
       workspace_id: string; redirect_uri: string; scope: string
     }>(
       `UPDATE aaelink.oauth_codes
-          SET used_at = $2
-        WHERE code = $1 AND used_at IS NULL AND expires_at > $2
+          SET used_at = $5
+        WHERE code = $1 AND client_id = $2 AND redirect_uri = $3
+          AND app_id = $4 AND used_at IS NULL AND expires_at > $5
       RETURNING app_id, client_id, user_id, workspace_id, redirect_uri, scope`,
-      [code, now]
+      [code, clientId, redirectUri, app.id, now]
     )
     const codeRow = codeRows[0]
     if (!codeRow) {
+      // No row consumed. Distinguish a binding mismatch (code is live but bound
+      // to a different client/redirect_uri) from a genuinely invalid/expired/
+      // already-used code — WITHOUT consuming the code. A live unconsumed code
+      // that simply didn't match our binding is a wrong-client/redirect attempt:
+      // surface invalid_grant (RFC 6749 — don't leak which field) and leave the
+      // code exchangeable by its real owner.
+      const { rows: liveRows } = await pool.query<{ id: string }>(
+        `SELECT id FROM aaelink.oauth_codes
+          WHERE code = $1 AND used_at IS NULL AND expires_at > $2`,
+        [code, now]
+      )
+      if (liveRows[0]) {
+        return NextResponse.json({ error: 'invalid_grant' }, { status: 400 })
+      }
       return NextResponse.json({ error: 'invalid_code' }, { status: 400 })
-    }
-    // The code must have been issued to this exact client + redirect_uri.
-    if (codeRow.client_id !== clientId || codeRow.redirect_uri !== redirectUri) {
-      return NextResponse.json({ error: 'invalid_grant' }, { status: 400 })
     }
 
     // Mint a real user-delegated access token with crypto-strong entropy.
