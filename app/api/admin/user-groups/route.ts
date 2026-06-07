@@ -14,34 +14,6 @@ import { tracedRoute } from '@/lib/api/tracedRoute'
  * Stored in `aaelink.user_groups` + `aaelink.user_group_members`.
  */
 
-const GROUPS_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.user_groups (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    handle      TEXT NOT NULL UNIQUE,
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    enabled     BOOLEAN NOT NULL DEFAULT true,
-    created_by  UUID REFERENCES aaelink.users(id),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-  );
-
-  CREATE TABLE IF NOT EXISTS aaelink.user_group_members (
-    group_id  UUID NOT NULL REFERENCES aaelink.user_groups(id) ON DELETE CASCADE,
-    user_id   UUID NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
-    added_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (group_id, user_id)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_ugm_group ON aaelink.user_group_members(group_id);
-  CREATE INDEX IF NOT EXISTS idx_ugm_user  ON aaelink.user_group_members(user_id);
-`
-
-async function ensureGroups(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(GROUPS_DDL)
-}
-
 async function _GET(_req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
@@ -49,8 +21,6 @@ async function _GET(_req: NextRequest) {
 
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureGroups(pool)
 
   const { rows } = await pool.query(
     `SELECT g.*,
@@ -72,8 +42,6 @@ async function _POST(req: NextRequest) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  await ensureGroups(pool)
-
   const body = await req.json()
   const { handle, name, description, members } = body as {
     handle: string; name: string; description?: string; members?: string[]
@@ -93,7 +61,7 @@ async function _POST(req: NextRequest) {
 
   // Add members if provided
   if (members && members.length > 0) {
-    const values = members.map((_, i) => `($1, $${i + 2}::uuid)`).join(', ')
+    const values = members.map((_, i) => `($1, $${i + 2})`).join(', ')
     await pool.query(
       `INSERT INTO aaelink.user_group_members (group_id, user_id) VALUES ${values} ON CONFLICT DO NOTHING`,
       [rows[0].id, ...members]
@@ -110,8 +78,6 @@ async function _PATCH(req: NextRequest) {
 
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureGroups(pool)
 
   const body = await req.json()
   const { id, name, description, enabled } = body as {
@@ -150,8 +116,6 @@ async function _DELETE(req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureGroups(pool)
 
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })

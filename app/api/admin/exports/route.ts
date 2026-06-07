@@ -13,30 +13,6 @@ import { tracedRoute } from '@/lib/api/tracedRoute'
  * Export jobs stored in `aaelink.export_jobs`.
  */
 
-const EXPORTS_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.export_jobs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type            TEXT NOT NULL CHECK (type IN ('full','messages','files','members','channels')),
-    status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','completed','failed')),
-    requested_by    UUID NOT NULL REFERENCES aaelink.users(id),
-    date_from       TIMESTAMPTZ,
-    date_to         TIMESTAMPTZ,
-    channels_filter TEXT[],
-    file_size       BIGINT,
-    file_url        TEXT,
-    error_message   TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ
-  );
-  CREATE INDEX IF NOT EXISTS idx_exports_status ON aaelink.export_jobs(status, created_at DESC);
-`
-
-async function ensureExports(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(EXPORTS_DDL)
-}
-
 async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
@@ -52,8 +28,6 @@ async function _GET(req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureExports(pool)
 
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 20, 100)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
@@ -90,8 +64,6 @@ async function _POST(req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureExports(pool)
 
   const body = await req.json()
   const { type, date_from, date_to, channels } = body as {

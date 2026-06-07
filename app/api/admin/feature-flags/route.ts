@@ -33,21 +33,6 @@ async function assertAdmin(pool: ReturnType<typeof getPool>) {
   return uid
 }
 
-/* ── Ensure the feature_flags table exists ─────────────────────────── */
-async function ensureFeatureFlagsTable(pool: NonNullable<ReturnType<typeof getPool>>) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.feature_flags (
-      id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      flag_name   TEXT UNIQUE NOT NULL,
-      enabled     BOOLEAN NOT NULL DEFAULT true,
-      description TEXT DEFAULT '',
-      updated_by  TEXT DEFAULT '',
-      updated_at  BIGINT DEFAULT 0,
-      deleted_at  BIGINT DEFAULT NULL
-    )
-  `)
-}
-
 /* ── GET ───────────────────────────────────────────────────────────── */
 async function _GET() {
   const pool = getPool()
@@ -56,7 +41,6 @@ async function _GET() {
   if (!uid) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   await ensureSchema()
-  await ensureFeatureFlagsTable(pool)
 
   const resolved = await getAllFeatureFlags()
 
@@ -97,7 +81,6 @@ async function _PUT(req: Request) {
   if (!uid) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   await ensureSchema()
-  await ensureFeatureFlagsTable(pool)
 
   const body = (await req.json().catch(() => ({}))) as {
     flag_name?: string

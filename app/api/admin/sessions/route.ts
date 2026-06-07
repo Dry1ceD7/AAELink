@@ -13,30 +13,6 @@ import { tracedRoute } from '@/lib/api/tracedRoute'
  * Sessions are stored in `aaelink.user_sessions`.
  */
 
-const SESSIONS_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.user_sessions (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id       UUID NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
-    device        TEXT NOT NULL DEFAULT 'Unknown',
-    os            TEXT NOT NULL DEFAULT 'Unknown',
-    browser       TEXT NOT NULL DEFAULT 'Unknown',
-    ip_address    INET,
-    location      TEXT,
-    user_agent    TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_active   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at    TIMESTAMPTZ,
-    is_active     BOOLEAN NOT NULL DEFAULT true
-  );
-  CREATE INDEX IF NOT EXISTS idx_sessions_user   ON aaelink.user_sessions(user_id) WHERE is_active;
-  CREATE INDEX IF NOT EXISTS idx_sessions_active ON aaelink.user_sessions(is_active, last_active DESC);
-`
-
-async function ensureSessions(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(SESSIONS_DDL)
-}
-
 async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
@@ -53,8 +29,6 @@ async function _GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  await ensureSessions(pool)
-
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 50, 200)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
   const userId = req.nextUrl.searchParams.get('user_id')?.trim() || ''
@@ -64,7 +38,7 @@ async function _GET(req: NextRequest) {
 
   if (userId) {
     params.push(userId)
-    where.push(`s.user_id = $${params.length}::uuid`)
+    where.push(`s.user_id = $${params.length}`)
   }
 
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
@@ -106,8 +80,6 @@ async function _POST(req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureSessions(pool)
 
   const body = await req.json()
   const { action, session_id, user_id } = body as { action: string; session_id?: string; user_id?: string }
