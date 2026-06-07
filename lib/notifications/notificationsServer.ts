@@ -98,8 +98,10 @@ export async function notifyChannelMentions(args: {
     if (await userCanReadChannel(args.pool, t, args.channelId)) allowed.push(t)
   }
   targets = allowed
-  // Respect a per-channel level of 'nothing' (notifications off).
-  targets = await dropLevelNothing(args.pool, targets, args.channelId)
+  // A muted channel (muted flag, channel_mutes row, or level='nothing') must
+  // suppress the in-app mention row too, not just push — Slack parity. dropMuted
+  // is a superset of dropLevelNothing so it covers the notifications-off case.
+  targets = await dropMuted(args.pool, targets, args.channelId)
   if (targets.length === 0) return []
   const title = `Mention in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`

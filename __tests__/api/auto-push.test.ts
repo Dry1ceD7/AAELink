@@ -107,6 +107,28 @@ describe('auto-push on @mention', () => {
     expect(await pushJobsFor(recipient.id, channel.id)).toBe(0)
   })
 
+  it('does NOT insert an in-app mention row when the recipient muted the channel', async () => {
+    // Slack parity: a channel mute suppresses the in-app mention notification,
+    // not just the push (notificationsServer.notifyChannelMentions → dropMuted).
+    const channel = await createTestChannel(ctx.pool, author.id, { workspaceId: wsId })
+    await addChannelMember(channel.id, recipient.id)
+    await ctx.pool.query(
+      `INSERT INTO aaelink.channel_mutes (user_id, channel_id, created_at) VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [recipient.id, channel.id, Date.now()]
+    )
+
+    const res = await postMessage(author.sessionCookie, channel.id, `psst @${usernameOf(recipient)}`)
+    await expectSuccess(res)
+
+    const { rows } = await ctx.pool.query(
+      `SELECT 1 FROM aaelink.notifications WHERE user_id = $1 AND channel_id = $2 AND kind = 'mention'`,
+      [recipient.id, channel.id]
+    )
+    expect(rows.length).toBe(0)
+    expect(await pushJobsFor(recipient.id, channel.id)).toBe(0)
+  })
+
   it('does NOT push when the recipient is snoozed (DND)', async () => {
     const channel = await createTestChannel(ctx.pool, author.id, { workspaceId: wsId })
     await addChannelMember(channel.id, recipient.id)
