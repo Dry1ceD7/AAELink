@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
+import { enforceSessionLimits } from '@/lib/auth/sessionEnforcement'
 import type { SsoProviderConfig } from '@/lib/auth/ssoProvider'
 import { resolveWorkspaceRole, type MappedIdentity } from '@/lib/auth/ssoClaims'
+import { applyGroupRoleMappings } from '@/lib/auth/idpRoleMappings'
 
 /**
  * Link-or-provision an SSO identity and establish an AAELink session.
@@ -112,8 +114,17 @@ export async function loginViaSso(
 
   await ensureWorkspaceMembership(pool, cfg, userId, identity)
 
+  // Grant any IdP group → role mappings (Admin 35 / Identity 13). Grant-only:
+  // super_admin is clamped out, and removal from a group never auto-demotes.
+  // sso_providers is not org-scoped, so only global (org_id NULL) mappings apply.
+  await applyGroupRoleMappings(pool, userId, identity.groups, {
+    orgId: null,
+    defaultWorkspaceId: cfg.defaultWorkspaceId,
+  }).catch(() => { /* non-critical: role grant must not block login */ })
+
   const sessionId = randomUUID()
-  const sessionMs = sessionTtlMs(await getSessionPolicy(pool, now), 'web')
+  const sessionPolicy = await getSessionPolicy(pool, now)
+  const sessionMs = sessionTtlMs(sessionPolicy, 'web')
   // Providers with enforce_mfa create a session that readSessionUserId withholds
   // until the user clears MFA step-up (POST /api/auth/mfa/stepup).
   const mfaPending = cfg.enforceMfa === true
@@ -122,6 +133,8 @@ export async function loginViaSso(
      VALUES ($1,$2,$3,$4,$5,$6,$6,$7)`,
     [sessionId, userId, now + sessionMs, meta.userAgent, meta.ip, now, mfaPending]
   )
+  // Enforce max_sessions_per_user / single_session_mode (D2). Best-effort.
+  await enforceSessionLimits(pool, userId, sessionPolicy, sessionId, now).catch(() => { /* non-critical */ })
   await pool.query(
     `UPDATE aaelink.users SET last_seen_at = $1, last_login_at = $1,
             login_count = COALESCE(login_count, 0) + 1 WHERE id = $2`,

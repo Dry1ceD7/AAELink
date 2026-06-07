@@ -22,6 +22,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { applyGroupRoleMappings } from '@/lib/auth/idpRoleMappings'
 
 // ── SCIM Types ──────────────────────────────────────────────────────
 
@@ -127,6 +128,32 @@ function audit(req: Request, conn: ScimConnection, action: string, groupId: stri
   })
 }
 
+/**
+ * After a group membership change, re-resolve each affected user's full set of
+ * group names (org-scoped) against the IdP group → role mappings and grant the
+ * mapped role. Grant-only: super_admin is clamped out and removal never demotes.
+ * Best-effort: a failure here must never break the SCIM operation.
+ */
+async function applyMappingsForUsers(conn: ScimConnection, userIds: string[]): Promise<void> {
+  const pool = getPool()
+  if (!pool || userIds.length === 0) return
+  const scope = orgScope(conn, 2)
+  for (const userId of [...new Set(userIds)]) {
+    try {
+      const params: unknown[] = [userId]
+      if (scope.param !== undefined) params.push(scope.param)
+      const { rows } = await pool.query<{ name: string }>(
+        `SELECT g.name FROM aaelink.user_group_members m
+           JOIN aaelink.user_groups g ON g.id = m.group_id
+          WHERE m.user_id = $1${scope.sql}`,
+        params
+      )
+      const groups = rows.map(r => r.name)
+      await applyGroupRoleMappings(pool, userId, groups, { orgId: conn.org_id })
+    } catch { /* non-critical */ }
+  }
+}
+
 // ── Route Handlers ──────────────────────────────────────────────────
 
 async function _GET(req: Request) {
@@ -221,6 +248,7 @@ async function _POST(req: Request) {
   }
 
   audit(req, conn, 'scim.group.create', id, { displayName: body.displayName, memberCount: body.members?.length ?? 0 })
+  if (body.members?.length) await applyMappingsForUsers(conn, body.members.map(m => m.value))
 
   const group = await loadGroup(id, conn)
   return NextResponse.json(group, {
@@ -274,6 +302,7 @@ async function _PUT(req: Request) {
   }
 
   audit(req, conn, 'scim.group.replace', groupId, { displayName: body.displayName })
+  if (body.members !== undefined) await applyMappingsForUsers(conn, (body.members || []).map(m => m.value))
 
   const group = await loadGroup(groupId, conn)
   return NextResponse.json(group, { headers: { 'Content-Type': 'application/scim+json' } })
@@ -298,6 +327,7 @@ async function _PATCH(req: Request) {
   }
 
   const now = Date.now()
+  const affectedUserIds: string[] = []
 
   for (const op of body.Operations || []) {
     const operation = op.op.toLowerCase()
@@ -313,6 +343,7 @@ async function _PATCH(req: Request) {
           `INSERT INTO aaelink.user_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [groupId, m.value, now]
         ).catch(() => {})
+        affectedUserIds.push(m.value)
       }
     }
 
@@ -330,11 +361,13 @@ async function _PATCH(req: Request) {
           `INSERT INTO aaelink.user_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [groupId, m.value, now]
         ).catch(() => {})
+        affectedUserIds.push(m.value)
       }
     }
   }
 
   audit(req, conn, 'scim.group.patch', groupId, { ops: (body.Operations || []).map(o => o.op) })
+  if (affectedUserIds.length) await applyMappingsForUsers(conn, affectedUserIds)
 
   const group = await loadGroup(groupId, conn)
   return NextResponse.json(group, { headers: { 'Content-Type': 'application/scim+json' } })
