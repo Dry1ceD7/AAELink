@@ -1,6 +1,6 @@
-# AAELink — Parity reference matrix (regenerated 2026-06-06)
+# AAELink — Parity reference matrix (regenerated 2026-06-07)
 
-> **This edition was regenerated 2026-06-06 from code verification.**
+> **This edition was regenerated 2026-06-07 from code verification.**
 > Method: production-path wiring checked (response shape, RBAC, CSRF, audit-logging,
 > realtime wiring, and whether the wiring is actually *invoked end-to-end*) — not route
 > existence or DDL presence alone. It supersedes all prior versions of this file.
@@ -69,7 +69,7 @@ organizational outcomes for the behavior in that row.
 | 21 | Scheduled message delete/cancel | chat.deleteScheduledMessage | ✅ Full | scheduled-messages/route.ts:87 DELETE owner-scoped cancel |
 | 22 | Scheduled dispatch (delivery) | (scheduler) | ✅ Full | dispatch/route.ts authenticated via DISPATCH_SECRET header or platform_admin/super_admin session (:26-42); delivery unified in lib/messaging/deliverScheduledMessage.ts with full notify fan-out (mentions/broadcast/keywords/thread followers), realtime emitMessageEvent, emitMessageCreated, last_post_at; used by both HTTP dispatch route and lib/infra/scheduledMessageProcessor.ts |
 | 23 | Message permalink | chat.getPermalink | ✅ Full | permalink/route.ts:51 userCanReadChannel gate added — non-members receive 403 forbidden (app/api/messages/permalink/route.ts:51-52) |
-| 24 | Forward / share message | (UI Forward) | 🟡 Partial | forward/route.ts:22 verifyCsrf + target archived(72)+userCanPostToChannel(75)+DLP added; still NO source-read check on original.channel_id (can forward from channel you can't read) |
+| 24 | Forward / share message | (UI Forward) | ✅ Full | forward/route.ts:60 userCanReadChannel on original.channel_id guards source (IDOR denied as 404); verifyCsrf:23 + target archived(81)+userCanPostToChannel(84)+DLP(:106)+audit 'message.forward'(:128) |
 | 25 | In-channel / workspace message search | search.messages | ✅ Full | search/route.ts:41 uses shared FTS searchEngine (body_tsv/websearch_to_tsquery/ts_rank/ts_headline) + membership(35); replaces ILIKE |
 | 26 | Search operators (from:/in:/has:/before:/after:) | search modifiers | ✅ Full | lib/messaging/searchEngine.ts parses from:/in:/has:/before:/after:/on:/during: + channelId filter (47,234-291); used by messaging-core search route |
 | 27 | Typing indicator (channel) | (RTM) | ✅ Full | collab/typing/route.ts:77 POST 8s TTL, Redis emit + DB poll fallback |
@@ -85,10 +85,9 @@ organizational outcomes for the behavior in that row.
 | 37 | CSRF on message mutations | (token) | ✅ Full | verifyCsrf now on send(459, bearer-exempt), edit(99), delete(195), react(39), pin/unpin(43/88), save(78), forward(22), bookmarks(44/94); residual gaps: scheduled-create, dispatch, read-state POST |
 | 38 | Ephemeral / me-message / postEphemeral | chat.postEphemeral / meMessage | 🔴 Missing | chat/route.ts and conversations/history/route.ts phantom-column bugs fixed (body/root_id/reaction_key corrected, type field removed from INSERT); postEphemeral still not persisted (chat/route.ts:76) — ephemeral messages remain in-memory only |
 
-**Messaging core tally:** 38 behaviors — ✅ 29 · 🟡 8 · 🟠 0 · 🔴 1 · ⛔ 0
+**Messaging core tally:** 38 behaviors — ✅ 30 · 🟡 7 · 🟠 0 · 🔴 1 · ⛔ 0
 
-Open security/correctness gaps: forward source-read RBAC (24), bookmarks no audit/reorder (17),
-live-delivery SSE consumer still poll-based (34), group-DM fan-out test (3).
+Remaining partials: bookmarks no RBAC/audit/reorder (17), live-delivery SSE consumer still poll-based (34), group-DM fan-out test (3).
 
 ---
 
@@ -147,8 +146,8 @@ Remaining partials: file-search no dedicated UI surface (2), has:image/video gra
 | 15 | Audio preview / player | audio preview | 🟡 Partial | Same as video: preview can_player hint over canonical file_attachments; clips subsystem covers audio; no dedicated chat-audio player wired to file_attachments beyond the hint |
 | 16 | 3D (gltf) / CAD (DWG) preview | n/a | ⛔ Excluded | BLUEPRINT-aspirational interactive viewers; Out of Scope (deferred); no renderer or MIME mapping present |
 | 17 | File metadata (dims, duration, EXIF) | file metadata | ✅ Full | lib/files/imageMeta.ts extracts width/height + EXIF orientation (PNG/JPEG/GIF/WebP/BMP, pure-JS); thumbnailJob.ts:169 persists dims; sharp .rotate() strips EXIF on derived thumbnail (:119); duration_ms column exists but no audio/video extractor (chat path) |
-| 18 | File comments — list | files.comments.list | 🟡 Partial | app/api/files/comments/route.ts:16 lists from file_comments (migrate.ts via 043 consolidation); joins users; still no file membership/ownership read check on the list |
-| 19 | File comments — add/edit/delete | files.comments | 🟡 Partial | app/api/files/comments/route.ts:39 CRUD, edit/delete author-or-admin scoped (:72,:81); still NO CSRF on the POST mutation (no verifyCsrf import) and NO audit log |
+| 18 | File comments — list | files.comments.list | ✅ Full | app/api/files/comments/route.ts:53 canReadFile gate (uploader always; channel-attached requires userCanReadChannel; unattached private) — existence oracle closed; lists from file_comments, joins users |
+| 19 | File comments — add/edit/delete | files.comments | ✅ Full | app/api/files/comments/route.ts: verifyCsrf:71 on POST; canReadFile gate on mutations:89; writeAuditLog 'file.comment.create'(:105) / 'file.comment.edit'(:117) / 'file.comment.delete'(:130); edit/delete author-or-admin scoped |
 | 20 | files.sharedPublicURL (make public) | files.sharedPublicURL | ✅ Full | app/api/files/[id]/public-link/route.ts:20 + lib/files/publicLinks.ts:56; uploader-only, reuses active token, CSRF + audit; test __tests__/api/file-public-links.test.ts |
 | 21 | files.revokePublicURL | files.revokePublicURL | ✅ Full | app/api/files/[id]/public-link/route.ts:40 + revokePublicLinks; uploader-only revoke-all, audited; tested |
 | 22 | Public link resolution (no session) | public link | ✅ Full | app/api/files/public/[token]/route.ts:43 now SERVES the actual bytes via readFileBytes (resolvePublicLink returns storage_backend, publicLinks.ts:86) with neutralized active-content headers; ?meta=1 for metadata-only; scan gate + org toggle enforced; test file-public-bytes.test.ts |
@@ -163,10 +162,10 @@ Remaining partials: file-search no dedicated UI surface (2), has:image/video gra
 
 > Note: the verified data provided 30 rows (including row 16 ⛔ Excluded, 3D/CAD preview). The tally below counts all 30.
 
-**Files & previews tally:** 30 behaviors — ✅ 20 · 🟡 9 · 🟠 0 · 🔴 0 · ⛔ 1
+**Files & previews tally:** 30 behaviors — ✅ 22 · 🟡 7 · 🟠 0 · 🔴 0 · ⛔ 1
 
 Remaining partials: office preview not wired from chat (12), code highlight renderer absent (13),
-video/audio player hint-only (14/15), file comments no CSRF/audit (19), scan daemon not in compose (24),
+video/audio player hint-only (14/15), scan daemon not in compose (24),
 infected-file auto-delete not enforced (27), remote files no workspace-scope/audit (29).
 
 ---
@@ -247,11 +246,11 @@ column type validation (16); channel-less list realtime (22); KB search/versioni
 |---|---|---|---|---|
 | 1 | Per-channel notification level (all/mentions/nothing) | conversations notify level | ✅ Full | level now authoritative on send path: notifyChannelLevelAll (level='all' every-message alert) + dropLevelNothing (level='nothing' drops in-app+push) wired in messages/route.ts:584; pushTargeting.ts:44 also suppresses push on level='nothing' |
 | 2 | Per-channel mute | yes | ✅ Full | Both stores honored via UNION in pushTargeting.ts:42-49 (channel_notification_prefs.muted + channel_mutes); suppresses push |
-| 3 | Mute suppresses in-app (not just push) | yes | 🟡 Partial | notifyChannelMentions (notificationsServer.ts:102) only calls dropLevelNothing, not dropMuted; muted member still gets in-app mention row; dropMuted is only applied to level='all' path (line 232) |
-| 4 | DND schedule (daily window) | dnd | ✅ Full | TZ-aware dndWindow.ts honored for push at pushTargeting.ts:71; dnd/route.ts:176 still has its own TZ-less isDndActiveNow (_timezone ignored) — divergence persists |
+| 3 | Mute suppresses in-app (not just push) | yes | ✅ Full | notifyChannelMentions (notificationsServer.ts:102) now calls dropMuted (superset of dropLevelNothing); a muted member no longer gets an in-app mention row; level='all' path also uses dropMuted (line 232) |
+| 4 | DND schedule (daily window) | dnd | ✅ Full | TZ-aware dndWindow.ts honored for push at pushTargeting.ts:71; dnd/route.ts GET now imports the same isDndActiveNow from lib/notifications/dndWindow — divergent route-local helper deleted |
 | 5 | DND snooze (set N minutes) | dnd.setSnooze | ✅ Full | dnd/route.ts:127 POST snooze_until; honored at push time pushTargeting.ts:67 (snooze_until > now) |
 | 6 | DND end snooze | dnd.endSnooze | ✅ Full | dnd/route.ts action=end_snooze resets snooze_until=0 |
-| 7 | DND info / is_active | dnd.info | 🟡 Partial | GET at dnd/route.ts:70 computes isActive via route-local TZ-less isDndActiveNow (line 176, _timezone unused) — still disagrees with TZ-aware dndWindow used by push |
+| 7 | DND info / is_active | dnd.info | ✅ Full | GET at dnd/route.ts:70 computes isActive via the shared TZ-aware isDndActiveNow from lib/notifications/dndWindow — now agrees with the push engine |
 | 8 | DND suppresses push delivery | yes | ✅ Full | pushTargeting.ts:50-74 drops snooze + enabled-schedule users at enqueue |
 | 9 | DND suppresses in-app notification | yes | 🟡 Partial | DND only filters push targets (selectPushTargets); in-app notification rows still inserted unconditionally in notificationsServer.ts insertNotifications |
 | 10 | Keyword / highlight words (store) | Words That Trigger Mentions | ✅ Full | Consolidated to single system: old app/api/keywords route removed (user_keywords now DEPRECATED table migrate.ts:895); notification_keywords route is sole CRUD with CSRF (notifications/keywords/route.ts:32,47) |
@@ -276,10 +275,9 @@ column type validation (16); channel-less list realtime (22); KB search/versioni
 | 29 | Mark channel/thread/ticket as read | conversations.mark | ✅ Full | notifications/route.ts:61 PATCH mark_channel/thread/ticket/read_all; collab read-state now on unified channel_read_state |
 | 30 | Mark message as unread | yes | ✅ Full | Read-state unified: collab/mark-unread/route.ts:42 writes channel_read_state (was read_state); migration 028 backfills then DROPs aaelink.read_state (migrate.ts:3097-3123); all consumers use channel_read_state |
 
-**Notifications & presence tally:** 30 behaviors — ✅ 18 · 🟡 9 · 🟠 2 · 🔴 0 · ⛔ 1
+**Notifications & presence tally:** 30 behaviors — ✅ 20 · 🟡 7 · 🟠 2 · 🔴 0 · ⛔ 1
 
-Open: mute suppresses in-app (3), DND is_active TZ divergence (7), DND/mute
-in-app gating (9), status expiry server job (17), presence fan-out no diff/status (20),
+Open: DND/mute in-app gating (9), status expiry server job (17), presence fan-out no diff/status (20),
 manual-dnd push-only (21), admin quiet-hours unenforced (25), email no per-type (26),
 digest no hourly (27), notification schedule server-side (28).
 
@@ -304,7 +302,7 @@ digest no hourly (27), notification schedule server-side (28).
 | 13 | Channel management (admin) | admin.conversations.* | 🟡 Partial | channel-archival/route.ts (inactivity preview/execute) real; channels/rename + channels/[id]/convert + search/channels exist but no admin.conversations setTeams/bulk-move parity |
 | 14 | Set channel retention | admin.conversations.setCustomRetention | 🟠 Stub | admin/retention/route.ts:64 still scope-only ('workspace','channel','dm','file'); no channel_id / setCustomRetention / getCustomRetention per-individual-channel |
 | 15 | Retention policy CRUD | workspace retention | ✅ Full | admin/retention/route.ts _GET/_PUT, 4 scopes, enabled, delete_files, isPlatformAdmin-gated, audited |
-| 16 | Retention enforcement (delete) | retention job | ✅ Full | worker retention_enforce (worker.ts:119-126) delegates to runRetentionEnforcement→buildHoldExclusion (hold-aware); route admin/retention/enforce/route.ts:65-92 still does naive DELETE w/o hold exclusion (Gap 6 persists on that path) |
+| 16 | Retention enforcement (delete) | retention job | ✅ Full | worker retention_enforce (worker.ts:119-126) delegates to runRetentionEnforcement→buildHoldExclusion (hold-aware); route admin/retention/enforce/route.ts:41-42 also delegates to runRetentionEnforcement (hold-aware) with verifyCsrf:23 + isPlatformAdmin gate:36 + audit 'retention.enforce':61 |
 | 17 | Legal hold create/list/release | Discovery + manual | ✅ Full | compliance/legal-holds/route.ts GET/POST/PATCH/DELETE, now isPlatformAdmin-gated (lines 33,76,135), super_admin for delete; hold overrides retention engine-side |
 | 18 | DLP rules CRUD | DLP / 3rd-party | ✅ Full | compliance/dlp/route.ts GET/POST/PUT; now isPlatformAdmin-gated (line 39); rule types pattern/keyword/file/domain/pii |
 | 19 | DLP enforcement on send | Discovery tombstone | ✅ Full | applyDlpToMessage now called synchronously pre-persist in messages/route.ts:482-484 (dlp_blocked 403), messages/[id]/route.ts:129, messages/forward/route.ts:97; block/quarantine reject, redact masks |
@@ -314,7 +312,7 @@ digest no hourly (27), notification schedule server-side (28).
 | 23 | eDiscovery scoped by custodian/keyword | Discovery filters | 🟡 Partial | complianceExportJob.ts:47-51 applies only date(from/to)+channel_ids; custodian/keyword/legal_hold/include_files in scope JSON still not applied to artifact |
 | 24 | Audit log read/search | /audit/v1/logs | ✅ Full | admin/audit-log/route.ts isPlatformAdmin-gated (line 31), filters action/actor/from/to, paginated; tracedRoute chokepoint |
 | 25 | Audit log streaming/export | streaming | 🟡 Partial | audit-log/export + audit-log/stream (SSE) + audit-streams (SIEM config) + worker audit_stream present; no per-event schema/guaranteed-delivery replay |
-| 26 | Data residency / region pinning | data residency | 🟠 Stub | admin/data-residency/route.ts returns hardcoded region config; still pure metadata, no storage routing; also still buggy ['super_admin','platform_admin'] check (line 33) locking out it_admin |
+| 26 | Data residency / region pinning | data residency | 🟠 Stub | admin/data-residency/route.ts GET/PUT isPlatformAdmin-gated (it_admin admitted); still pure metadata, no storage routing — region config stored in system_config but no write routing to actual storage backends |
 | 27 | Encryption at rest config | EKM | 🟠 Stub | admin/encryption/route.ts still fake keys sha256:${randomUUID().slice} (lines 115,137); rotate/create write rows only, no KMS; super_admin-only |
 | 28 | Field-level / message encryption | EKM key revoke | 🔴 Missing | encryption/route.ts:53 field_level_encryption=['messages.content','files.content'] declared in config only; no crypto applied to content |
 | 29 | Guest / external user accounts | guest invite | 🟡 Partial | admin/guests/route.ts create/list/revoke + expires_at stored; worker.ts has NO guest_expire handler (grep count 0) — only referenced in jobs/route.ts:37 comment; no scheduled expiry enforcement |
@@ -328,9 +326,9 @@ digest no hourly (27), notification schedule server-side (28).
 **Admin & compliance tally:** 35 behaviors — ✅ 16 · 🟡 13 · 🟠 3 · 🔴 3 · ⛔ 0
 
 Open: admin deactivate (4), custom-role enforcement (5/6), per-channel retention (14),
-retention enforce raw DELETE (16), eDiscovery MBOX/scope (22/23), data-residency
-metadata-only + role bug (26), encryption stubs (27/28), guest expiry (29),
-IP allowlist unenforced (31), HIPAA/WORM (34), IDP group→role (35).
+eDiscovery MBOX/scope (22/23), data-residency metadata-only / no storage routing (26),
+encryption stubs (27/28), guest expiry (29), IP allowlist unenforced (31),
+HIPAA/WORM (34), IDP group→role (35).
 
 ---
 
@@ -338,7 +336,7 @@ IP allowlist unenforced (31), HIPAA/WORM (34), IDP group→role (35).
 
 | # | Behavior | Slack ref | Status | Note |
 |---|---|---|---|---|
-| 1 | Incoming webhook — create/manage | Yes | 🟡 Partial | app/api/integrations/webhooks/route.ts now tracedRoute+readSessionUserId (POST:42), but still NO workspace/RBAC check (any logged-in user can create on any workspace_id:47), no CSRF, no audit log; v1 webhooks table parallel system persists |
+| 1 | Incoming webhook — create/manage | Yes | ✅ Full | webhooks/route.ts: POST verifyCsrf:75 + owner/admin workspace RBAC:103 + audit 'incoming_webhook.create':122; GET workspace-membership gate:52; [id]/route.ts DELETE verifyCsrf:11 + owner/admin/platform_admin gate:40-52 + audit 'incoming_webhook.delete':63 |
 | 2 | Incoming webhook — public receiver (post to channel) | Yes | 🟡 Partial | app/api/webhooks/[token]/route.ts:66-78 still emits realtime via raw notifications INSERT (not lib/realtime/redisPubSub); reads incoming_webhooks only; no inbound signature verification |
 | 3 | Incoming webhook — Slack-compatible payload (text/attachments/username/icon) | Yes | 🟡 Partial | app/api/webhooks/[token]/route.ts:32 accepts text/username/icon_url only; attachments/blocks still ignored; bot identity in message metadata not a real bot user |
 | 4 | Outgoing webhook — subscription CRUD | Yes | 🟡 Partial | app/api/webhooks/v2/route.ts full CRUD + secret-once + event filter; RBAC creator-or-platform-admin (route:114-115), not workspace-scoped |
@@ -373,12 +371,12 @@ IP allowlist unenforced (31), HIPAA/WORM (34), IDP group→role (35).
 | 33 | Plugin runtime — sandboxed execution / extension points | No/Yes-MM | 🟠 Stub | app/api/integrations/plugins/route.ts still only stores capabilities[] JSON + status (route:108-127); docstring claims sandbox/interceptors but plugins are never loaded/executed — no runtime |
 | 34 | Email-to-channel ingestion | n/a | 🟡 Partial | app/api/integrations/email-ingestion/route.ts email_routes registry present; not verified end-to-end (no inbound mail-to-message pipeline confirmed) |
 
-**Integrations & extensibility tally:** 34 behaviors — ✅ 15 · 🟡 14 · 🟠 4 · 🔴 1 · ⛔ 0
+**Integrations & extensibility tally:** 34 behaviors — ✅ 16 · 🟡 13 · 🟠 4 · 🔴 1 · ⛔ 0
 
-Open: incoming-webhook RBAC/CSRF/audit (1), [token] realtime path (2), response_url
-delayed responses (14), bots.info disconnected model (16), OAuth scope partial coverage
-(21), events API channel/file/user paths missing (23), socket-mode gateway (25), views
-persistence (28), workflow engine (30), plugin runtime (33).
+Open: [token] realtime path (2), response_url delayed responses (14), bots.info
+disconnected model (16), OAuth scope partial coverage (21), events API channel/file/user
+paths missing (23), socket-mode gateway (25), views persistence (28), workflow engine (30),
+plugin runtime (33).
 
 ---
 
@@ -401,7 +399,7 @@ persistence (28), workflow engine (30), plugin runtime (33).
 | 13 | Group→role mapping from IdP claims | Yes | 🟡 Partial | lib/auth/ssoClaims.ts maps to workspace member/guest clamped, no platform roles, no team/channel auto-join |
 | 14 | SCIM v2 — Users CRUD | Yes (Grid) | ✅ Full | app/api/scim/v2/Users/route.ts org-scoped via scim_connections.org_id (:151,:296); application/scim+json; bearer-hash auth |
 | 15 | SCIM v2 — deprovision (deactivate + session revoke) | Yes | ✅ Full | Users/route.ts:471-490 DELETE=soft deactivate, removes org_members (:480), logs scim_sync_log |
-| 16 | SCIM v2 — Groups CRUD + membership patch | Yes | 🟡 Partial | app/api/scim/v2/Groups/route.ts full CRUD but validateScimToken (:49) ignores org_id and loadGroup (:71) unscoped; no auditLog import |
+| 16 | SCIM v2 — Groups CRUD + membership patch | Yes | ✅ Full | app/api/scim/v2/Groups/route.ts: resolveScimConnection returns org_id from scim_connections; orgScope(:81) predicates all queries; scopedGroupId(:233) guards PUT/PATCH/DELETE (cross-org → 404); audit() calls writeAuditLog on create/replace/patch/delete(:223,276,337,359) |
 | 17 | SCIM — ServiceProviderConfig / Schemas / ResourceTypes | Yes | ✅ Full | app/api/scim/v2/{ServiceProviderConfig,Schemas,ResourceTypes}/route.ts static discovery docs present |
 | 18 | SCIM — bearer-token lifecycle (issue/rotate/revoke) | Yes | 🟡 Partial | app/api/admin/scim/route.ts:233 traced, stores bearer_token_hash; rotation/expiry semantics still shallow |
 | 19 | MFA — TOTP enrollment + verify (RFC 6238) | Yes | ✅ Full | lib/auth/totp.ts verifyTotp (RFC 6238); mfa/route.ts verifies code before activation |
@@ -415,41 +413,41 @@ persistence (28), workflow engine (30), plugin runtime (33).
 | 27 | Password policy (complexity / history / rotation / breach) | Yes (Grid) | ✅ Full | NEW lib/auth/passwordPolicy.ts (complexity/history/expiry) + admin/password-policy/route.ts (CSRF+audited) enforced in change-password/route.ts:49-70 (validate+isPasswordReused+recordHistory) and register; login surfaces password_expired; No HIBP breach check (AI/ML n/a) |
 | 28 | LDAP / Active Directory sync | Mattermost-only | 🟠 Stub | app/api/admin/ldap/route.ts:88 still test_result:'simulated_success', :167 enqueues type 'compliance_export' w/ ldap_sync payload, :119 stores 'sha256:***' literal; no ldapjs; header :1 'not yet wired' |
 
-**Identity tally:** 28 behaviors — ✅ 20 · 🟡 6 · 🟠 1 · 🔴 1 · ⛔ 0
+**Identity tally:** 28 behaviors — ✅ 21 · 🟡 5 · 🟠 1 · 🔴 1 · ⛔ 0
 
 Open: SAML SLO/IdP-initiated (6), IdP claim→platform-role/team-join (13),
-SCIM Groups unscoped (16), backup-code consumption (20), per-login second factor (21),
+backup-code consumption (20), per-login second factor (21),
 session-policy dead fields (26). LDAP stub (28) remains inert.
 
 ---
 
-## Aggregate coverage (2026-06-06)
+## Aggregate coverage (2026-06-07)
 
 Counts are the row-by-row tallies from the per-area sections above, which are authoritative.
 
 | Area | Behaviors | ✅ Full | 🟡 Partial | 🟠 Stub | 🔴 Missing | ⛔ Excluded |
 |---|---:|---:|---:|---:|---:|---:|
-| Messaging core | 38 | 29 | 8 | 0 | 1 | 0 |
+| Messaging core | 38 | 30 | 7 | 0 | 1 | 0 |
 | Search & discovery | 22 | 17 | 5 | 0 | 0 | 0 |
-| Files & previews | 30 | 20 | 9 | 0 | 0 | 1 |
+| Files & previews | 30 | 22 | 7 | 0 | 0 | 1 |
 | Calls & huddles | 23 | 16 | 2 | 1 | 1 | 3 |
 | Knowledge | 23 | 16 | 6 | 0 | 1 | 0 |
-| Notifications & presence | 30 | 18 | 9 | 2 | 0 | 1 |
+| Notifications & presence | 30 | 20 | 7 | 2 | 0 | 1 |
 | Admin & compliance | 35 | 16 | 13 | 3 | 3 | 0 |
-| Integrations & extensibility | 34 | 15 | 14 | 4 | 1 | 0 |
-| Identity | 28 | 20 | 6 | 1 | 1 | 0 |
-| **TOTAL** | **263** | **167** | **72** | **11** | **8** | **5** |
+| Integrations & extensibility | 34 | 16 | 13 | 4 | 1 | 0 |
+| Identity | 28 | 21 | 5 | 1 | 1 | 0 |
+| **TOTAL** | **263** | **174** | **65** | **11** | **8** | **5** |
 
 **Coverage (263 total behaviors; 258 non-excluded):**
 
-- **Full parity: 63.5%** — 167 / 263 rows (64.7% of non-excluded: 167 / 258).
-- **Full-or-Partial: 90.9%** — (167 + 72) / 263 = 239 / 263 (92.6% of non-excluded: 239 / 258).
+- **Full parity: 66.2%** — 174 / 263 rows (67.4% of non-excluded: 174 / 258).
+- **Full-or-Partial: 91.3%** — (174 + 65) / 263 = 239 / 263 (92.6% of non-excluded: 239 / 258).
 - Stub 4.2% (11/263) · Missing 3.0% (8/263) · Excluded 1.9% (5/263).
 
 This refutes the retired README "100% / 55/55 method groups" claim, which counted
-routes + DDL rather than working capability. Strongest areas by Full %: Messaging (76%),
-Search (77%), Identity (71%), Files & Previews (67%). Weakest by Full %: Admin (46%),
-Integrations (44%), Calls (80% of non-excluded).
+routes + DDL rather than working capability. Strongest areas by Full %: Messaging (79%),
+Search (77%), Notifications (67%), Identity (75%), Files & Previews (73%). Weakest by Full %: Admin (46%),
+Integrations (47%), Calls (80% of non-excluded).
 
 ---
 
@@ -457,14 +455,7 @@ Integrations (44%), Calls (80% of non-excluded).
 
 ### Security / correctness gaps (codeable, not env-blocked)
 
-- Forward source-channel read RBAC (Messaging 24).
-- Retention `enforce/route.ts` raw cutoff DELETE without legal-hold exclusion (Admin 16).
-- `data-residency/route.ts` buggy role gate locks out it_admin (Admin 26).
-- Incoming-webhook RBAC/CSRF/audit (Integrations 1).
-- File comments no CSRF or audit (Files 19).
-- SCIM Groups unscoped + no audit (Identity 16).
-- Mute does not suppress in-app mention notifications (Notifications 3).
-- DND is_active TZ divergence between route and push engine (Notifications 4/7).
+- None outstanding as of 2026-06-07.
 
 ### Feature depth gaps (codeable, not env-blocked)
 
@@ -520,7 +511,7 @@ To refresh: re-run the per-area audits (`/aae-parity-audit <area>`), update the 
 in `docs/parity-audits/`, then regenerate this matrix and the aggregate from them. Do
 **not** hand-edit status labels here without a corresponding audit-report change.
 
-> **Note:** this matrix was regenerated 2026-06-06 directly from verified source data
+> **Note:** this matrix was regenerated 2026-06-07 directly from verified source data
 > (production-path wiring checked). The on-disk per-area audit reports in
 > `docs/parity-audits/` may predate this regeneration; treat this matrix as authoritative
 > for current status and refresh the per-area reports on next audit cycle.
