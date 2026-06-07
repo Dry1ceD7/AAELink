@@ -4474,6 +4474,19 @@ async function migration047ThreadRepliesEnabled(pool: RunnerPool) {
   )
 }
 
+/**
+ * 048: scope SCIM-provisioned groups to a tenant. org_id ties a group to the org
+ * of the SCIM bearer token that created it so every Groups operation can be
+ * scoped to that org (Identity 16). NULL = legacy/global group.
+ */
+async function migration048UserGroupsOrgId(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.user_groups
+       ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES aaelink.organizations(id) ON DELETE CASCADE`
+  )
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_groups_org ON aaelink.user_groups(org_id)`)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4522,4 +4535,5 @@ const MIGRATIONS: Migration[] = [
   { id: '045_broadcast_mention_prefs', up: migration045BroadcastMentionPrefs },
   { id: '046_event_subscription_verification', up: migration046EventSubscriptionVerification },
   { id: '047_thread_replies_enabled', up: migration047ThreadRepliesEnabled },
+  { id: '048_user_groups_org_id', up: migration048UserGroupsOrgId },
 ]
