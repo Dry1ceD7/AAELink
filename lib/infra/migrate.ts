@@ -889,7 +889,11 @@ async function migration001InitialSchema(pool: RunnerPool) {
     );
   `)
 
-  // User notification keywords (custom highlight words)
+  // DEPRECATED: aaelink.user_keywords stores keywords as a JSON blob per user and
+  // is no longer written to. The canonical store is aaelink.notification_keywords
+  // (row-per-keyword), managed via app/api/notifications/keywords and
+  // lib/notifications/keywords.ts. This table is kept to avoid a destructive
+  // migration; no code reads or writes it after the P1 unification.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS aaelink.user_keywords (
       user_id     TEXT PRIMARY KEY REFERENCES aaelink.users(id) ON DELETE CASCADE,
@@ -4075,6 +4079,401 @@ async function migration041UploadSessionVersion(pool: RunnerPool) {
   )
 }
 
+/**
+ * Migration 042 — digest watermark same-millisecond tie-break (id companion).
+ *
+ * The digest dedup watermark (`last_digest_at`, migration 038/039) is a single
+ * epoch-ms timestamp and the first collection page used a strict
+ * `created_at > last_digest_at` boundary. Two notifications sharing the EXACT same
+ * created_at as the watermark row could be lost across runs: once the watermark
+ * advances to that millisecond, a same-ms sibling that was not part of the prior
+ * run's snapshot (e.g. inserted after the SELECT, or surfaced by a later read_at
+ * flip) is skipped forever by the strict `>` test.
+ *
+ * Fix: persist the newest summarized notification's id alongside the timestamp and
+ * make the first-page boundary a keyset tuple `(created_at, id) > (watermarkAt,
+ * watermarkId)` — provably lossless at the millisecond boundary while still
+ * deduping already-summarized rows. Nullable, default NULL (a NULL companion means
+ * "no prior id", which falls back to the strict timestamp boundary — the original
+ * behavior, safe for the very first run).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration042DigestWatermarkId(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.user_notification_prefs
+       ADD COLUMN IF NOT EXISTS last_digest_id TEXT`
+  )
+}
+
+/**
+ * Migration 043 — make migrate.ts the single source of truth for tables that
+ * were ALSO being created ad-hoc inside route files (each route shipped its own
+ * `ensure<Feature>Tables(pool)` helper running CREATE TABLE IF NOT EXISTS on
+ * every request). That dual ownership is the root of a class of latent bugs:
+ * whichever CREATE ran first on a given deployment "won" the table shape, so two
+ * code paths could materialize the SAME table with DIVERGENT columns, and a
+ * query written against the other shape would fail at runtime with an
+ * undefined-column / NOT-NULL / missing-ON-CONFLICT-target error.
+ *
+ * This migration converges every such table to one canonical shape. Two cases:
+ *
+ *  (a) Tables migrate.ts never defined (functions, export_jobs, user_sessions,
+ *      team_preferences, team_profile_fields, file_comments): create the
+ *      canonical CREATE TABLE IF NOT EXISTS here so ensureSchema owns them.
+ *
+ *  (b) Tables migrate.ts ALREADY defines (possibly twice, with divergent shapes —
+ *      e.g. workflows/workflow_steps are defined once in the approval domain
+ *      ~L504/L518 and again in the Slack-automation domain ~L2055/L2072): we do
+ *      NOT touch the historical CREATE statements. Instead we converge any
+ *      deployed DB — regardless of which historical shape it materialized — using
+ *      additive-only ADD COLUMN IF NOT EXISTS (the union of both domains' columns)
+ *      so every caller's columns exist. ALTERs run AFTER the CREATE in this same
+ *      migration.
+ *
+ * Constraint honored throughout: additive only (ADD COLUMN IF NOT EXISTS / CREATE
+ * INDEX IF NOT EXISTS). No DROP COLUMN / ALTER TYPE / DROP NOT NULL — those cannot
+ * run idempotently across the unknown deployed shapes here.
+ *
+ * Deliberate, narrow exception — ALTER COLUMN ... SET DEFAULT: a fresh install
+ * does NOT get the consolidated shapes above; it materializes the original 001
+ * (approval / early) CREATE statements, which lacked column defaults that the
+ * later Slack-automation / admin routes rely on. Specifically the 001 shapes
+ * declared workflows.workspace_id and workflows.updated_at, workflow_steps.step_order,
+ * and user_groups.id as NOT NULL WITHOUT a default, while the route/worker INSERTs
+ * omit those columns — so on a fresh DB those inserts would fail. SET DEFAULT is
+ * idempotent regardless of which historical shape a column came from, so 043
+ * reconciles each of those columns with an ALTER COLUMN ... SET DEFAULT below. This
+ * is the only place 043 steps outside the additive-only rule, and it does so only
+ * to set defaults (never to drop/retype/relax NOT NULL).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration043ConsolidateAdhocTables(pool: RunnerPool) {
+  // ── (a) Tables migrate.ts never defined — create them canonically here. ──
+
+  // app/api/functions/route.ts: aaelink.functions (distinct from functions_registry).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.functions (
+      id                TEXT PRIMARY KEY,
+      callback_id       TEXT UNIQUE NOT NULL,
+      title             TEXT NOT NULL DEFAULT '',
+      description       TEXT NOT NULL DEFAULT '',
+      type              TEXT NOT NULL DEFAULT 'custom',
+      input_parameters  JSONB NOT NULL DEFAULT '{}',
+      output_parameters JSONB NOT NULL DEFAULT '{}',
+      created_by        TEXT NOT NULL DEFAULT '',
+      created_at        BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+
+  // app/api/admin/exports/route.ts: aaelink.export_jobs (UUID/TIMESTAMPTZ shape;
+  // the only definition, so it materializes identically everywhere).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.export_jobs (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      type            TEXT NOT NULL CHECK (type IN ('full','messages','files','members','channels')),
+      status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','completed','failed')),
+      requested_by    TEXT NOT NULL REFERENCES aaelink.users(id),
+      date_from       TIMESTAMPTZ,
+      date_to         TIMESTAMPTZ,
+      channels_filter TEXT[],
+      file_size       BIGINT,
+      file_url        TEXT,
+      error_message   TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      started_at      TIMESTAMPTZ,
+      completed_at    TIMESTAMPTZ
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_exports_status ON aaelink.export_jobs(status, created_at DESC)`)
+
+  // app/api/admin/sessions/route.ts: aaelink.user_sessions (device-tracking — a
+  // DIFFERENT table from the cookie-auth aaelink.sessions). Indexes renamed to
+  // idx_user_sessions_* to avoid colliding with idx_sessions_user on sessions.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.user_sessions (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id     TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      device      TEXT NOT NULL DEFAULT 'Unknown',
+      os          TEXT NOT NULL DEFAULT 'Unknown',
+      browser     TEXT NOT NULL DEFAULT 'Unknown',
+      ip_address  INET,
+      location    TEXT,
+      user_agent  TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_active TIMESTAMPTZ NOT NULL DEFAULT now(),
+      revoked_at  TIMESTAMPTZ,
+      is_active   BOOLEAN NOT NULL DEFAULT true
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON aaelink.user_sessions(user_id) WHERE is_active`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON aaelink.user_sessions(is_active, last_active DESC)`)
+
+  // app/api/team/preferences/route.ts: aaelink.team_preferences.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.team_preferences (
+      workspace_id TEXT NOT NULL DEFAULT '__default__',
+      key          TEXT NOT NULL,
+      value        TEXT NOT NULL DEFAULT '',
+      updated_at   BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (workspace_id, key)
+    )
+  `)
+
+  // app/api/team/profile/route.ts: aaelink.team_profile_fields (distinct from the
+  // per-org org_profile_fields from migration 019).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.team_profile_fields (
+      id              TEXT PRIMARY KEY,
+      label           TEXT NOT NULL DEFAULT '',
+      field_type      TEXT NOT NULL DEFAULT 'text',
+      hint            TEXT NOT NULL DEFAULT '',
+      possible_values TEXT NOT NULL DEFAULT '[]',
+      ordering        INT NOT NULL DEFAULT 0,
+      is_required     BOOLEAN NOT NULL DEFAULT false,
+      is_visible      BOOLEAN NOT NULL DEFAULT true,
+      created_at      BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+
+  // app/api/files/comments/route.ts: aaelink.file_comments.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.file_comments (
+      id         TEXT PRIMARY KEY,
+      file_id    TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      comment    TEXT NOT NULL DEFAULT '',
+      created_at BIGINT NOT NULL DEFAULT 0,
+      updated_at BIGINT NOT NULL DEFAULT 0
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_comments_file ON aaelink.file_comments(file_id)`)
+
+  // ── (b) Tables migrate.ts already defines (some with two divergent historical
+  //        shapes). Converge any deployed DB via additive ADD COLUMN IF NOT EXISTS
+  //        — the union of every caller's columns. Historical CREATEs untouched. ──
+
+  // workflows: union of the approval domain (workspace_id/is_active/updated_at)
+  // and the Slack-automation domain (status/icon/is_featured). workspace_id is
+  // added NULLABLE — the route INSERT omits it, so the approval domain's original
+  // NOT NULL workspace_id cannot be satisfied across both domains.
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT '⚡'`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT false`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS workspace_id TEXT`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.workflows ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_status ON aaelink.workflows(status)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_workspace ON aaelink.workflows(workspace_id)`)
+  // NOTE: on an approval-domain DB, created_by/created_at keep their stricter
+  // FK/NOT-NULL-no-default definition (ADD COLUMN IF NOT EXISTS is a no-op). The
+  // route always supplies both, so that is safe. The NOT NULL workspace_id (and
+  // updated_at) carried over from the 001 shape is reconciled below via ALTER
+  // COLUMN ... SET DEFAULT alongside workflow_steps.step_order.
+
+  // workflow_steps: union of approval (step_order/approver_user_id/approver_role)
+  // and Slack-automation (position/type/function_id/config) domains.
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'function'`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS function_id TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS config JSONB NOT NULL DEFAULT '{}'`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS step_order INTEGER NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS approver_user_id TEXT`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS approver_role TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0`)
+  // idx_workflow_steps_order(workflow_id, step_order) already serves workflow_id
+  // lookups (leading column), so no separate single-column index is needed.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflow_steps_order ON aaelink.workflow_steps(workflow_id, step_order)`)
+
+  // Default reconciliation (deliberate, narrow exception to the additive-only
+  // rule — see header). The 001 (approval) shapes for workflows/workflow_steps
+  // declared workspace_id/updated_at/step_order as NOT NULL WITHOUT a default,
+  // which fresh installs still materialize. The Slack-automation route/worker
+  // INSERTs omit those columns, so a fresh DB rejects them. SET DEFAULT is
+  // idempotent and safe whether the column came from 001 or from 043's ADD COLUMN.
+  await pool.query(`ALTER TABLE aaelink.workflows ALTER COLUMN workspace_id SET DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.workflows ALTER COLUMN updated_at SET DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.workflow_steps ALTER COLUMN step_order SET DEFAULT 0`)
+
+  // function_executions: base schema has triggered_by (worker), the route helper
+  // had created_by. Carry BOTH so neither code path errors.
+  await pool.query(`ALTER TABLE aaelink.function_executions ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.function_executions ADD COLUMN IF NOT EXISTS triggered_by TEXT NOT NULL DEFAULT ''`)
+
+  // lists / list_items: the route helper shipped without workspace_id/updated_at
+  // (lists) and updated_at (list_items); the migrate shape has them. Converge a
+  // route-shape DB up to the migrate shape (the test suite requires these).
+  await pool.query(`ALTER TABLE aaelink.lists ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.lists ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lists_ws ON aaelink.lists(workspace_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lists_ch ON aaelink.lists(channel_id)`)
+  await pool.query(`ALTER TABLE aaelink.list_items ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_list_items_list ON aaelink.list_items(list_id, position)`)
+
+  // files_remote: route shape (channels/indexable_text, UNIQUE external_id via
+  // ON CONFLICT) vs migrate shape (workspace_id/provider/updated_at/shared_channels,
+  // non-unique external_id). Union both column sets and add a UNIQUE index on
+  // external_id so the route's ON CONFLICT (external_id) works on either shape.
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS workspace_id TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS shared_channels TEXT[] NOT NULL DEFAULT '{}'`)
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS indexable_text TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.files_remote ADD COLUMN IF NOT EXISTS channels TEXT[] NOT NULL DEFAULT '{}'`)
+  // CREATE UNIQUE INDEX is additive; it FAILS if duplicate external_id rows exist.
+  // Prune duplicates first (idempotent): keep the row with the greatest ctid per
+  // external_id and delete the rest. ctid ordering keeps the physically-last row.
+  await pool.query(`
+    DELETE FROM aaelink.files_remote a
+    USING aaelink.files_remote b
+    WHERE a.external_id = b.external_id
+      AND a.ctid < b.ctid
+  `)
+  // Dups are pruned above, so this is safe. IF NOT EXISTS makes it a no-op once present.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_files_remote_external_id ON aaelink.files_remote(external_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_remote_ws ON aaelink.files_remote(workspace_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_files_remote_ext ON aaelink.files_remote(external_id)`)
+
+  // user_groups: route shape has `enabled`+`updated_at`; migrate/scim/usergroups
+  // shape has `is_active`. Retain BOTH boolean columns so every caller's column
+  // exists. id/created_at type divergence (TEXT/BIGINT canonical vs UUID/TIMESTAMPTZ
+  // route) is not additively reconcilable; canonical is TEXT/BIGINT.
+  // The canonical id (TEXT, from the 001/usergroups shape) had no default; the
+  // admin route INSERT omits id, so fresh installs reject the insert. Reconcile
+  // with an idempotent SET DEFAULT (deliberate exception to additive-only — see
+  // header) generating a TEXT uuid to match the TEXT column.
+  await pool.query(`ALTER TABLE aaelink.user_groups ALTER COLUMN id SET DEFAULT gen_random_uuid()::text`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT true`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS handle TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`ALTER TABLE aaelink.user_groups ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_groups_handle ON aaelink.user_groups(handle)`)
+
+  // user_group_members: column sets already match; only the group_id index differs
+  // (migrate ships only idx_ugm_user). Add the route's idx_ugm_group.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ugm_group ON aaelink.user_group_members(group_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ugm_user ON aaelink.user_group_members(user_id)`)
+
+  // retention_policies / feature_flags: route and migrate shapes are already
+  // column-identical (retention_policies updated_by is TEXT in both; the route's
+  // UUID variant cannot materialize against the TEXT users PK). Belt-and-suspenders
+  // guards only — all no-ops on a migrate-shape DB.
+  await pool.query(`ALTER TABLE aaelink.retention_policies ADD COLUMN IF NOT EXISTS delete_files BOOLEAN NOT NULL DEFAULT false`)
+  await pool.query(`ALTER TABLE aaelink.retention_policies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`)
+  await pool.query(`ALTER TABLE aaelink.retention_policies ADD COLUMN IF NOT EXISTS updated_by TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL`)
+}
+
+/**
+ * Migration 044 — add signing_secret to slash_commands.
+ *
+ * Fresh DBs gain the column via the updated CREATE TABLE in ensureSchema.
+ * Existing DBs that already ran through 043 get it here via an idempotent
+ * ADD COLUMN IF NOT EXISTS. The empty string default is intentional: commands
+ * registered before this migration have no secret and cannot be dispatched
+ * until re-registered (the column is populated on every new registration).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration044SlashCommandsSigningSecret(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.slash_commands
+       ADD COLUMN IF NOT EXISTS signing_secret TEXT NOT NULL DEFAULT ''`
+  )
+}
+
+/**
+ * Migration 045 — broadcast mention preferences (@here/@channel/@everyone).
+ *
+ * Adds `allow_broadcast_mentions` to channels so admins can disable @here /
+ * @channel / @everyone in a given channel (announcement channels, etc.).
+ * Adds `broadcast_mentions_enabled` to user_notification_prefs so users can
+ * individually opt out of broadcast-mention noise.
+ *
+ * Fresh DBs gain both columns via the updated CREATE TABLE definitions in
+ * ensureSchema. Existing DBs get them here via idempotent ADD COLUMN IF NOT
+ * EXISTS with the same defaults (true = opt-in, preserving current behaviour).
+ *
+ * Forward-only, idempotent.
+ */
+async function migration045BroadcastMentionPrefs(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.channels
+       ADD COLUMN IF NOT EXISTS allow_broadcast_mentions BOOLEAN NOT NULL DEFAULT true`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.user_notification_prefs
+       ADD COLUMN IF NOT EXISTS broadcast_mentions_enabled BOOLEAN NOT NULL DEFAULT true`
+  )
+}
+
+/**
+ * Migration 046 — event subscription url_verification handshake (Slack-style).
+ *
+ * Adds three columns to event_subscriptions to support the Slack-compatible
+ * url_verification challenge flow:
+ *   verified             — whether the endpoint has passed the handshake.
+ *   verification_token   — one-time token sent in the challenge payload (nullable;
+ *                          cleared after a successful round-trip).
+ *   verified_at          — epoch-ms timestamp of successful verification.
+ *
+ * Backfill: subscriptions that were already `status = 'active'` predate the
+ * handshake requirement.  They were registered and tested manually before this
+ * feature existed, so they are unconditionally treated as verified to avoid
+ * breaking live integrations.  New subscriptions start with verified = false
+ * and must complete the challenge before events are dispatched.
+ *
+ * Fresh DBs gain all three columns via the updated CREATE TABLE in ensureSchema.
+ * Existing DBs get them via idempotent ADD COLUMN IF NOT EXISTS.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration046EventSubscriptionVerification(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.event_subscriptions
+       ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.event_subscriptions
+       ADD COLUMN IF NOT EXISTS verification_token TEXT`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.event_subscriptions
+       ADD COLUMN IF NOT EXISTS verified_at BIGINT NOT NULL DEFAULT 0`
+  )
+  // Backfill: existing active subscriptions predate the handshake and must not
+  // break. Mark them verified with the current timestamp in milliseconds.
+  await pool.query(
+    `UPDATE aaelink.event_subscriptions
+        SET verified    = true,
+            verified_at = (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT
+      WHERE status = 'active'
+        AND verified = false`
+  )
+}
+
+/**
+ * Migration 047 — thread-follower notification preference.
+ *
+ * Adds `thread_replies_enabled` to user_notification_prefs so users can
+ * individually opt out of thread-reply notifications (Slack parity:
+ * Preferences → Notifications → "Notify me about replies to threads I'm
+ * following"). Defaults true — no behaviour change for existing users.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration047ThreadRepliesEnabled(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.user_notification_prefs
+       ADD COLUMN IF NOT EXISTS thread_replies_enabled BOOLEAN NOT NULL DEFAULT true`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4117,4 +4516,10 @@ const MIGRATIONS: Migration[] = [
   { id: '039_digest_cadence_and_seeds', up: migration039DigestCadenceAndSeeds },
   { id: '040_upload_sessions', up: migration040UploadSessions },
   { id: '041_upload_session_version', up: migration041UploadSessionVersion },
+  { id: '042_digest_watermark_id', up: migration042DigestWatermarkId },
+  { id: '043_consolidate_adhoc_tables', up: migration043ConsolidateAdhocTables },
+  { id: '044_slash_commands_signing_secret', up: migration044SlashCommandsSigningSecret },
+  { id: '045_broadcast_mention_prefs', up: migration045BroadcastMentionPrefs },
+  { id: '046_event_subscription_verification', up: migration046EventSubscriptionVerification },
+  { id: '047_thread_replies_enabled', up: migration047ThreadRepliesEnabled },
 ]

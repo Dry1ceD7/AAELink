@@ -9,6 +9,7 @@ import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
 import { emitMessageDeleted } from '@/lib/webhooks/webhookEmitter'
+import { writeAuditLog } from '@/lib/enterprise/auditLog'
 
 const MAX_BODY = 32_000
 
@@ -163,6 +164,15 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
     }).catch(() => { /* history is best-effort, never blocks the edit */ })
   }
 
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'message.edit',
+    resourceKind: 'message',
+    resourceId: messageId,
+    metadata: { channel_id: row.channel_id },
+  })
+
   const rx = await reactionSummariesForMessages(pool, uid, [u.id])
   const post = rowToPost(
     {
@@ -248,6 +258,14 @@ async function _DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
     }
 
     await client.query('COMMIT')
+    writeAuditLog({
+      pool,
+      actorId: uid,
+      action: 'message.delete',
+      resourceKind: 'message',
+      resourceId: messageId,
+      metadata: { channel_id: row.channel_id, deleted_ids: deletedIds },
+    })
     try {
       await emitMessageDeleted(pool, { channel_id: row.channel_id, message_id: messageId, user_id: uid })
     } catch (e) { console.error('emitMessageDeleted', e) }

@@ -18,7 +18,9 @@ async function _GET(req: NextRequest) {
   if (!wsId) return NextResponse.json({ error: 'workspace_id_required' }, { status: 400 })
 
   // Find all threads in the workspace plus mark whether the current user is following
-  // and how many replies are unread relative to their channel-read state.
+  // (they authored the root, OR they have a row in thread_followers — explicit
+  // follow/unfollow via /api/collab/thread-follow) and how many replies are unread
+  // relative to their channel-read state.
   const { rows } = await pool.query(
     `WITH all_threads AS (
        -- All root messages that have at least one reply in this workspace
@@ -35,9 +37,8 @@ async function _GET(req: NextRequest) {
             (
               rm.user_id = $1
               OR EXISTS (
-                SELECT 1 FROM aaelink.messages r
-                WHERE r.root_id = rm.id AND r.user_id = $1
-                LIMIT 1
+                SELECT 1 FROM aaelink.thread_followers tf
+                WHERE tf.thread_id = rm.id AND tf.user_id = $1
               )
             ) AS is_following,
             (
@@ -83,8 +84,9 @@ async function _POST(req: NextRequest) {
 
   const now = Date.now()
 
-  // Find every channel that has a thread the user is following with at least
-  // one unread reply, and bump their channel_read_state for that channel.
+  // Find every channel that has a thread the user is following — they authored the
+  // root, OR they have a thread_followers row — and bump their channel_read_state
+  // for that channel.
   const { rowCount } = await pool.query(
     `INSERT INTO aaelink.channel_read_state (user_id, channel_id, last_read_at)
      SELECT $1, c.id, $3::bigint
@@ -97,7 +99,10 @@ async function _POST(req: NextRequest) {
            AND rm.root_id = ''
            AND (
              rm.user_id = $1
-             OR EXISTS (SELECT 1 FROM aaelink.messages r WHERE r.root_id = rm.id AND r.user_id = $1 LIMIT 1)
+             OR EXISTS (
+               SELECT 1 FROM aaelink.thread_followers tf
+               WHERE tf.thread_id = rm.id AND tf.user_id = $1
+             )
            )
        )
      ON CONFLICT (user_id, channel_id) DO UPDATE SET

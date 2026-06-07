@@ -1,22 +1,62 @@
 import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { NextResponse } from 'next/server'
-import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { userCanReadChannel, userCanPostToChannel, isChannelArchived } from '@/lib/enterprise/collab-access'
 import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
-import { notifyChannelMentions, notifyDirectMessage, notifyKeywordMatches, notifyChannelLevelAll } from '@/lib/notifications/notificationsServer'
+import { notifyChannelMentions, notifyDirectMessage, notifyKeywordMatches, notifyChannelLevelAll, notifyBroadcastMentions, notifyThreadFollowers } from '@/lib/notifications/notificationsServer'
+import { parseBroadcastMentions } from '@/lib/messaging/mentionParse'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
 import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 import { emitMessageCreated } from '@/lib/webhooks/webhookEmitter'
+import { enforceScope, SCOPES, grantWorkspaceMatches, type OAuthGrant } from '@/lib/api/oauthScopes'
+import { getPubSub, channelTopic } from '@/lib/realtime/redisPubSub'
+import { log } from '@/lib/infra/log'
+
+export async function emitMessageEvent(post: ReturnType<typeof rowToPost>): Promise<void> {
+  try {
+    await getPubSub().publish(channelTopic(post.channel_id), {
+      type: 'message',
+      channel_id: post.channel_id,
+      payload: post,
+    })
+  } catch (err) {
+    log.warn('messages.emit_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
 
 function authorLabel(row: { username: string; nickname: string; first_name: string; last_name: string }) {
   const full = `${row.first_name || ''} ${row.last_name || ''}`.trim()
   if (full) return full
   if (row.nickname) return row.nickname
   return row.username
+}
+
+/**
+ * Bind a bearer-token grant to the target channel's tenant. A token minted for
+ * workspace A must not act on a channel in workspace B even when the grant's
+ * user has cross-workspace membership (per-channel ACL alone is workspace-blind).
+ * Returns true when access is allowed; false means the caller must 403.
+ * Session auth (grant === null) is unaffected.
+ */
+async function grantTenantAllowsChannel(
+  pool: Pool,
+  grant: OAuthGrant | null,
+  channelId: string
+): Promise<boolean> {
+  if (!grant || !String(grant.workspace_id || '').trim()) return true
+  const { rows } = await pool.query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM aaelink.channels WHERE id = $1`,
+    [channelId]
+  )
+  const ws = rows[0]?.workspace_id
+  if (!ws) return false
+  return grantWorkspaceMatches(grant, ws)
 }
 
 const ROOT_FILTER = `(m.root_id IS NULL OR m.root_id = '')`
@@ -57,7 +97,11 @@ async function deletionsSince(
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (chat:read). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHAT_READ)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const grant = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  const uid = grant ? grant.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const channel_id = String(url.searchParams.get('channel_id') || '')
@@ -65,6 +109,11 @@ async function _GET(req: Request) {
   if (!channel_id) return NextResponse.json({ error: 'channel_id_required' }, { status: 400 })
   await ensureSchema()
   if (!(await userCanReadChannel(pool, uid, channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+  // Tenant binding: a workspace-scoped bearer token must not read a channel that
+  // lives in a different workspace, even when the user is a cross-workspace member.
+  if (!(await grantTenantAllowsChannel(pool, grant, channel_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -439,11 +488,21 @@ async function _GET(req: Request) {
 }
 
 async function _POST(req: Request) {
-  const csrfErr = await verifyCsrf(req)
-  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (chat:write): token IS the auth credential — skip CSRF.
+  // No-token path falls through to standard session + CSRF guards.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHAT_WRITE)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  let uid: string | null
+  const grant = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  if (grant) {
+    uid = grant.user_id
+  } else {
+    const csrfErr = await verifyCsrf(req)
+    if (csrfErr) return csrfErr
+    uid = await readSessionUserId()
+  }
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
   const body = (await req.json()) as { channel_id?: string; message?: string; root_id?: string; broadcast?: boolean }
@@ -453,6 +512,17 @@ async function _POST(req: Request) {
   if (!channel_id || !message) return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
   if (!(await userCanReadChannel(pool, uid, channel_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+  // Tenant binding: a workspace-scoped bearer token must not post to a channel
+  // in a different workspace, even when the user is a cross-workspace member.
+  if (!(await grantTenantAllowsChannel(pool, grant, channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+  if (await isChannelArchived(pool, channel_id)) {
+    return NextResponse.json({ error: 'channel_archived' }, { status: 403 })
+  }
+  if (!(await userCanPostToChannel(pool, uid, channel_id))) {
+    return NextResponse.json({ error: 'forbidden_read_only_channel' }, { status: 403 })
   }
 
   // DLP: scan before persisting. block/quarantine → reject; redact → mask matched
@@ -482,6 +552,17 @@ async function _POST(req: Request) {
      VALUES ($1, $2, $3, $4, $5, $6, $6)`,
     [id, channel_id, uid, message, root_id, now]
   )
+
+  // Auto-follow: when posting a reply, the replier automatically follows the thread
+  // so they receive future reply notifications (Slack parity). Idempotent — DO NOTHING
+  // on conflict means repeated replies don't fail.
+  if (root_id) {
+    await pool.query(
+      `INSERT INTO aaelink.thread_followers (thread_id, user_id, created_at)
+       VALUES ($1, $2, $3) ON CONFLICT (thread_id, user_id) DO NOTHING`,
+      [root_id, uid, now]
+    )
+  }
 
   // Fan out to subscribed outgoing webhooks (no-op when none configured).
   try {
@@ -531,7 +612,21 @@ async function _POST(req: Request) {
           authorLabel: authorLabel(ur),
           body: message
         })
-        // Keyword highlights for members (skip those already @mentioned).
+        // Broadcast mentions (@here / @channel / @everyone) — fan-out to members.
+        const broadcastTokens = parseBroadcastMentions(message)
+        const broadcasted = await notifyBroadcastMentions({
+          pool,
+          workspaceId: ch.workspace_id,
+          channelId: channel_id,
+          channelLabel,
+          messageId: id,
+          senderId: uid,
+          senderLabel: authorLabel(ur),
+          body: message,
+          tokens: broadcastTokens,
+          directMentionUserIds: mentioned
+        })
+        // Keyword highlights for members (skip those already @mentioned or broadcast-notified).
         const keyworded = await notifyKeywordMatches({
           pool,
           workspaceId: ch.workspace_id,
@@ -541,10 +636,10 @@ async function _POST(req: Request) {
           authorId: uid,
           authorLabel: authorLabel(ur),
           body: message,
-          excludeUserIds: mentioned
+          excludeUserIds: [...mentioned, ...broadcasted]
         })
         // Members who chose notification level 'all' get every message — skip
-        // anyone already alerted via mention or keyword (no duplicate alert).
+        // anyone already alerted via mention, broadcast, or keyword (no duplicate alert).
         await notifyChannelLevelAll({
           pool,
           workspaceId: ch.workspace_id,
@@ -554,8 +649,24 @@ async function _POST(req: Request) {
           authorId: uid,
           authorLabel: authorLabel(ur),
           body: message,
-          excludeUserIds: [...mentioned, ...keyworded]
+          excludeUserIds: [...mentioned, ...broadcasted, ...keyworded]
         })
+        // Thread reply: notify followers of the parent thread, deduplicated against
+        // direct @mention recipients (mention win — no second notification row).
+        if (root_id) {
+          await notifyThreadFollowers({
+            pool,
+            workspaceId: ch.workspace_id,
+            channelId: channel_id,
+            channelLabel,
+            threadId: root_id,
+            replyId: id,
+            replierId: uid,
+            replierLabel: authorLabel(ur),
+            body: message,
+            directMentionUserIds: mentioned
+          })
+        }
       }
     }
   } catch (e) {
@@ -576,6 +687,17 @@ async function _POST(req: Request) {
     try {
       await emitMessageCreated(pool, { channel_id, message_id: broadcastId, user_id: uid, content: message })
     } catch (e) { console.error('emitMessageCreated(broadcast)', e) }
+    // Realtime: fan out the broadcast copy to WS subscribers on this channel.
+    await emitMessageEvent(rowToPost({
+      id: broadcastId,
+      channel_id,
+      user_id: uid,
+      message,
+      create_at: now + 1,
+      updated_at: now + 1,
+      root_id: '',
+      reply_count: 0,
+    }))
   }
 
   const created = rowToPost({
@@ -588,6 +710,8 @@ async function _POST(req: Request) {
     root_id,
     reply_count: root_id ? undefined : 0
   })
+  // Realtime: fan out the new message to WS subscribers on this channel.
+  await emitMessageEvent(created)
   return NextResponse.json({ ...created, reactions: created.reactions ?? [] })
 }
 

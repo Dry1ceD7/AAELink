@@ -7,6 +7,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { verifyCsrf } from '@/lib/auth/csrf'
+import { isChannelArchived, userCanPostToChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Message Forwarding API (Slack "Share message" / "Forward to channel").
@@ -68,12 +69,11 @@ async function _POST(req: NextRequest) {
   )
   if (!targetCheck[0]) return NextResponse.json({ error: 'target_channel_not_found' }, { status: 404 })
 
-  if (targetCheck[0].type === 'P') {
-    const { rows: membership } = await pool.query(
-      `SELECT 1 FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`,
-      [targetChannelId, uid]
-    )
-    if (!membership[0]) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (await isChannelArchived(pool, targetChannelId)) {
+    return NextResponse.json({ error: 'channel_archived' }, { status: 403 })
+  }
+  if (!(await userCanPostToChannel(pool, uid, targetChannelId))) {
+    return NextResponse.json({ error: 'forbidden_read_only_channel' }, { status: 403 })
   }
 
   // Get source channel name for attribution

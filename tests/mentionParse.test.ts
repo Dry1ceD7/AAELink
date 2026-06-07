@@ -2,7 +2,7 @@
  * AAELink — Mention Parse Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
+import { parseMentionUsernames, parseBroadcastMentions } from '@/lib/messaging/mentionParse'
 
 describe('MentionParse — basic extraction', () => {
   it('extracts single mention', () => {
@@ -104,5 +104,80 @@ describe('MentionParse — edge cases', () => {
     const result = parseMentionUsernames(`@${longName}`)
     // Should cap at 64 chars
     expect(result[0]?.length).toBeLessThanOrEqual(64)
+  })
+})
+
+describe('MentionParse — broadcast token exclusion from parseMentionUsernames', () => {
+  it('excludes @here from username results', () => {
+    expect(parseMentionUsernames('@here please check')).toEqual([])
+  })
+  it('excludes @channel from username results', () => {
+    expect(parseMentionUsernames('@channel announcement')).toEqual([])
+  })
+  it('excludes @everyone from username results', () => {
+    expect(parseMentionUsernames('@everyone heads up')).toEqual([])
+  })
+  it('excludes @all (alias) from username results', () => {
+    expect(parseMentionUsernames('@all read this')).toEqual([])
+  })
+  it('excludes broadcast tokens but keeps real usernames in same message', () => {
+    const result = parseMentionUsernames('@here @alice @channel @bob')
+    expect(result).not.toContain('here')
+    expect(result).not.toContain('channel')
+    expect(result).toContain('alice')
+    expect(result).toContain('bob')
+    expect(result).toHaveLength(2)
+  })
+  it('is case-insensitive for broadcast exclusion', () => {
+    expect(parseMentionUsernames('@HERE @Channel @EVERYONE')).toEqual([])
+  })
+})
+
+describe('MentionParse — parseBroadcastMentions', () => {
+  it('detects @here', () => {
+    const result = parseBroadcastMentions('heads up @here')
+    expect(result.has('here')).toBe(true)
+    expect(result.size).toBe(1)
+  })
+  it('detects @channel', () => {
+    const result = parseBroadcastMentions('@channel announcement')
+    expect(result.has('channel')).toBe(true)
+    expect(result.size).toBe(1)
+  })
+  it('detects @everyone', () => {
+    const result = parseBroadcastMentions('@everyone please read')
+    expect(result.has('everyone')).toBe(true)
+    expect(result.size).toBe(1)
+  })
+  it('normalises @all to everyone', () => {
+    const result = parseBroadcastMentions('@all read this')
+    expect(result.has('everyone')).toBe(true)
+    expect(result.has('all' as never)).toBe(false)
+  })
+  it('returns empty set when no broadcast tokens present', () => {
+    expect(parseBroadcastMentions('hello @alice @bob')).toEqual(new Set())
+  })
+  it('returns empty set for empty string', () => {
+    expect(parseBroadcastMentions('')).toEqual(new Set())
+  })
+  it('deduplicates repeated tokens', () => {
+    const result = parseBroadcastMentions('@here and then @here again')
+    expect(result.size).toBe(1)
+    expect(result.has('here')).toBe(true)
+  })
+  it('collects multiple distinct tokens in one message', () => {
+    const result = parseBroadcastMentions('@here urgent, also @channel note')
+    expect(result.has('here')).toBe(true)
+    expect(result.has('channel')).toBe(true)
+    expect(result.size).toBe(2)
+  })
+  it('is case-insensitive', () => {
+    const result = parseBroadcastMentions('@HERE @Channel')
+    expect(result.has('here')).toBe(true)
+    expect(result.has('channel')).toBe(true)
+  })
+  it('does not include regular usernames', () => {
+    const result = parseBroadcastMentions('@alice @bob')
+    expect(result.size).toBe(0)
   })
 })
