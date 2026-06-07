@@ -4,6 +4,7 @@ import type { Pool } from 'pg'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { getSessionPolicy, isIdleExpired, sessionTtlMs } from '@/lib/auth/sessionPolicy'
+import { enforceSessionLimits, isAuthStale } from '@/lib/auth/sessionEnforcement'
 
 export const SESSION_COOKIE = 'AAELINK_SESSION'
 
@@ -20,8 +21,14 @@ async function resolveActiveSession(
 ): Promise<string | null> {
   if (!row) return null
   const now = Date.now()
+  // getSessionPolicy returns DEFAULT_SESSION_POLICY when no row is stored (fail
+  // open on ABSENT policy). A DB error propagates here intentionally — this is a
+  // security gate, so we never treat a failed read as "no policy".
   const policy = await getSessionPolicy(pool, now)
   if (isIdleExpired(policy, row.last_active_at ?? 0, now, row.created_at ?? 0)) return null
+  // force_reauth_hours: reject a session older than N hours since auth, regardless
+  // of activity. Disabled when force_reauth_hours <= 0.
+  if (isAuthStale(policy, row.created_at ?? 0, now)) return null
 
   // Debounced touch: only update last_active_at if it's been > 5 minutes.
   if (now - (row.last_active_at ?? 0) > 300_000) {
@@ -112,12 +119,16 @@ export async function createSession(
 ): Promise<{ sessionId: string; sessionMs: number }> {
   const now = Date.now()
   const sessionId = randomUUID()
-  const sessionMs = sessionTtlMs(await getSessionPolicy(pool, now), 'web')
+  const policy = await getSessionPolicy(pool, now)
+  const sessionMs = sessionTtlMs(policy, 'web')
   await pool.query(
     `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
      VALUES ($1,$2,$3,$4,$5,$6,$6)`,
     [sessionId, userId, now + sessionMs, meta.userAgent, meta.ip, now]
   )
+  // Enforce max_sessions_per_user / single_session_mode now that the new session
+  // exists. Best-effort: a cap-eviction failure must not break a valid login.
+  await enforceSessionLimits(pool, userId, policy, sessionId, now).catch(() => { /* non-critical */ })
   return { sessionId, sessionMs }
 }
 

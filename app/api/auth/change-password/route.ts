@@ -1,8 +1,13 @@
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
-import { readSessionUserId } from '@/lib/auth/session'
+import { readSessionUserId, SESSION_COOKIE } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { getSessionPolicy } from '@/lib/auth/sessionPolicy'
+import { revokeOtherUserSessions } from '@/lib/auth/sessionEnforcement'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   getPasswordPolicy,
@@ -14,6 +19,8 @@ import {
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
@@ -69,7 +76,29 @@ async function _POST(req: Request) {
   // Record the OLD hash so a future change cannot reuse it; trims to the window.
   await recordPasswordHistory(pool, uid, row.password_hash, policy, now)
 
-  return NextResponse.json({ ok: true })
+  // revoke_on_password_change (D2): invalidate every OTHER session of this user so
+  // a credential rotation logs out sessions established with the old password. The
+  // caller's own session is kept so they are not logged out mid-flow. Defaults to
+  // on; getSessionPolicy returns defaults only when no policy row exists.
+  let revokedSessions = 0
+  const sessionPolicy = await getSessionPolicy(pool)
+  if (sessionPolicy.revoke_on_password_change) {
+    const sid = (await cookies()).get(SESSION_COOKIE)?.value?.trim() || ''
+    revokedSessions = await revokeOtherUserSessions(pool, uid, sid)
+  }
+
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'user.password_change',
+    resourceKind: 'user',
+    resourceId: uid,
+    ipAddress: extractIp(req),
+    userAgent: req.headers.get('user-agent') || '',
+    metadata: { revoked_sessions: revokedSessions },
+  })
+
+  return NextResponse.json({ ok: true, revoked_sessions: revokedSessions })
 }
 
 // ── Traced exports ──────────────────────────────────────────────────
