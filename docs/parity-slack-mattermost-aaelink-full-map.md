@@ -70,7 +70,7 @@ Planning targets are **semver bands**, not promises. Re-baseline when the root [
 | Session cookies, logout | Session + `POST /users/logout` | ✅ Full | `app/api/auth/login`, `logout`, `me` | `v0.0.2-alpha` |
 | MFA at login | LDAP/SAML MFA; TOTP plugins | ✅ Full | `api/auth/mfa` — TOTP enrollment, backup codes, verification, admin policy, device trust, grace periods | `v0.0.7-alpha` |
 | Device list / remote wipe | Enterprise mobility | 🟡 Partial | `api/admin/devices` — registration, trust management, remote wipe (flag only, no MDM push); buggy `platform_admin` check | `v0.0.7-alpha` |
-| "Remember me" / secure storage | Session length policies | 🟡 Partial | `api/admin/session-policy` TTL/idle/device-list/revoke enforced; max_sessions/single_session/force_reauth/revoke_on_password_change defined-only (zero enforcement reads outside route) | `v0.0.7-alpha` |
+| "Remember me" / secure storage | Session length policies | ✅ Full | `api/admin/session-policy` + `lib/auth/sessionEnforcement.ts` — enforceSessionLimits (max_sessions_per_user + single_session_mode) called at login, SSO provision, and session read; isAuthStale (force_reauth_hours) enforced at session read; revokeOtherUserSessions (revoke_on_password_change) called at change-password; require_mfa_for_admin checked at login; all five session-policy fields enforced end-to-end | `v0.0.7-alpha` |
 
 ---
 
@@ -82,7 +82,7 @@ Planning targets are **semver bands**, not promises. Re-baseline when the root [
 | Workspace switcher | Team sidebar switcher | ✅ Full | `api/workspaces/switcher` — enriched workspace list with per-workspace unread/mention badge counts | `v0.0.7-alpha` |
 | Domains / URL | `MM_SERVICESETTINGS_SITEURL` | ✅ Full | Real DNS TXT verification: `domains/route.ts` calls `verifyDomain` with real `node:dns` resolver | `v0.0.2-alpha` |
 | Member invites | Team invite flows | ✅ Full | `api/auth/account-request` + `api/workspaces/invite` + `api/workspaces/invite-link` shareable links with expiry/domain/max-uses | `v0.0.7-alpha` |
-| Guests / external collab | Guest accounts, channel constraints | 🟡 Partial | `api/admin/guests` create/list/revoke + `expires_at` stored; worker has NO `guest_expire` handler — only referenced in `jobs/route.ts:37` comment; no scheduled expiry enforcement | `v0.0.7-alpha` |
+| Guests / external collab | Guest accounts, channel constraints | ✅ Full | `api/admin/guests` create/list/revoke; `lib/comms/guestAccounts.ts` revokeGuestAccount (shared revoke path) drops channel + workspace membership and kills live sessions + audit; worker.ts `guest_expire` handler finds expired guests, calls `runGuestExpiry`, self-reschedules; seeded migration 049; idempotent | `v0.0.7-alpha` |
 | User groups / IDP groups | AD group sync | ✅ Full | `api/admin/user-groups` full CRUD + member management | `v0.0.5-alpha` |
 
 ---
@@ -334,14 +334,14 @@ Slack API methods: `users.setPresence`, `users.getPresence`, `dnd.setSnooze`, `d
 | Push token registration (APNS/FCM/Web) | — | ✅ Full | `notifications/push/route.ts:129` upsert by token; unregister sets `is_active=false` (line 133) | `v0.0.7-alpha` |
 | Push delivery (real) | — | ⛔ | env-blocked (APNS): `pushDelivery.ts:163-165` skips APNS tokens (`skipped_apns`), no HTTP/2 client without new dep; FCM + Web Push real. **APNS requires external dep** | `v1.0.0` |
 | Auto-push on mention/DM | — | ✅ Full | `selectPushTargets`+`enqueuePush` invoked in every `notify*` fn (`notificationsServer.ts:121,199,251,298,572`); high-priority, mute+DND filtered | `v0.0.7-alpha` |
-| Admin push policy / quiet hours | — | 🟠 Stub | `push_policy` CRUD persists `quiet_hours_*`/`max_rate` (`push/route.ts:62-70,200`), but `push_policy` is read nowhere at enqueue/deliver (grep: only `push/route.ts` references it) — `pushTargeting.ts`/`pushDelivery.ts` never consult it. Unenforced | `v0.1.0-alpha` |
+| Admin push policy / quiet hours | — | ✅ Full | `lib/notifications/pushPolicy.ts` — getPushPolicy reads system_config; applyQuietHours (TZ-aware, reuses isDndActiveNow) drops all targets during org quiet-hours window; applyMaxRate caps per-user per-hour via rateLimitStore; both called in `pushTargeting.ts selectPushTargets`; disabled/absent policy is no-op | `v0.1.0-alpha` |
 | Email notifications (per-event) | — | 🟡 Partial | `notifications/email/route.ts` queues to `email_queue` keyed by type, gated only on `prefs.email` on/off (line 72) — no per-type granularity; worker consumes queue | `v0.0.7-alpha` |
-| Email digest (hourly/daily/weekly) | — | 🟡 Partial | Digest now real: `lib/notifications/emailDigest.ts runEmailDigests`, scheduled as self-rescheduling worker job (`worker.ts:503-526`, seeded migration 039) with watermark (migration 042). Frequency is off/daily/weekly only — no hourly/realtime per BLUEPRINT §2.1.5 | `v0.1.0-alpha` |
+| Email digest (hourly/daily/weekly) | — | 🟡 Partial | `lib/notifications/emailDigest.ts runEmailDigests` — hourly now implemented end-to-end (DigestFrequency includes 'hourly', digestIntervalMs returns HOUR_MS, normalizeDigestFrequency accepts 'hourly'); self-rescheduling worker job (`worker.ts:503-526`, migration 039); watermark keyset-pagination (migration 042). BLUEPRINT §2.1.5 hourly cadence met. Realtime/push-on-event digest mode still absent | `v0.1.0-alpha` |
 | Notification schedule (active hours / weekday-only) | — | 🟠 Stub | `notificationSchedule.evaluateNotification` still client-only (reads `localStorage`); server dispatch (`notificationsServer.ts`) never consults active-hours/weekday | `v0.2.0-alpha` |
 | Mark channel/thread/ticket as read | — | ✅ Full | `notifications/route.ts:61` PATCH `mark_channel`/`thread`/`ticket`/`read_all`; `collab` read-state on unified `channel_read_state` | `v0.0.3-alpha` |
 | Mark message as unread | — | ✅ Full | `collab/mark-unread/route.ts:42` writes `channel_read_state` (was `read_state`); migration 028 backfills then DROPs `aaelink.read_state`; all consumers use `channel_read_state` | `v0.0.3-alpha` |
 
-**Notifications & Presence tally:** 30 behaviors — Full 18 · Partial 9 · Stub 2 · Missing 0 · Excluded 1 (APNS push)
+**Notifications & Presence tally:** 30 behaviors — ✅ 21 · 🟡 7 · 🟠 1 · 🔴 0 · ⛔ 1 (APNS push)
 
 ---
 
@@ -354,7 +354,7 @@ Slack API methods: `admin.users.list`, `admin.users.invite`, `admin.conversation
 | List users | `admin.users.list` | ✅ Full | `app/api/admin/users/route.ts:22-23` LIMIT 500, no cursor/pagination; role-gated GET | `v0.0.2-alpha` |
 | Create user | `admin.users.invite` | ✅ Full | `app/api/admin/users/route.ts:30-95` — role-gated, password policy, audited, auto-join default channels | `v0.0.2-alpha` |
 | Update user / set role | `admin.users.setAdmin` | ✅ Full | `app/api/admin/users/route.ts:103-184` — role escalation guarded, cannot_demote_self, audited | `v0.0.2-alpha` |
-| Deactivate / suspend user | `admin.users.setInactive` | 🟡 Partial | Still SCIM-only soft-delete (`app/api/scim/v2/Users/route.ts` `scim_active`); no admin-UI deactivate/reactivate endpoint | `v0.0.7-alpha` |
+| Deactivate / suspend user | `admin.users.setInactive` | ✅ Full | `app/api/admin/users/deactivate/route.ts` — POST `{user_id, active}` sets scim_active via setUserActive, revokes sessions, blocks login; converges with SCIM on scim_active flag; self-deactivate guard + super_admin guard; CSRF + platform-admin gate + audit; tracedRoute | `v0.0.7-alpha` |
 | Custom roles / RBAC | `admin.roles.*` | 🟡 Partial | `app/api/admin/roles/route.ts` + `lib/auth/customRoles.ts` CRUD present; still not enforced as ReBAC — runtime gates key off `platform_role`/`isPlatformAdmin` | `v0.2.0-alpha` |
 | Role assignments | `admin.roles.*` | 🟡 Partial | `app/api/admin/roles/assignments/route.ts:7,28` `assignRole`/`listAssignments` present; authz not keyed off custom roles | `v0.2.0-alpha` |
 | List orgs / teams | `admin.teams.list` | ✅ Full | `app/api/admin/org/route.ts` + `org/[orgId]/*` (workspaces/domains/identity/shared-channels/profile-fields) all present | `v0.0.7-alpha` |
@@ -364,7 +364,7 @@ Slack API methods: `admin.users.list`, `admin.users.invite`, `admin.conversation
 | Shared / connected channels | `admin.conversations.setTeams` | 🟡 Partial | `connectAllowlist.ts` only stores `connect_allowlist` rows (insert/delete/status); still no external-org handshake/federation transport | TBD |
 | Custom profile fields | — | ✅ Full | `app/api/admin/org/[orgId]/profile-fields/route.ts` + `lib/enterprise/customProfileFields.ts` real | `v0.0.7-alpha` |
 | Channel management (admin) | `admin.conversations.*` | 🟡 Partial | `channel-archival/route.ts` (inactivity preview/execute) real; channels/rename + `channels/[id]/convert` + `search/channels` exist; no `admin.conversations setTeams`/bulk-move parity | `v0.1.0-alpha` |
-| Set channel retention | `admin.conversations.setConversationRetention` | 🟠 Stub | `admin/retention/route.ts:64` scope-only ('workspace','channel','dm','file'); no `channel_id` / `setCustomRetention` / `getCustomRetention` per-individual-channel | `v0.2.0-alpha` |
+| Set channel retention | `admin.conversations.setConversationRetention` | ✅ Full | `lib/enterprise/retentionOverrides.ts` — per-channel overrides (migration 050 `channel_retention_overrides`); override wins over scope policy for the channel; hold-aware (buildHoldExclusion); scope-policy delete excludes overridden channels; each override runs its own delete; admin CRUD at `admin/retention/channels/route.ts`; enforced in `retentionJob.runRetentionEnforcement` | `v0.2.0-alpha` |
 | Retention policy CRUD | — | ✅ Full | `admin/retention/route.ts` GET/PUT, 4 scopes, enabled, delete_files, `isPlatformAdmin`-gated, audited | `v0.0.7-alpha` |
 | Retention enforcement (delete) | — | ✅ Full | worker `retention_enforce` (`worker.ts:119-126`) delegates to `runRetentionEnforcement`→`buildHoldExclusion` (hold-aware); route `admin/retention/enforce/route.ts:41-42` also delegates to `runRetentionEnforcement` (hold-aware) with `verifyCsrf`:23 + `isPlatformAdmin` gate:36 + audit `'retention.enforce'`:61 | `v0.0.7-alpha` |
 | Legal hold create/list/release | — | ✅ Full | `compliance/legal-holds/route.ts` GET/POST/PATCH/DELETE, `isPlatformAdmin`-gated (lines 33,76,135), `super_admin` for delete; hold overrides retention engine-side | `v0.0.7-alpha` |
@@ -379,15 +379,15 @@ Slack API methods: `admin.users.list`, `admin.users.invite`, `admin.conversation
 | Data residency / region pinning | — | 🟠 Stub | `admin/data-residency/route.ts` GET/PUT `isPlatformAdmin`-gated (it_admin admitted); still pure metadata, no storage routing — region config stored in `system_config` but no write routing to actual storage backends | `v1.0.0` |
 | Encryption at rest config | — | 🟠 Stub | `admin/encryption/route.ts` still fake keys `sha256:${randomUUID().slice}` (lines 115,137); rotate/create write rows only, no KMS. `super_admin`-only | `v1.0.0` |
 | Field-level / message encryption | — | 🔴 Missing | `encryption/route.ts:53` `field_level_encryption=['messages.content','files.content']` declared in config only; no crypto applied to content | `v1.0.0` |
-| Guest / external user accounts | — | 🟡 Partial | `admin/guests/route.ts` create/list/revoke + `expires_at` stored; worker has NO `guest_expire` handler (grep count 0) — only referenced in `jobs/route.ts:37` comment. No scheduled expiry enforcement | `v0.0.7-alpha` |
+| Guest / external user accounts | — | ✅ Full | `admin/guests/route.ts` create/list/revoke; `lib/comms/guestAccounts.ts` revokeGuestAccount drops channel + workspace membership and kills live sessions + audit; worker.ts `guest_expire` handler calls `runGuestExpiry`, self-reschedules; seeded migration 049; idempotent | `v0.0.7-alpha` |
 | SCIM v2 provisioning | — | ✅ Full | `scim/v2/Users` + Groups routes + `lib/auth/scim.ts`; create/update/deactivate(`scim_active`), org-scoped via `bearer_token_hash` | `v0.0.x` |
-| IP allowlist / access control | — | 🟡 Partial | `admin/ip-access/route.ts` stores config; `lib/auth/ipAccess.ts` only has parsing helpers (`ipMatchesCidr`/`extractClientIp`), no allowlist gate. `middleware.ts:80-86` uses ip for rate-limit, not allowlist enforcement. Buggy `platform_admin` check too | `v0.2.0-alpha` |
-| Session policy / forced logout | — | 🟡 Partial | `admin/session-policy/route.ts` (buggy `['super_admin','platform_admin']` line 35) + `admin/sessions` list/revoke present | `v0.0.7-alpha` |
+| IP allowlist / access control | — | 🟡 Partial | `lib/auth/ipAccessGate.ts` enforceIpAllowlist wired in `lib/api/tracedRoute.ts` (API-layer chokepoint, 30s TTL cache); exempt prefixes for admin/ip-access+health+webhooks+sso; fail-open on DB error by design. NOTE: non-API app pages (Next.js server renders) are not IP-gated — edge middleware cannot read DB-backed config | `v0.2.0-alpha` |
+| Session policy / forced logout | — | ✅ Full | `lib/auth/sessionEnforcement.ts` — enforceSessionLimits (max_sessions_per_user + single_session_mode) called at login, SSO provision, session read; isAuthStale (force_reauth_hours) at session read; revokeOtherUserSessions (revoke_on_password_change) at change-password; require_mfa_for_admin at login; `admin/sessions` list/revoke present; all policy fields enforced | `v0.0.7-alpha` |
 | Device management / remote wipe | — | 🟡 Partial | `admin/devices/route.ts` + `devices/[id]/wipe` + `emm-policy` present; wipe is a flag, no MDM push. Buggy `platform_admin` check (lines 38,137,173) | `v0.0.7-alpha` |
 | HIPAA / FINRA compliance mode | — | 🔴 Missing | No `compliance_mode`/`hipaa_mode`/`finra_mode`/WORM toggle in `lib/` or `app/`; HIPAA/FINRA still only computed display booleans in `encryption/route.ts`. `audit_log` rows mutable, retention hard-DELETEs | `v1.0.0` |
-| IDP group → role mapping | — | 🔴 Missing | `scim/v2/Groups/route.ts` manages `user_groups` membership only; no group→platform/custom-role grant mapping | `v1.0.0` |
+| IDP group → role mapping | — | ✅ Full | `lib/auth/idpRoleMappings.ts` — CRUD store + resolveGrants (highest-priority match) + applyGroupRoleMappings (grant-only, no-downgrade); admin CRUD `/api/admin/idp-role-mappings` (GET/POST/PATCH/DELETE, CSRF+audit); applied on SSO login (ssoProvision.ts:120) and SCIM Groups membership change (scim/v2/Groups/route.ts:152); super_admin clamped; migration 051 | `v1.0.0` |
 
-**Admin & Compliance tally:** 35 behaviors — Full 16 · Partial 13 · Stub 3 · Missing 3 · Excluded 0
+**Admin & Compliance tally:** 35 behaviors — ✅ 20 · 🟡 11 · 🟠 2 · 🔴 2 · ⛔ 0
 
 ---
 
@@ -461,17 +461,17 @@ Slack API methods: N/A (identity plane, no Slack API parity); references Matterm
 | SCIM — `ServiceProviderConfig` / Schemas / ResourceTypes | — | ✅ Full | `app/api/scim/v2/{ServiceProviderConfig,Schemas,ResourceTypes}/route.ts` static discovery docs present | `v0.0.x` |
 | SCIM — bearer-token lifecycle (issue/rotate/revoke) | — | 🟡 Partial | `app/api/admin/scim/route.ts:233` traced, stores `bearer_token_hash`; rotation/expiry semantics still shallow | `v0.1.0-alpha` |
 | MFA — TOTP enrollment + verify (RFC 6238) | — | ✅ Full | `lib/auth/totp.ts` `verifyTotp` (RFC 6238); `mfa/route.ts` verifies code before activation | `v0.0.x` |
-| MFA — backup / recovery codes | — | 🟡 Partial | `mfa/route.ts:156-172` only GENERATES + HMAC-hashes 10 codes; grep shows no consume/burn in login or stepup (stepup verifies totp only) | `v0.1.0-alpha` |
+| MFA — backup / recovery codes | — | ✅ Full | `lib/auth/backupCodes.ts` consumeBackupCode — HMAC-hash match, single-use atomic burn (UPDATE WHERE secret_hash = $prev guard prevents race reuse); consumed at MFA step-up gate (`app/api/auth/mfa/stepup/route.ts:104`) alongside TOTP; audit 'mfa.backup_code_used'; enrollment generates 10 codes in `mfa/route.ts:156` | `v0.1.0-alpha` |
 | MFA — admin enforcement policy | — | 🟡 Partial | `login/route.ts:126-131` `mfaEnrollmentRequired` gates ENROLLMENT past grace only; no per-login code for password users | `v0.1.0-alpha` |
 | MFA — step-up after SSO (`enforce_mfa` providers) | — | ✅ Full | `ssoProvision.ts:117-121` sets `mfa_pending`; `mfa/stepup/route.ts` `verifyTotp` clears it; `readSessionUserId` withholds | `v0.0.x` |
 | WebAuthn — passkey registration | — | ✅ Full | `app/api/auth/webauthn/register/route.ts:78` traced; `@simplewebauthn` challenge+credential storage (mig 027) | `v0.0.x` |
 | WebAuthn — passkey step-up (MFA) | — | ✅ Full | `app/api/auth/webauthn/authenticate/route.ts:11-16` assertion clears `mfa_pending` parallel to TOTP | `v0.0.x` |
 | WebAuthn — passwordless (discoverable) login | — | ✅ Full | `app/api/auth/webauthn/login/route.ts:79` traced; usernameless resident-key login establishes session | `v0.0.x` |
-| Session policy — TTL / idle / max-sessions / device list / revoke | — | 🟡 Partial | TTL+idle+device-list+revoke enforced; `max_sessions_per_user`/`single_session_mode`/`force_reauth_hours`/`revoke_on_password_change`/`require_mfa_for_admin` still defined-only — zero enforcement reads outside `sessionPolicy.ts`/admin route | `v0.1.0-alpha` |
+| Session policy — TTL / idle / max-sessions / device list / revoke | — | ✅ Full | `lib/auth/sessionEnforcement.ts` — enforceSessionLimits (max_sessions_per_user + single_session_mode) called at login, SSO provision, session read; isAuthStale (force_reauth_hours) at session read; revokeOtherUserSessions (revoke_on_password_change) at change-password; require_mfa_for_admin at login; all five policy fields enforced end-to-end | `v0.1.0-alpha` |
 | Password policy (complexity / history / rotation / breach) | — | ✅ Full | `lib/auth/passwordPolicy.ts` (complexity/history/expiry) + `admin/password-policy/route.ts` (CSRF+audited) enforced in `change-password/route.ts:49-70` (`validate`+`isPasswordReused`+`recordHistory`) and register; login surfaces `password_expired`. No HIBP breach check (AI/ML n/a) | `v0.0.x` |
 | LDAP / Active Directory sync | — | 🟠 Stub | `app/api/admin/ldap/route.ts:88` still `test_result:'simulated_success'`, :167 enqueues type 'compliance_export' w/ `ldap_sync` payload, :119 stores `'sha256:***'` literal; no `ldapjs`; header :1 'not yet wired' | `v1.0.0` |
 
-**Identity tally:** 28 behaviors — Full 20 · Partial 6 · Stub 1 · Missing 1 · Excluded 0
+**Identity tally:** 28 behaviors — ✅ 24 · 🟡 2 · 🟠 1 · 🔴 1 · ⛔ 0
 
 ---
 

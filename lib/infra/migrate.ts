@@ -3913,7 +3913,7 @@ async function migration037PasswordPolicy(pool: RunnerPool) {
  *
  * Adds the per-user digest preference + watermark where notification prefs already
  * live (aaelink.user_notification_prefs):
- *   - digest_frequency  'off' | 'daily' | 'weekly' (default 'off' — opt-in, no
+ *   - digest_frequency  'off' | 'hourly' | 'daily' | 'weekly' (default 'off' — opt-in, no
  *                       behavior change for existing users).
  *   - last_digest_at    epoch-ms watermark; the worker collects unread
  *                       mention/DM/keyword notifications created AFTER this stamp,
@@ -4487,6 +4487,82 @@ async function migration048UserGroupsOrgId(pool: RunnerPool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_groups_org ON aaelink.user_groups(org_id)`)
 }
 
+/**
+ * Migration 049 — seed the recurring 'guest_expire' worker heartbeat (Admin
+ * parity 29). admin/guests/route.ts stored guest_accounts.expires_at but no job
+ * ever enforced it, so expired guests kept channel access + live sessions
+ * forever. The worker now has a guest_expire handler (lib/infra/worker.ts) that
+ * revokes guests past expires_at via the shared revoke path; like migration 039
+ * (email_digest/saved_search_alerts) and 040 (upload_session_sweep) seeded their
+ * heartbeats, this seeds ONE pending row so the cadence actually starts. The
+ * handler self-reschedules thereafter. Idempotent — only insert when no
+ * pending/running row of this type exists. No schema change (expires_at already
+ * stored). Forward-only.
+ */
+async function migration049SeedGuestExpireJob(pool: RunnerPool) {
+  await pool.query(
+    `INSERT INTO aaelink.jobs
+       (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+     SELECT $1, 'guest_expire', 'pending', 2, '{}', $2, 3, 0, $2
+      WHERE NOT EXISTS (
+        SELECT 1 FROM aaelink.jobs
+         WHERE type = 'guest_expire' AND status IN ('pending', 'running')
+      )`,
+    [randomUUID(), Date.now()]
+  )
+}
+
+async function migration051IdpGroupRoleMappings(pool: RunnerPool) {
+  // IdP/SCIM group → role mappings. A matched group grants a platform_role
+  // (aaelink.users.platform_role) OR a workspace role (workspace_members.role).
+  // Resolution is highest-priority-wins; granting is additive on login/sync only
+  // (removal from a group never auto-demotes — see lib/auth/idpRoleMappings.ts).
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.idp_group_role_mappings (
+       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       org_id        UUID REFERENCES aaelink.organizations(id) ON DELETE CASCADE,
+       workspace_id  TEXT REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+       group_pattern TEXT NOT NULL,
+       target_kind   TEXT NOT NULL CHECK (target_kind IN ('platform_role', 'workspace_role')),
+       target_role   TEXT NOT NULL,
+       priority      INTEGER NOT NULL DEFAULT 0,
+       is_active     BOOLEAN NOT NULL DEFAULT true,
+       created_by    TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+       created_at    BIGINT NOT NULL,
+       updated_at    BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_idp_role_mappings_org ON aaelink.idp_group_role_mappings(org_id)`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_idp_role_mappings_active ON aaelink.idp_group_role_mappings(is_active, priority DESC)`
+  )
+}
+
+async function migration050ChannelRetentionOverrides(pool: RunnerPool) {
+  // Per-channel retention overrides (Slack admin.conversations.setCustomRetention
+  // parity). One row per channel_id; the override window wins over the workspace/
+  // channel/dm scope policy (retention_policies) for that channel. Absence falls
+  // back to the scope policy; enabled=false is a no-op. channel_id FK CASCADEs so
+  // an override is dropped with its channel. Enforced by lib/enterprise/
+  // retentionOverrides.ts + retentionJob.ts (hold-aware; holds always win).
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.channel_retention_overrides (
+       channel_id     TEXT PRIMARY KEY REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+       retention_days INT NOT NULL DEFAULT 0 CHECK (retention_days >= 0),
+       enabled        BOOLEAN NOT NULL DEFAULT false,
+       created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+       updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+       updated_by     TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_channel_retention_overrides_enabled
+       ON aaelink.channel_retention_overrides(enabled)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4536,4 +4612,7 @@ const MIGRATIONS: Migration[] = [
   { id: '046_event_subscription_verification', up: migration046EventSubscriptionVerification },
   { id: '047_thread_replies_enabled', up: migration047ThreadRepliesEnabled },
   { id: '048_user_groups_org_id', up: migration048UserGroupsOrgId },
+  { id: '051_idp_group_role_mappings', up: migration051IdpGroupRoleMappings },
+  { id: '049_seed_guest_expire_job', up: migration049SeedGuestExpireJob },
+  { id: '050_channel_retention_overrides', up: migration050ChannelRetentionOverrides },
 ]

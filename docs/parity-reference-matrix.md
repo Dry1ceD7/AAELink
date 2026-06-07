@@ -1,6 +1,6 @@
-# AAELink — Parity reference matrix (regenerated 2026-06-07)
+# AAELink — Parity reference matrix (regenerated 2026-06-08)
 
-> **This edition was regenerated 2026-06-07 from code verification.**
+> **This edition was regenerated 2026-06-08 from code verification.**
 > Method: production-path wiring checked (response shape, RBAC, CSRF, audit-logging,
 > realtime wiring, and whether the wiring is actually *invoked end-to-end*) — not route
 > existence or DDL presence alone. It supersedes all prior versions of this file.
@@ -268,18 +268,18 @@ column type validation (16); channel-less list realtime (22); KB search/versioni
 | 22 | Push token registration (APNS/FCM/Web) | yes | ✅ Full | notifications/push/route.ts:129 upsert by token; unregister sets is_active=false (line 133) |
 | 23 | Push delivery (real) | HPNS | ⛔ Excluded | env-blocked (APNS): pushDelivery.ts:163-165 skips APNS tokens (skipped_apns), no HTTP/2 client without new dep; FCM + Web Push real |
 | 24 | Auto-push on mention/DM | yes | ✅ Full | selectPushTargets+enqueuePush invoked in every notify* fn (notificationsServer.ts:121,199,251,298,572); high-priority, mute+DND filtered |
-| 25 | Admin push policy / quiet hours | org | 🟠 Stub | push_policy CRUD persists quiet_hours_*/max_rate (push/route.ts:62-70,200), but push_policy is read nowhere at enqueue/deliver (grep: only push/route.ts references it) — pushTargeting.ts/pushDelivery.ts never consult it |
+| 25 | Admin push policy / quiet hours | org | ✅ Full | lib/notifications/pushPolicy.ts — getPushPolicy reads system_config; applyQuietHours (TZ-aware, reuses isDndActiveNow) drops all targets during org quiet-hours window; applyMaxRate caps per-user per-hour via rateLimitStore; both called in pushTargeting.ts selectPushTargets (lines 44-45, 96); disabled/absent policy is no-op |
 | 26 | Email notifications (per-event) | SMTP | 🟡 Partial | notifications/email/route.ts queues to email_queue keyed by type, gated only on prefs.email on/off (line 72) — no per-type granularity; worker consumes queue |
-| 27 | Email digest (hourly/daily/weekly) | yes | 🟡 Partial | Digest now real: lib/notifications/emailDigest.ts runEmailDigests, scheduled as self-rescheduling worker job (worker.ts:503-526, seeded migration 039) with watermark (migration 042); BUT frequency is off/daily/weekly only (notificationPrefs.ts:35,66) — no hourly/realtime per BLUEPRINT §2.1.5 |
+| 27 | Email digest (hourly/daily/weekly) | yes | 🟡 Partial | lib/notifications/emailDigest.ts runEmailDigests — hourly frequency now implemented end-to-end: DigestFrequency includes 'hourly' (emailDigest.ts:22), digestIntervalMs returns HOUR_MS for 'hourly' (:51), normalizeDigestFrequency accepts 'hourly' (notificationPrefs.ts:73); worker self-reschedules (worker.ts:503-526, migration 039); watermark keyset-pagination (migration 042). BLUEPRINT §2.1.5 hourly cadence met. NOTE: realtime/push-on-event digest mode still absent |
 | 28 | Notification schedule (active hours / weekday-only) | DND schedule | 🟠 Stub | notificationSchedule.evaluateNotification still client-only (reads localStorage); no server shouldNotify gate calls it — server dispatch (notificationsServer.ts) never consults active-hours/weekday |
 | 29 | Mark channel/thread/ticket as read | conversations.mark | ✅ Full | notifications/route.ts:61 PATCH mark_channel/thread/ticket/read_all; collab read-state now on unified channel_read_state |
 | 30 | Mark message as unread | yes | ✅ Full | Read-state unified: collab/mark-unread/route.ts:42 writes channel_read_state (was read_state); migration 028 backfills then DROPs aaelink.read_state (migrate.ts:3097-3123); all consumers use channel_read_state |
 
-**Notifications & presence tally:** 30 behaviors — ✅ 20 · 🟡 7 · 🟠 2 · 🔴 0 · ⛔ 1
+**Notifications & presence tally:** 30 behaviors — ✅ 21 · 🟡 7 · 🟠 1 · 🔴 0 · ⛔ 1
 
 Open: DND/mute in-app gating (9), status expiry server job (17), presence fan-out no diff/status (20),
-manual-dnd push-only (21), admin quiet-hours unenforced (25), email no per-type (26),
-digest no hourly (27), notification schedule server-side (28).
+manual-dnd push-only (21), email no per-type (26), digest realtime/push-on-event absent (27),
+notification schedule server-side (28).
 
 ---
 
@@ -290,7 +290,7 @@ digest no hourly (27), notification schedule server-side (28).
 | 1 | List users | admin.users.list | ✅ Full | app/api/admin/users/route.ts:22-23 LIMIT 500, no cursor/pagination; role-gated GET |
 | 2 | Create user | admin.users invite | ✅ Full | app/api/admin/users/route.ts:30-95 role-gated, password policy, audited, auto-join default channels |
 | 3 | Update user / set role | admin.users.setAdmin/... | ✅ Full | app/api/admin/users/route.ts:103-184 role escalation guarded, cannot_demote_self, audited |
-| 4 | Deactivate / suspend user | admin.users.remove/setInactive | 🟡 Partial | Still SCIM-only soft-delete (app/api/scim/v2/Users/route.ts scim_active); no admin-UI deactivate/reactivate endpoint |
+| 4 | Deactivate / suspend user | admin.users.remove/setInactive | ✅ Full | app/api/admin/users/deactivate/route.ts — POST {user_id, active} sets scim_active via setUserActive, revokes sessions, blocks login; converges with SCIM on scim_active flag; self-deactivate guard + super_admin guard; CSRF + platform-admin gate + audit (user.deactivate/user.reactivate); tracedRoute |
 | 5 | Custom roles / RBAC | admin.roles.* | 🟡 Partial | app/api/admin/roles/route.ts + lib/auth/customRoles.ts CRUD present; still not enforced as ReBAC — runtime gates key off platform_role/isPlatformAdmin |
 | 6 | Role assignments | admin.roles.addAssignments | 🟡 Partial | app/api/admin/roles/assignments/route.ts:7,28 assignRole/listAssignments present; route gated by isPlatformAdmin(platform_role); authz not keyed off custom roles |
 | 7 | List orgs / teams | admin.teams.list | ✅ Full | app/api/admin/org/route.ts + org/[orgId]/* (workspaces/domains/identity/shared-channels/profile-fields) all present |
@@ -300,7 +300,7 @@ digest no hourly (27), notification schedule server-side (28).
 | 11 | Shared / connected channels | admin.conversations.ext* | 🟡 Partial | connectAllowlist.ts only stores connect_allowlist rows (insert/delete/status); still no external-org handshake/federation transport |
 | 12 | Custom profile fields | org custom fields | ✅ Full | app/api/admin/org/[orgId]/profile-fields/route.ts + lib/enterprise/customProfileFields.ts real |
 | 13 | Channel management (admin) | admin.conversations.* | 🟡 Partial | channel-archival/route.ts (inactivity preview/execute) real; channels/rename + channels/[id]/convert + search/channels exist but no admin.conversations setTeams/bulk-move parity |
-| 14 | Set channel retention | admin.conversations.setCustomRetention | 🟠 Stub | admin/retention/route.ts:64 still scope-only ('workspace','channel','dm','file'); no channel_id / setCustomRetention / getCustomRetention per-individual-channel |
+| 14 | Set channel retention | admin.conversations.setCustomRetention | ✅ Full | lib/enterprise/retentionOverrides.ts — per-channel overrides (migration 050 channel_retention_overrides); override wins over scope policy for the channel; hold-aware (buildHoldExclusion); scope-policy delete excludes overridden channels; each override runs its own delete; admin CRUD at admin/retention/channels/route.ts; enforced end-to-end in retentionJob.runRetentionEnforcement |
 | 15 | Retention policy CRUD | workspace retention | ✅ Full | admin/retention/route.ts _GET/_PUT, 4 scopes, enabled, delete_files, isPlatformAdmin-gated, audited |
 | 16 | Retention enforcement (delete) | retention job | ✅ Full | worker retention_enforce (worker.ts:119-126) delegates to runRetentionEnforcement→buildHoldExclusion (hold-aware); route admin/retention/enforce/route.ts:41-42 also delegates to runRetentionEnforcement (hold-aware) with verifyCsrf:23 + isPlatformAdmin gate:36 + audit 'retention.enforce':61 |
 | 17 | Legal hold create/list/release | Discovery + manual | ✅ Full | compliance/legal-holds/route.ts GET/POST/PATCH/DELETE, now isPlatformAdmin-gated (lines 33,76,135), super_admin for delete; hold overrides retention engine-side |
@@ -315,20 +315,19 @@ digest no hourly (27), notification schedule server-side (28).
 | 26 | Data residency / region pinning | data residency | 🟠 Stub | admin/data-residency/route.ts GET/PUT isPlatformAdmin-gated (it_admin admitted); still pure metadata, no storage routing — region config stored in system_config but no write routing to actual storage backends |
 | 27 | Encryption at rest config | EKM | 🟠 Stub | admin/encryption/route.ts still fake keys sha256:${randomUUID().slice} (lines 115,137); rotate/create write rows only, no KMS; super_admin-only |
 | 28 | Field-level / message encryption | EKM key revoke | 🔴 Missing | encryption/route.ts:53 field_level_encryption=['messages.content','files.content'] declared in config only; no crypto applied to content |
-| 29 | Guest / external user accounts | guest invite | 🟡 Partial | admin/guests/route.ts create/list/revoke + expires_at stored; worker.ts has NO guest_expire handler (grep count 0) — only referenced in jobs/route.ts:37 comment; no scheduled expiry enforcement |
+| 29 | Guest / external user accounts | guest invite | ✅ Full | admin/guests/route.ts create/list/revoke; lib/comms/guestAccounts.ts revokeGuestAccount (shared revoke path) drops channel memberships + workspace membership + kills live sessions + audit; worker.ts:578 guest_expire handler finds expires_at-past guests, calls runGuestExpiry, self-reschedules; seeded by migration 049; idempotent re-run |
 | 30 | SCIM v2 provisioning | SCIM | ✅ Full | scim/v2/Users + Groups routes + lib/auth/scim.ts; create/update/deactivate(scim_active), org-scoped via bearer_token_hash |
-| 31 | IP allowlist / access control | IP allowlisting | 🟡 Partial | admin/ip-access/route.ts stores config; lib/auth/ipAccess.ts only has parsing helpers (ipMatchesCidr/extractClientIp), no allowlist gate; middleware.ts:80-86 uses ip for rate-limit only, not allowlist enforcement; buggy platform_admin check |
+| 31 | IP allowlist / access control | IP allowlisting | 🟡 Partial | lib/auth/ipAccessGate.ts enforceIpAllowlist wired in lib/api/tracedRoute.ts (API-layer chokepoint); 30s TTL cache; exempt prefixes for admin/ip-access+health+webhooks+sso (lockout-prevention + public endpoints); isPlatformAdmin fix applied; fail-open on DB error by design. NOTE: edge middleware cannot read DB-backed config — only API routes (tracedRoute) are enforced; non-API app pages (Next.js server renders) are not IP-gated |
 | 32 | Session policy / forced logout | admin.users.session.* | 🟡 Partial | admin/session-policy/route.ts (buggy ['super_admin','platform_admin'] line 35) + admin/sessions list/revoke present |
 | 33 | Device management / remote wipe | EMM | 🟡 Partial | admin/devices/route.ts + devices/[id]/wipe + emm-policy present; wipe is a flag, no MDM push; buggy platform_admin check (lines 38,137,173) |
 | 34 | HIPAA / FINRA compliance mode | n/a (controls) | 🔴 Missing | No compliance_mode/hipaa_mode/finra_mode/WORM toggle anywhere in lib/ or app/; HIPAA/FINRA still only computed display booleans in encryption/route.ts; audit_log rows mutable, retention hard-DELETEs |
-| 35 | IDP group → role mapping | SCIM group → role | 🔴 Missing | scim/v2/Groups/route.ts manages user_groups membership only; no group→platform/custom-role grant mapping |
+| 35 | IDP group → role mapping | SCIM group → role | ✅ Full | lib/auth/idpRoleMappings.ts — CRUD store + resolveGrants (highest-priority match wins) + applyGroupRoleMappings (grant-only, no-downgrade); admin CRUD app/api/admin/idp-role-mappings/route.ts (GET/POST/PATCH/DELETE, CSRF+audit); applied on SSO login (ssoProvision.ts:120) and SCIM Groups membership change (scim/v2/Groups/route.ts:152); super_admin clamped out; migration 051 |
 
-**Admin & compliance tally:** 35 behaviors — ✅ 16 · 🟡 13 · 🟠 3 · 🔴 3 · ⛔ 0
+**Admin & compliance tally:** 35 behaviors — ✅ 20 · 🟡 11 · 🟠 2 · 🔴 2 · ⛔ 0
 
-Open: admin deactivate (4), custom-role enforcement (5/6), per-channel retention (14),
-eDiscovery MBOX/scope (22/23), data-residency metadata-only / no storage routing (26),
-encryption stubs (27/28), guest expiry (29), IP allowlist unenforced (31),
-HIPAA/WORM (34), IDP group→role (35).
+Open: custom-role enforcement (5/6), eDiscovery MBOX/scope (22/23),
+data-residency metadata-only / no storage routing (26), encryption stubs (27/28),
+IP allowlist app-page gap (31), HIPAA/WORM (34).
 
 ---
 
@@ -396,32 +395,31 @@ plugin runtime (33).
 | 10 | Legacy Entra/Azure OAuth login | Yes | ✅ Full | app/api/auth/entra/route.ts now a 49-line shim: hand-rolled OAuth/JIT/session-mint GONE, 302s into hardened /sso/oidc/start (mig 031 seeds provider); critical-gap #3 resolved |
 | 11 | JIT provisioning on first SSO login | Yes | ✅ Full | lib/auth/ssoProvision.ts provider-gated; new user platform_role='employee', clamped workspace role |
 | 12 | Account linking (SSO ↔ existing user) | Yes | ✅ Full | ssoProvision.ts resolution identity-link→email→JIT; sso_identity_links upsert |
-| 13 | Group→role mapping from IdP claims | Yes | 🟡 Partial | lib/auth/ssoClaims.ts maps to workspace member/guest clamped, no platform roles, no team/channel auto-join |
+| 13 | Group→role mapping from IdP claims | Yes | ✅ Full | lib/auth/idpRoleMappings.ts applyGroupRoleMappings applied on SSO login (ssoProvision.ts:120) and SCIM Groups patch (scim/v2/Groups/route.ts:152); grants platform_role (employee/it_employee/it_admin) and/or workspace_role (admin/member/guest); super_admin clamped; grant-only no-downgrade; highest-priority match wins; admin CRUD at /api/admin/idp-role-mappings |
 | 14 | SCIM v2 — Users CRUD | Yes (Grid) | ✅ Full | app/api/scim/v2/Users/route.ts org-scoped via scim_connections.org_id (:151,:296); application/scim+json; bearer-hash auth |
 | 15 | SCIM v2 — deprovision (deactivate + session revoke) | Yes | ✅ Full | Users/route.ts:471-490 DELETE=soft deactivate, removes org_members (:480), logs scim_sync_log |
 | 16 | SCIM v2 — Groups CRUD + membership patch | Yes | ✅ Full | app/api/scim/v2/Groups/route.ts: resolveScimConnection returns org_id from scim_connections; orgScope(:81) predicates all queries; scopedGroupId(:233) guards PUT/PATCH/DELETE (cross-org → 404); audit() calls writeAuditLog on create/replace/patch/delete(:223,276,337,359) |
 | 17 | SCIM — ServiceProviderConfig / Schemas / ResourceTypes | Yes | ✅ Full | app/api/scim/v2/{ServiceProviderConfig,Schemas,ResourceTypes}/route.ts static discovery docs present |
 | 18 | SCIM — bearer-token lifecycle (issue/rotate/revoke) | Yes | 🟡 Partial | app/api/admin/scim/route.ts:233 traced, stores bearer_token_hash; rotation/expiry semantics still shallow |
 | 19 | MFA — TOTP enrollment + verify (RFC 6238) | Yes | ✅ Full | lib/auth/totp.ts verifyTotp (RFC 6238); mfa/route.ts verifies code before activation |
-| 20 | MFA — backup / recovery codes | Yes | 🟡 Partial | mfa/route.ts:156-172 still only GENERATES + HMAC-hashes 10 codes; grep shows no consume/burn in login or stepup (stepup verifies totp only) |
+| 20 | MFA — backup / recovery codes | Yes | ✅ Full | lib/auth/backupCodes.ts consumeBackupCode — HMAC-hash match, single-use atomic burn (UPDATE WHERE secret_hash = $prev guard prevents race reuse), remaining count returned; consumed at MFA step-up gate (app/api/auth/mfa/stepup/route.ts:104) alongside TOTP; audit 'mfa.backup_code_used'; enrollment generates 10 codes in mfa/route.ts:156 |
 | 21 | MFA — admin enforcement policy | Yes (Grid) | 🟡 Partial | login/route.ts:126-131 mfaEnrollmentRequired gates ENROLLMENT past grace only; no per-login code for password users |
 | 22 | MFA — step-up after SSO (enforce_mfa providers) | Yes | ✅ Full | ssoProvision.ts:117-121 sets mfa_pending; mfa/stepup/route.ts verifyTotp clears it; readSessionUserId withholds |
 | 23 | WebAuthn — passkey registration | Yes | ✅ Full | app/api/auth/webauthn/register/route.ts:78 traced; @simplewebauthn challenge+credential storage (mig 027) |
 | 24 | WebAuthn — passkey step-up (MFA) | Yes | ✅ Full | app/api/auth/webauthn/authenticate/route.ts:11-16 assertion clears mfa_pending parallel to TOTP |
 | 25 | WebAuthn — passwordless (discoverable) login | Yes | ✅ Full | app/api/auth/webauthn/login/route.ts:79 traced; usernameless resident-key login establishes session |
-| 26 | Session policy — TTL / idle / max-sessions / device list / revoke | Yes (Grid) | 🟡 Partial | TTL+idle+device-list+revoke enforced; max_sessions_per_user/single_session_mode/force_reauth_hours/revoke_on_password_change/require_mfa_for_admin still defined-only — zero enforcement reads outside sessionPolicy.ts/admin route |
+| 26 | Session policy — TTL / idle / max-sessions / device list / revoke | Yes (Grid) | ✅ Full | lib/auth/sessionEnforcement.ts — enforceSessionLimits (max_sessions_per_user + single_session_mode) called at login/route.ts:177, ssoProvision.ts:137, session.ts:131; isAuthStale (force_reauth_hours) enforced at session.ts:31; revokeOtherUserSessions (revoke_on_password_change) called at change-password/route.ts:85; require_mfa_for_admin checked at login/route.ts:160; idle_timeout enforced by isIdleExpired in session read path; all five policy fields now enforced end-to-end |
 | 27 | Password policy (complexity / history / rotation / breach) | Yes (Grid) | ✅ Full | NEW lib/auth/passwordPolicy.ts (complexity/history/expiry) + admin/password-policy/route.ts (CSRF+audited) enforced in change-password/route.ts:49-70 (validate+isPasswordReused+recordHistory) and register; login surfaces password_expired; No HIBP breach check (AI/ML n/a) |
 | 28 | LDAP / Active Directory sync | Mattermost-only | 🟠 Stub | app/api/admin/ldap/route.ts:88 still test_result:'simulated_success', :167 enqueues type 'compliance_export' w/ ldap_sync payload, :119 stores 'sha256:***' literal; no ldapjs; header :1 'not yet wired' |
 
-**Identity tally:** 28 behaviors — ✅ 21 · 🟡 5 · 🟠 1 · 🔴 1 · ⛔ 0
+**Identity tally:** 28 behaviors — ✅ 24 · 🟡 2 · 🟠 1 · 🔴 1 · ⛔ 0
 
-Open: SAML SLO/IdP-initiated (6), IdP claim→platform-role/team-join (13),
-backup-code consumption (20), per-login second factor (21),
-session-policy dead fields (26). LDAP stub (28) remains inert.
+Open: SAML SLO/IdP-initiated (6), per-login second factor for password users (21).
+LDAP stub (28) remains inert.
 
 ---
 
-## Aggregate coverage (2026-06-07)
+## Aggregate coverage (2026-06-08)
 
 Counts are the row-by-row tallies from the per-area sections above, which are authoritative.
 
@@ -432,21 +430,21 @@ Counts are the row-by-row tallies from the per-area sections above, which are au
 | Files & previews | 30 | 22 | 7 | 0 | 0 | 1 |
 | Calls & huddles | 23 | 16 | 2 | 1 | 1 | 3 |
 | Knowledge | 23 | 16 | 6 | 0 | 1 | 0 |
-| Notifications & presence | 30 | 20 | 7 | 2 | 0 | 1 |
-| Admin & compliance | 35 | 16 | 13 | 3 | 3 | 0 |
+| Notifications & presence | 30 | 21 | 7 | 1 | 0 | 1 |
+| Admin & compliance | 35 | 20 | 11 | 2 | 2 | 0 |
 | Integrations & extensibility | 34 | 16 | 13 | 4 | 1 | 0 |
-| Identity | 28 | 21 | 5 | 1 | 1 | 0 |
-| **TOTAL** | **263** | **174** | **65** | **11** | **8** | **5** |
+| Identity | 28 | 24 | 2 | 1 | 1 | 0 |
+| **TOTAL** | **263** | **182** | **60** | **9** | **7** | **5** |
 
 **Coverage (263 total behaviors; 258 non-excluded):**
 
-- **Full parity: 66.2%** — 174 / 263 rows (67.4% of non-excluded: 174 / 258).
-- **Full-or-Partial: 91.3%** — (174 + 65) / 263 = 239 / 263 (92.6% of non-excluded: 239 / 258).
-- Stub 4.2% (11/263) · Missing 3.0% (8/263) · Excluded 1.9% (5/263).
+- **Full parity: 69.2%** — 182 / 263 rows (70.5% of non-excluded: 182 / 258).
+- **Full-or-Partial: 92.4%** — (182 + 60) / 263 = 242 / 263 (93.8% of non-excluded: 242 / 258).
+- Stub 3.4% (9/263) · Missing 2.7% (7/263) · Excluded 1.9% (5/263).
 
 This refutes the retired README "100% / 55/55 method groups" claim, which counted
-routes + DDL rather than working capability. Strongest areas by Full %: Messaging (79%),
-Search (77%), Notifications (67%), Identity (75%), Files & Previews (73%). Weakest by Full %: Admin (46%),
+routes + DDL rather than working capability. Strongest areas by Full %: Identity (86%),
+Messaging (79%), Search (77%), Files & Previews (73%). Weakest by Full %: Admin (57%),
 Integrations (47%), Calls (80% of non-excluded).
 
 ---
@@ -459,23 +457,16 @@ Integrations (47%), Calls (80% of non-excluded).
 
 ### Feature depth gaps (codeable, not env-blocked)
 
-- Admin deactivate/reactivate user endpoint (Admin 4).
 - Custom role ReBAC enforcement (Admin 5/6).
-- Per-channel retention (Admin 14).
-- Guest expiry worker job (Admin 29).
-- IP allowlist actual enforcement middleware (Admin 31).
+- IP allowlist app-page (non-API) route gap — edge middleware cannot read DB-backed config (Admin 31).
 - HIPAA/FINRA compliance mode / WORM (Admin 34).
-- IDP group → platform-role mapping (Admin 35 / Identity 13).
-- Backup-code consumption at login (Identity 20).
-- Session-policy dead fields enforcement (Identity 26).
 - Slash command response_url / delayed responses (Integrations 14).
 - Socket-mode WS gateway (Integrations 25).
 - Views/modal persistence and realtime push (Integrations 28).
 - Workflow execution engine (Integrations 30).
 - Plugin runtime sandbox (Integrations 33).
 - Canvas version history (Knowledge 14).
-- Email digest no hourly frequency (Notifications 27).
-- Admin push policy quiet-hours unenforced (Notifications 25).
+- Email digest realtime/push-on-event mode (Notifications 27).
 
 ### ⛔ Excluded (env-blocked external infra or AI/ML — not buildable in this repo)
 
@@ -491,8 +482,9 @@ Integrations (47%), Calls (80% of non-excluded).
   (DRIFT-006); all message-search routes run the shared SQL FTS engine today.
 - **Canvas CRDT co-edit** (Knowledge 13) — realtime refetch-signal emits land, but
   conflict-free co-editing is deferred.
-- **Email digest hourly/realtime** (Notifications 27) — BLUEPRINT §2.1.5 requires hourly;
-  current implementation is off/daily/weekly only.
+- **Email digest realtime/push-on-event** (Notifications 27) — BLUEPRINT §2.1.5 hourly
+  cadence is now met (off/hourly/daily/weekly all implemented); realtime push-on-event
+  digest mode remains absent.
 
 ---
 
@@ -511,7 +503,7 @@ To refresh: re-run the per-area audits (`/aae-parity-audit <area>`), update the 
 in `docs/parity-audits/`, then regenerate this matrix and the aggregate from them. Do
 **not** hand-edit status labels here without a corresponding audit-report change.
 
-> **Note:** this matrix was regenerated 2026-06-07 directly from verified source data
+> **Note:** this matrix was regenerated 2026-06-08 directly from verified source data
 > (production-path wiring checked). The on-disk per-area audit reports in
 > `docs/parity-audits/` may predate this regeneration; treat this matrix as authoritative
 > for current status and refresh the per-area reports on next audit cycle.
