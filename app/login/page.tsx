@@ -82,13 +82,10 @@ export default function LoginPage() {
     // SSO handling.
     // The hardened inbound-SSO flow (ADR 0014) funnels ALL auth failures through
     // a single generic ?error=sso_failed redirect (no failure-mode oracle), and
-    // signals a successful-but-MFA-gated login via ?mfa=stepup. The remaining
-    // codes below are retained for any legacy/bookmarked links still in flight.
+    // signals a successful-but-MFA-gated login via ?mfa=stepup. sso_failed is the
+    // only failure code the SSO stack (oidc/saml/entra + ssoRouteHelpers) emits.
     const err = q.get('error')
-    if (err === 'sso_disabled') setError('SSO is currently disabled. Please sign in with email/password.')
-    else if (err === 'sso_failed') setError('SSO authentication failed. Please try again.')
-    else if (err === 'sso_profile_failed') setError('Failed to retrieve user profile from identity provider.')
-    else if (err === 'sso_error') setError('An unexpected SSO error occurred.')
+    if (err === 'sso_failed') setError('SSO authentication failed. Please try again.')
 
     // A provider with enforce_mfa=true leaves the session mfa_pending and lands
     // the user here. Render the actual step-up control (TOTP / passkey) instead

@@ -13,6 +13,7 @@ import {
 import { readThemePreference, persistThemePreference, type ThemePreference } from '@/lib/ui/theme'
 import { PALETTES, readPalettePreference, persistPalettePreference } from '@/lib/ui/themePalette'
 import { apiFetch } from '@/lib/api/apiClient'
+import { normalizeKeyword } from '@/lib/notifications/keywords'
 import { TabList, TabPanel } from '@/components/a11y/TabList'
 import { useConfirm } from '@/components/a11y'
 import { EmergencyContactPanel } from '@/components/user/EmergencyContactPanel'
@@ -556,6 +557,7 @@ function AccountTab() {
    ═══════════════════════════════════════════════════════════════════════ */
 function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: Partial<UserPreferences>) => void }) {
   const [keywords, setKeywords] = useState(prefs.notifyKeywords.join(', '))
+  const [kwLoading, setKwLoading] = useState(true)
   // Server-side notification flags
   const [serverFlags, setServerFlags] = useState<{
     mentions_enabled: boolean
@@ -582,7 +584,17 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
         })
       }
     }).finally(() => setServerLoading(false))
-  }, [])
+
+    // Load keywords from the canonical server store
+    void apiFetch('/api/notifications/keywords').then(r => r.ok ? r.json() : null).then(d => {
+      if (d && Array.isArray(d.keywords)) {
+        const kws: string[] = d.keywords as string[]
+        setKeywords(kws.join(', '))
+        // Keep localStorage in sync as a read cache
+        save({ notifyKeywords: kws })
+      }
+    }).finally(() => setKwLoading(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveServerFlag = useCallback((patch: Partial<typeof serverFlags>) => {
     setServerFlags(prev => ({ ...prev, ...patch }))
@@ -683,10 +695,41 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
       <p className="pref-section-desc">Get notified when these words are mentioned (comma-separated).</p>
       <textarea className="pref-textarea" value={keywords} rows={3}
         placeholder="e.g. deploy, production, urgent"
+        disabled={kwLoading}
         onChange={e => setKeywords(e.target.value)}
         onBlur={() => {
-          const kw = keywords.split(',').map(k => k.trim()).filter(Boolean)
-          save({ notifyKeywords: kw })
+          // Normalize exactly like the server (trim + lowercase + collapse
+          // whitespace, see lib/notifications/keywords.ts) and dedup BEFORE
+          // diffing — otherwise "Deploy" vs server-stored "deploy" produces a
+          // racing POST+DELETE pair that silently drops the keyword.
+          const next = Array.from(new Set(
+            keywords.split(',').map(k => normalizeKeyword(k)).filter(Boolean)
+          ))
+          // Normalize prev as well: a legacy localStorage cache can hold
+          // un-normalized entries ("Deploy"), and DELETE normalizes server-side
+          // — diffing raw prev would delete the keyword we just added.
+          const prev = Array.from(new Set(
+            prefs.notifyKeywords.map(k => normalizeKeyword(k)).filter(Boolean)
+          ))
+          // Sync adds and removes to the server
+          const toAdd = next.filter(k => !prev.includes(k))
+          const toRemove = prev.filter(k => !next.includes(k))
+          for (const kw of toAdd) {
+            void apiFetch('/api/notifications/keywords', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keyword: kw }),
+            })
+          }
+          for (const kw of toRemove) {
+            void apiFetch('/api/notifications/keywords', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keyword: kw }),
+            })
+          }
+          // Keep localStorage in sync as a write-through cache
+          save({ notifyKeywords: next })
         }} />
     </div>
   )

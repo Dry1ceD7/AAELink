@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Hash, Lock, Search, X, Users } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 
@@ -10,9 +10,10 @@ interface BrowseChannel {
   display_name: string
   type: string
   purpose?: string
-  header?: string
+  description?: string
   member_count?: number
   joined?: boolean
+  is_org_wide?: boolean
 }
 
 interface Props {
@@ -22,44 +23,65 @@ interface Props {
   onJoined: (ch: BrowseChannel) => void
 }
 
+const DEBOUNCE_MS = 300
+
 /**
  * ChannelBrowseModal — Slack-style modal for discovering and joining
- * public channels in the workspace. Filterable by name/purpose.
+ * public channels in the workspace. Search is server-side via
+ * /api/search/channels (debounced), with member_count + joined state
+ * returned from the server.
  */
 export const ChannelBrowseModal = memo(function ChannelBrowseModal({ workspaceId, open, onClose, onJoined }: Props) {
-  const [allChannels, setAllChannels] = useState<BrowseChannel[]>([])
+  const [channels, setChannels] = useState<BrowseChannel[]>([])
+  const [total, setTotal] = useState(0)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [joiningId, setJoiningId] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load all available channels for workspace
+  // Fetch from server whenever open/workspaceId/query changes (debounced on query)
   useEffect(() => {
     if (!open || !workspaceId) return
     let cancelled = false
-    setLoading(true)
-    void (async () => {
-      try {
-        const res = await apiFetch(`/api/channels?team_id=${encodeURIComponent(workspaceId)}&include_all=true`)
-        if (!res.ok) return
-        const data = await res.json() as { channels?: BrowseChannel[] }
-        if (!cancelled) setAllChannels(data.channels ?? [])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open, workspaceId])
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase().trim()
-    if (!q) return allChannels.filter(c => c.type !== 'D' && c.type !== 'G')
-    return allChannels
-      .filter(c => c.type !== 'D' && c.type !== 'G')
-      .filter(c =>
-        (c.display_name || c.name).toLowerCase().includes(q) ||
-        (c.purpose || '').toLowerCase().includes(q)
-      )
-  }, [allChannels, query])
+    const doFetch = (q: string) => {
+      setLoading(true)
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ workspace_id: workspaceId, limit: '50', offset: '0' })
+          if (q) params.set('q', q)
+          const res = await apiFetch(`/api/search/channels?${params.toString()}`)
+          if (!res.ok) return
+          const data = await res.json() as { channels?: BrowseChannel[]; total?: number }
+          if (!cancelled) {
+            setChannels(data.channels ?? [])
+            setTotal(data.total ?? 0)
+          }
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      })()
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doFetch(query), query ? DEBOUNCE_MS : 0)
+
+    return () => {
+      cancelled = true
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [open, workspaceId, query])
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setQuery('')
+      setChannels([])
+      setTotal(0)
+    }
+  }, [open])
+
+  const filtered = channels
 
   const handleJoin = useCallback(async (ch: BrowseChannel) => {
     setJoiningId(ch.id)
@@ -82,7 +104,9 @@ export const ChannelBrowseModal = memo(function ChannelBrowseModal({ workspaceId
       <div className="modal-panel slack-card channel-browse-modal" role="dialog" aria-modal="true"
         onClick={e => e.stopPropagation()} style={{ maxWidth: 640, width: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Browse channels</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>
+            Browse channels{total > 0 && !loading ? <span style={{ fontWeight: 400, fontSize: 14, color: 'var(--mm-muted)', marginLeft: 8 }}>{total} channel{total !== 1 ? 's' : ''}</span> : null}
+          </h2>
           <button type="button" className="mm-icon-btn" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>

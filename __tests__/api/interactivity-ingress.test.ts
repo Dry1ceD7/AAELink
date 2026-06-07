@@ -20,8 +20,8 @@ async function registerSubscription(opts: { events: string[]; secret: string }):
   await ctx.pool.query(
     `INSERT INTO aaelink.event_subscriptions
        (id, bot_id, endpoint_url, events, signing_secret, status, workspace_id, description,
-        delivery_count, failure_count, created_by, created_at)
-     VALUES ($1, NULL, $2, $3, $4, 'active', NULL, 'test', 0, 0, NULL, $5)`,
+        delivery_count, failure_count, created_by, created_at, verified, verified_at)
+     VALUES ($1, NULL, $2, $3, $4, 'active', NULL, 'test', 0, 0, NULL, $5, true, $5)`,
     [id, 'https://app.example.com/events', JSON.stringify(opts.events), opts.secret, Date.now()]
   )
   subIds.push(id)
@@ -69,14 +69,17 @@ describe('POST /api/integrations/interactivity', () => {
     expect(body.ok).toBe(true)
     expect(body.dispatched).toBeGreaterThanOrEqual(1)
 
-    // A delivery job was queued for the subscription.
+    // A delivery job was queued for OUR subscription. Other suites (e.g.
+    // scheduled-message delivery → emitMessageCreated) also enqueue
+    // event_deliver jobs into the shared table, so filter by subscription_id
+    // instead of grabbing rows[0].
     const { rows } = await ctx.pool.query(
       `SELECT payload FROM aaelink.jobs WHERE type = 'event_deliver'`
     )
-    expect(rows.length).toBeGreaterThanOrEqual(1)
-    const jobPayload = JSON.parse(rows[0].payload as string)
-    expect(jobPayload.subscription_id).toBe(subId)
-    expect(jobPayload.event_type).toBe('interaction')
+    const jobPayloads = rows.map(r => JSON.parse(r.payload as string))
+    const ours = jobPayloads.filter(p => p.subscription_id === subId)
+    expect(ours.length).toBeGreaterThanOrEqual(1)
+    expect(ours[0].event_type).toBe('interaction')
   })
 
   it('rejects a replayed (already-seen) signature with 401', async () => {

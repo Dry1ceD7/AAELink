@@ -20,8 +20,6 @@ async function _GET(req: NextRequest) {
 
   const wsId = req.nextUrl.searchParams.get('workspace_id') || ''
 
-  await ensureTeamPrefsTable(pool)
-
   const { rows } = await pool.query(
     `SELECT key, value FROM aaelink.team_preferences WHERE workspace_id = $1 ORDER BY key`,
     [wsId || '__default__']
@@ -79,7 +77,6 @@ async function _POST(req: NextRequest) {
   const wsId = body.workspace_id || '__default__'
   const prefs = body.preferences || {}
 
-  await ensureTeamPrefsTable(pool)
   const now = Date.now()
 
   for (const [key, value] of Object.entries(prefs)) {
@@ -92,18 +89,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, updated: Object.keys(prefs).length })
-}
-
-async function ensureTeamPrefsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.team_preferences (
-      workspace_id TEXT NOT NULL DEFAULT '__default__',
-      key          TEXT NOT NULL,
-      value        TEXT NOT NULL DEFAULT '',
-      updated_at   BIGINT NOT NULL DEFAULT 0,
-      PRIMARY KEY (workspace_id, key)
-    )
-  `).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/team/preferences', _GET)
