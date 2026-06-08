@@ -9,7 +9,8 @@ import {
   useRef,
   useState
 } from 'react'
-import { EmojiPicker, EMOJI_DATA } from './EmojiPicker'
+import { EmojiPicker } from './EmojiPicker'
+import { EMOJI_DATA, emojiMatches } from './emojiData'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -87,6 +88,22 @@ const EMOJI_MAX = 8
 function mentionLabel(u: MentionCandidate): string {
   const full = `${u.first_name || ''} ${u.last_name || ''}`.trim()
   return full || u.nickname || u.username
+}
+
+/** Subtle vertical divider separating logical toolbar groups. */
+function ToolbarSeparator() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 1,
+        alignSelf: 'stretch',
+        margin: '4px 4px',
+        background: 'var(--mm-border-subtle, var(--mm-border, rgba(0,0,0,0.1)))',
+        flex: '0 0 auto'
+      }}
+    />
+  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -175,7 +192,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           setMentionQuery(null)
         }
         // Emoji ":" autocomplete detection
-        const emojiMatch = /(?:^|\s):([a-zA-Z0-9_]{1,20})$/.exec(textBefore)
+        const emojiMatch = /(?:^|\s):([a-zA-Z0-9_+-]{1,20})$/.exec(textBefore)
         if (emojiMatch) {
           setEmojiQuery(emojiMatch[1])
           setEmojiIdx(0)
@@ -265,10 +282,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // ── Emoji candidates filtered by :query ─────────────────────────────────
   const emojiCandidates = emojiQuery !== null
     ? EMOJI_DATA
-        .filter(e => {
-          const q = emojiQuery.toLowerCase()
-          return e.name.toLowerCase().includes(q)
-        })
+        .filter(e => emojiMatches(e, emojiQuery))
         .slice(0, EMOJI_MAX)
     : []
 
@@ -285,7 +299,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const known = new Set([...client.map(c => c.name), ...lib.map(c => c.name)])
     const custom = customCommands.filter(c => !known.has(c.name))
     return [...client, ...lib, ...custom]
-      .map(c => ({ name: c.name, desc: c.description }))
+      .map(c => {
+        // Use an explicit syntax/usage field when present; otherwise derive a
+        // simple hint from the command name so every entry shows how to invoke it.
+        const explicit = typeof c.usage === 'string' ? c.usage.trim() : ''
+        return {
+          name: c.name,
+          desc: c.description,
+          usage: explicit || `/${c.name}`
+        }
+      })
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [customCommands])
   const SLASH_MAX = 8
@@ -680,6 +703,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             >
               <strong>/{cmd.name}</strong>
               <small>{cmd.desc}</small>
+              <code className="slash-autocomplete-usage" style={{
+                fontSize: 11,
+                fontFamily: 'var(--mm-font-mono, ui-monospace, monospace)',
+                color: 'var(--mm-muted)',
+                opacity: 0.85
+              }}>{cmd.usage}</code>
             </button>
           ))}
         </div>
@@ -807,6 +836,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       </div>
         <div className="composer-inline-actions">
           <div className="toolbar" role="toolbar" aria-label="Formatting">
+            {/* Group: text formatting */}
             <button type="button" title="Bold (⌘B)" onClick={() => editor?.chain().focus().toggleBold().run()}>
               <Bold size={16} />
             </button>
@@ -822,6 +852,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <button type="button" title="Inline code" onClick={() => editor?.chain().focus().toggleCode().run()}>
               <Code size={16} />
             </button>
+
+            <ToolbarSeparator />
+
+            {/* Group: block formatting */}
+            <button type="button" title="Bullet list" onClick={() => editor?.chain().focus().toggleBulletList().run()}>
+              <List size={16} />
+            </button>
+            <button type="button" title="Numbered list" onClick={() => editor?.chain().focus().toggleOrderedList().run()}>
+              <ListOrdered size={16} />
+            </button>
+            <button type="button" title="Block quote" onClick={() => editor?.chain().focus().toggleBlockquote().run()}>
+              <Quote size={16} />
+            </button>
+            <button type="button" title="Code block" onClick={() => editor?.chain().focus().toggleCodeBlock().run()}>
+              <FileCode size={16} />
+            </button>
+
+            <ToolbarSeparator />
+
+            {/* Group: emoji */}
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <button type="button" title="Emoji" onClick={() => setComposerEmojiOpen(o => !o)}>
                 <Smile size={16} />
@@ -839,21 +889,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 </div>
               )}
             </div>
-            <button type="button" title="Bullet list" onClick={() => editor?.chain().focus().toggleBulletList().run()}>
-              <List size={16} />
-            </button>
-            <button type="button" title="Numbered list" onClick={() => editor?.chain().focus().toggleOrderedList().run()}>
-              <ListOrdered size={16} />
-            </button>
-            <button type="button" title="Block quote" onClick={() => editor?.chain().focus().toggleBlockquote().run()}>
-              <Quote size={16} />
-            </button>
-            <button type="button" title="Code block" onClick={() => editor?.chain().focus().toggleCodeBlock().run()}>
-              <FileCode size={16} />
-            </button>
+
+            <ToolbarSeparator />
+
+            {/* Group: media */}
             <button type="button" title="Attach file" onClick={() => void handleAttach()}>
               <Paperclip size={16} />
             </button>
+
+            <ToolbarSeparator />
+
+            {/* Group: expand */}
             <button
               type="button"
               title={expanded ? 'Collapse composer (⌘⇧F)' : 'Expand composer (⌘⇧F)'}
@@ -862,6 +908,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             >
               {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
+
+            {/* Group: clip (only when recording handlers are wired) */}
+            {(onRecordAudio || onRecordVideo) && <ToolbarSeparator />}
             {onRecordAudio && (
               <button type="button" title="Record audio clip" onClick={onRecordAudio}>
                 <Mic size={16} />
@@ -875,24 +924,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </div>
           <div className="toolbar-spacer" />
           {(() => {
-            const charCount = editor?.storage?.characterCount?.characters?.() ?? editor?.getText()?.length ?? 0
+            const charCount = editor?.getText()?.length ?? 0
             const MAX_CHARS = 4000
-            const showCounter = charCount > MAX_CHARS * 0.95
             const isOver = charCount > MAX_CHARS
-            if (!showCounter) return null
+            const ratio = MAX_CHARS > 0 ? Math.min(charCount / MAX_CHARS, 1) : 0
+            const nearLimit = ratio >= 0.95
+            const veryNear = ratio >= 0.98
+            // Always show a muted counter; ramp color toward red as the limit
+            // nears, then invert to a solid danger pill once the limit is exceeded.
+            const counterColor = isOver
+              ? '#fff'
+              : veryNear
+                ? 'var(--mm-danger, #d24b4e)'
+                : nearLimit
+                  ? 'var(--mm-warning, #c47d12)'
+                  : 'var(--mm-muted)'
             return (
               <span
                 className="composer-char-counter"
                 style={{
                   fontSize: 11,
-                  fontWeight: 600,
+                  fontWeight: nearLimit ? 600 : 500,
                   fontVariantNumeric: 'tabular-nums',
                   padding: '2px 6px',
                   borderRadius: 8,
                   marginRight: 6,
-                  color: isOver ? '#fff' : charCount > MAX_CHARS * 0.98 ? 'var(--mm-danger, #d24b4e)' : 'var(--mm-muted)',
+                  color: counterColor,
                   background: isOver ? 'var(--mm-danger, #d24b4e)' : 'transparent',
-                  transition: 'color 0.2s, background 0.2s'
+                  transition: 'color 0.2s, background 0.2s, font-weight 0.2s'
                 }}
                 title={isOver ? `Message exceeds ${MAX_CHARS} character limit` : `${MAX_CHARS - charCount} characters remaining`}
               >

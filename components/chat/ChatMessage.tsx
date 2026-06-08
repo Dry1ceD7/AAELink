@@ -63,11 +63,11 @@ interface ChatMessageProps {
   compact?: boolean
 }
 
-function MessageHeader({ label, time, fullDate, edited, onAuthorClick, onEditedClick }: { label: string, time: string, fullDate?: string, edited?: boolean, onAuthorClick?: () => void, onEditedClick?: () => void }) {
+function MessageHeader({ label, time, fullDate, edited, authorId, onAuthorClick, onEditedClick }: { label: string, time: string, fullDate?: string, edited?: boolean, authorId?: string, onAuthorClick?: () => void, onEditedClick?: () => void }) {
   return (
     <div className="message-meta">
       {onAuthorClick ? (
-        <button type="button" className="message-author-btn" onClick={onAuthorClick}>
+        <button type="button" className="message-author-btn" data-hovercard-userid={authorId} onClick={onAuthorClick}>
           <strong>{label}</strong>
         </button>
       ) : (
@@ -520,8 +520,9 @@ export const ChatMessage = memo(function ChatMessage({
           <span className="compact-time">{time}</span>
         </div>
       ) : (
-        <div className="avatar" aria-hidden="true"
-          style={{ 
+        <div className="avatar"
+          data-hovercard-userid={post.user_id}
+          style={{
             cursor: onAvatarClick ? 'pointer' : undefined,
             ...(u?.avatar_url ? {
               backgroundImage: `url(${u.avatar_url})`,
@@ -548,7 +549,7 @@ export const ChatMessage = memo(function ChatMessage({
           onMentionClick(target.dataset.mentionUsername!)
         }
       }}>
-        {!compact && <MessageHeader label={label} time={time} fullDate={fullDate} edited={Boolean(post.edited_at)} onAuthorClick={onAvatarClick ? () => onAvatarClick(post.user_id) : undefined} onEditedClick={() => setEditHistoryOpen(true)} />}
+        {!compact && <MessageHeader label={label} time={time} fullDate={fullDate} edited={Boolean(post.edited_at)} authorId={post.user_id} onAuthorClick={onAvatarClick ? () => onAvatarClick(post.user_id) : undefined} onEditedClick={() => setEditHistoryOpen(true)} />}
         <MessageBody message={post.message} />
         {post.file_attachments && post.file_attachments.length > 0 && (
           <FileAttachmentCards attachments={post.file_attachments} />

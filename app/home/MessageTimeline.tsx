@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef } from 'react'
-import { Hash, Lock, Users } from 'lucide-react'
+import { useState } from 'react'
+import { Clock, Hash, Lock, Users } from 'lucide-react'
+import { ScheduledMessagesPanel } from '@/components/chat/ScheduledMessagesPanel'
 import { ChatMessage, type AppUser, displayName } from '@/components/chat/ChatMessage'
 import { SystemMessage, isSystemPost } from '@/components/chat/SystemMessage'
 import { Composer, type ComposerHandle } from '@/components/chat/Composer'
@@ -126,9 +127,20 @@ export function MessageTimeline({
   onAddMembers,
   onAddBookmark,
 }: MessageTimelineProps) {
+  const [scheduledOpen, setScheduledOpen] = useState(false)
   return (
     <>
       <div className="message-timeline aae-timeline" ref={timelineRef} style={{ position: 'relative' }}>
+        {/* Scheduled-messages affordance (Slack "Scheduled send") */}
+        <button
+          type="button"
+          className="ghost-button scheduled-affordance"
+          onClick={() => setScheduledOpen(true)}
+          aria-label="View scheduled messages"
+          style={{ position: 'absolute', top: 6, right: 8, zIndex: 2, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px' }}
+        >
+          <Clock size={13} /> Scheduled
+        </button>
         {/* Jump-to-date pill */}
         {posts.length > 0 && (
           <JumpToDate
@@ -223,7 +235,9 @@ export function MessageTimeline({
           const prevPost = visiblePosts[index - 1]
           const isSameUser = prevPost && prevPost.user_id === post.user_id
           const timeDiff = prevPost ? post.create_at - prevPost.create_at : Infinity
-          const isCompact = Boolean(isSameUser && timeDiff < 5 * 60 * 1000)
+          // Slack-style compact grouping: collapse consecutive same-author
+          // posts within a 2-minute window (matches Slack more closely than 5m).
+          const isCompact = Boolean(isSameUser && timeDiff < 2 * 60 * 1000)
           const postDate = new Date(post.create_at).toLocaleDateString()
           const prevDate = prevPost ? new Date(prevPost.create_at).toLocaleDateString() : null
           const showDateDivider = postDate !== prevDate
@@ -299,6 +313,19 @@ export function MessageTimeline({
         onDraftChange={emitTyping}
         onRecordAudio={onRecordAudio}
         onRecordVideo={onRecordVideo} />
+
+      {scheduledOpen && (
+        <div
+          className="scheduled-panel-overlay"
+          style={{ position: 'absolute', inset: 0, zIndex: 30, background: 'var(--mm-main-bg)' }}
+        >
+          <ScheduledMessagesPanel
+            open={scheduledOpen}
+            onClose={() => setScheduledOpen(false)}
+            channelId={channel?.id}
+          />
+        </div>
+      )}
     </>
   )
 }

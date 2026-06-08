@@ -2,21 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageSquare, Shield, Phone, Building2, BellOff, Clock } from 'lucide-react'
+import { MessageSquare, Shield, Phone, Building2, BellOff, Clock, User } from 'lucide-react'
+import { apiFetch } from '@/lib/api/apiClient'
 import type { AppUser } from '@/components/chat/ChatMessage'
 
 /**
- * Per-mention hovercard. Mounts once at the page root and listens for
- * `mouseenter`/`mouseleave` on any `[data-mention-username]` element under
- * `targetRef`. After a 300ms hover delay it shows a mini profile card
- * positioned next to the mention. Closes on mouse leave (with a 150ms
- * grace period so the card itself can be hovered).
+ * Page-level hovercard. Mounts once at the page root and listens for
+ * `mouseenter`/`mouseleave` on any element that opts in via either:
+ *   - `[data-mention-username]` — resolved against the username index
+ *     (used by inline @mentions), or
+ *   - `[data-hovercard-userid]` — resolved directly by user id (used by
+ *     message avatars and author names).
+ * After a 400ms hover delay it shows a mini profile card positioned next to
+ * the trigger. Closes on mouse leave (with a 150ms grace period so the card
+ * itself can be hovered).
  *
  * Closes immediately on Escape and on any click outside the card.
  *
  * `userMap` is the page-level username/id map. `getStatus(userId)` returns
  * the live presence string (`online` | `away` | `dnd` | `offline`).
  */
+
+const TRIGGER_SELECTOR = '[data-mention-username], [data-hovercard-userid]'
+const OPEN_DELAY_MS = 400
+const CLOSE_GRACE_MS = 150
 
 interface Props {
   userMap: Record<string, AppUser>
@@ -55,6 +64,9 @@ interface OpenState {
 
 export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile }: Props) {
   const [state, setState] = useState<OpenState | null>(null)
+  // Fresh profile fields fetched lazily when a card opens, keyed by user id so
+  // a stale fetch for a previous user can never bleed into the current card.
+  const [enriched, setEnriched] = useState<{ id: string; fields: Partial<AppUser> } | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
@@ -67,6 +79,15 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
       if (u && u.username) idx.set(u.username, u)
     }
     usernameIndex.current = idx
+  }, [userMap])
+
+  // Resolve a trigger element to its user via either supported data attribute.
+  const resolveUser = useCallback((el: HTMLElement): AppUser | undefined => {
+    const byId = el.dataset.hovercardUserid
+    if (byId) return userMap[byId]
+    const uname = el.dataset.mentionUsername
+    if (uname) return usernameIndex.current.get(uname)
+    return undefined
   }, [userMap])
 
   const cancelHoverTimer = useCallback(() => {
@@ -85,26 +106,24 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
   useEffect(() => {
     if (typeof document === 'undefined') return
     const onEnter = (ev: Event) => {
-      const target = (ev.target as HTMLElement | null)?.closest('[data-mention-username]') as HTMLElement | null
+      const target = (ev.target as HTMLElement | null)?.closest(TRIGGER_SELECTOR) as HTMLElement | null
       if (!target) return
-      const uname = target.dataset.mentionUsername
-      if (!uname) return
-      const user = usernameIndex.current.get(uname)
+      const user = resolveUser(target)
       if (!user) return
       cancelHoverTimer()
       cancelCloseTimer()
       hoverTimer.current = setTimeout(() => {
         const rect = target.getBoundingClientRect()
         setState({ user, anchor: rect })
-      }, 300)
+      }, OPEN_DELAY_MS)
     }
     const onLeave = (ev: Event) => {
       const t = ev.target as HTMLElement | null
-      if (!t || !t.closest?.('[data-mention-username]')) return
+      if (!t || !t.closest?.(TRIGGER_SELECTOR)) return
       cancelHoverTimer()
       // Grace period — let the user move into the card itself.
       cancelCloseTimer()
-      closeTimer.current = setTimeout(() => setState(null), 150)
+      closeTimer.current = setTimeout(() => setState(null), CLOSE_GRACE_MS)
     }
     document.addEventListener('mouseenter', onEnter, true)
     document.addEventListener('mouseleave', onLeave, true)
@@ -114,7 +133,7 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
       cancelHoverTimer()
       cancelCloseTimer()
     }
-  }, [cancelHoverTimer, cancelCloseTimer])
+  }, [cancelHoverTimer, cancelCloseTimer, resolveUser])
 
   // Esc + click-outside dismiss.
   useEffect(() => {
@@ -137,9 +156,42 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
     }
   }, [state])
 
+  // Best-effort fresh profile fetch when a card opens. Enriches title/phone/
+  // timezone/custom-status that the page-level userMap may not carry. Aborts
+  // on close/unmount and discards results if the open user changed mid-flight.
+  const openUserId = state?.user.id
+  useEffect(() => {
+    if (!openUserId) return
+    const ctrl = new AbortController()
+    void (async () => {
+      try {
+        const res = await apiFetch(`/api/users/profile?user_id=${encodeURIComponent(openUserId)}`, { signal: ctrl.signal })
+        if (!res.ok) return
+        const data = (await res.json().catch(() => ({}))) as { profile?: Record<string, unknown> }
+        const p = data?.profile
+        if (!p || typeof p !== 'object' || ctrl.signal.aborted) return
+        const fields: Partial<AppUser> = {}
+        if (typeof p.title === 'string' && p.title) fields.job_title = p.title
+        if (typeof p.phone === 'string' && p.phone) fields.phone = p.phone
+        if (typeof p.timezone === 'string' && p.timezone) fields.timezone = p.timezone
+        if (typeof p.status_text === 'string') fields.status_text = p.status_text
+        if (typeof p.status_emoji === 'string') fields.status_emoji = p.status_emoji
+        setEnriched({ id: openUserId, fields })
+      } catch {
+        // Network/abort errors are non-fatal — the card still renders cached data.
+      }
+    })()
+    return () => ctrl.abort()
+  }, [openUserId])
+
   if (!state || typeof document === 'undefined') return null
 
-  const { user, anchor } = state
+  // Merge fresh fields only when they belong to the currently open user.
+  const baseUser = state.user
+  const user: AppUser = enriched && enriched.id === baseUser.id
+    ? { ...baseUser, ...enriched.fields }
+    : baseUser
+  const { anchor } = state
   const status = getStatus(user.id)
   const name = displayName(user)
   const initial = (name.slice(0, 1) || '?').toUpperCase()
@@ -169,7 +221,7 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
       onMouseEnter={cancelCloseTimer}
       onMouseLeave={() => {
         cancelCloseTimer()
-        closeTimer.current = setTimeout(() => setState(null), 150)
+        closeTimer.current = setTimeout(() => setState(null), CLOSE_GRACE_MS)
       }}
     >
       <div className="user-hovercard-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -209,6 +261,13 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
         </div>
       </div>
 
+      {(user.status_text || user.status_emoji) && (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--mm-text)', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+          {user.status_emoji && <span aria-hidden="true">{user.status_emoji}</span>}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.status_text}</span>
+        </div>
+      )}
+
       {(user.job_title) && (
         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--mm-muted)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -242,10 +301,15 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
         <Shield size={11} /> {roleLabel}
       </div>
 
-      <div style={{ marginTop: 12, display: 'flex', gap: 6 }}>
+      <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {onStartDm && (
           <button type="button" className="slack-button" onClick={() => { onStartDm(user.id); setState(null) }}>
             <MessageSquare size={12} /> Message
+          </button>
+        )}
+        {onOpenFullProfile && (
+          <button type="button" className="ghost-button" onClick={() => { onOpenFullProfile(user.id); setState(null) }}>
+            <User size={12} /> View profile
           </button>
         )}
         {user.phone && (
