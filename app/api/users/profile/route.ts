@@ -26,11 +26,17 @@ async function _GET(req: NextRequest) {
 
   const { rows } = await pool.query<{
     id: string; email: string; display_name: string; platform_role: string;
-    avatar_url: string; status: string; department_id: string; workspace_id: string;
-    created_at: number
+    avatar_url: string; department_id: string; created_at: number;
+    status_text: string; status_emoji: string
   }>(
-    `SELECT id, email, display_name, platform_role, avatar_url, status,
-            department_id, workspace_id, created_at
+    // The users table has no display_name/status/workspace_id columns — derive a
+    // display name from nickname > "first last" > username, and alias the
+    // free-text department column as department_id for the lookup below. Custom
+    // status text/emoji live on users; only expiry lives on user_status.
+    `SELECT id, email,
+            COALESCE(NULLIF(nickname, ''), NULLIF(TRIM(first_name || ' ' || last_name), ''), username) AS display_name,
+            platform_role, avatar_url, COALESCE(department, '') AS department_id, created_at,
+            COALESCE(status_text, '') AS status_text, COALESCE(status_emoji, '') AS status_emoji
      FROM aaelink.users WHERE id = $1`, [targetId]
   )
   if (!rows[0]) return NextResponse.json({ error: 'user_not_found' }, { status: 404 })
@@ -44,9 +50,9 @@ async function _GET(req: NextRequest) {
   const profile: Record<string, string> = {}
   for (const m of metaRows) profile[m.key.replace('profile.', '')] = m.value
 
-  // Get custom status
-  const { rows: statusRows } = await pool.query<{ status_text: string; status_emoji: string; expires_at: number }>(
-    `SELECT status_text, status_emoji, expires_at FROM aaelink.user_status WHERE user_id = $1`, [targetId]
+  // Custom-status expiry lives on user_status (text/emoji are on users, above).
+  const { rows: statusRows } = await pool.query<{ expires_at: number }>(
+    `SELECT expires_at FROM aaelink.user_status WHERE user_id = $1`, [targetId]
   )
 
   // Get department name
@@ -71,13 +77,13 @@ async function _GET(req: NextRequest) {
       avatar_url: user.avatar_url || '',
       role: user.platform_role,
       department: department_name,
-      status_text: statusRows[0]?.status_text || '',
-      status_emoji: statusRows[0]?.status_emoji || '',
+      status_text: user.status_text || '',
+      status_emoji: user.status_emoji || '',
       status_expiration: statusRows[0]?.expires_at || 0,
       fields: profile,
       is_bot: false,
       is_admin: ['super_admin', 'platform_admin'].includes(user.platform_role),
-      account_status: user.status,
+      account_status: 'active',
       created_at: user.created_at,
     },
   })
@@ -99,9 +105,10 @@ async function _PUT(req: NextRequest) {
   // accurate field list and stays a no-op for an empty PUT.
   const changedFields: string[] = []
 
-  // Update display_name directly on users table
+  // The users table has no display_name column; the editable display name maps
+  // to nickname (the field the display-name derivation prefers).
   if (body.display_name) {
-    await pool.query(`UPDATE aaelink.users SET display_name = $1 WHERE id = $2`, [body.display_name, uid])
+    await pool.query(`UPDATE aaelink.users SET nickname = $1 WHERE id = $2`, [body.display_name, uid])
     changedFields.push('display_name')
   }
 

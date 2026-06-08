@@ -4783,6 +4783,23 @@ async function migration057RetentionPolicies(pool: RunnerPool) {
   `)
 }
 
+// Per-user key/value store (e.g. profile.* custom fields read by the profile
+// route). Referenced by app/api/users/profile but never created — a missing
+// table that made GET /api/users/profile 500 on every hovercard fetch.
+async function migration059UserPreferences(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.user_preferences (
+      user_id    TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_at BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_preferences_user
+      ON aaelink.user_preferences(user_id);
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4840,4 +4857,5 @@ const MIGRATIONS: Migration[] = [
   { id: '054_workflow_engine', up: migration054WorkflowEngine },
   { id: '055_incoming_webhook_signing', up: migration055IncomingWebhookSigning },
   { id: '057_retention_policies', up: migration057RetentionPolicies },
+  { id: '059_user_preferences', up: migration059UserPreferences },
 ]

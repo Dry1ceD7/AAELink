@@ -75,8 +75,8 @@ async function _GET(req: NextRequest) {
         pool.query<ChannelRow>(
           `SELECT c.id, c.workspace_id, c.name, c.display_name, c.type,
                   COALESCE(c.is_default, false) AS is_default,
-                  COALESCE(c.archived, false) AS archived,
-                  c.purpose, c.topic, c.creator_id, c.created_at,
+                  COALESCE(c.is_archived, false) AS archived,
+                  c.purpose, c.topic, '' AS creator_id, c.created_at,
                   (SELECT COUNT(*)::int FROM aaelink.channel_members cm WHERE cm.channel_id = c.id) AS member_count,
                   (SELECT COUNT(*)::int FROM aaelink.messages m
                      WHERE m.channel_id = c.id
@@ -86,7 +86,7 @@ async function _GET(req: NextRequest) {
                        AND m.user_id <> $1) AS unread_count
            FROM aaelink.channels c
            INNER JOIN aaelink.channel_members cm ON cm.channel_id = c.id AND cm.user_id = $1
-           WHERE c.workspace_id = $2 AND COALESCE(c.archived, false) = false
+           WHERE c.workspace_id = $2 AND COALESCE(c.is_archived, false) = false
            ORDER BY c.is_default DESC, c.display_name ASC`,
           [uid, workspaceId]
         ),
