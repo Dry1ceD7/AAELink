@@ -1428,6 +1428,10 @@ select.slack-input {
   padding: 12px 16px;
   border-bottom: 1px solid var(--mm-sidebar-border);
   font-size: 15px;
+  /* Explicit background: background is not inherited, so the header's
+     transparent default shows through to .app-shell's white --mm-main-bg.
+     Pin it to the sidebar color so the white text is always legible. */
+  background: var(--slack-sidebar-grad-1);
   color: #ffffff;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -1466,7 +1470,9 @@ select.slack-input {
 }
 
 /* ── Workspace header button (Slack/MM style) ──────────────── */
-.ws-header-btn {
+/* Scoped inside .app-shell to raise specificity above any unscoped
+   button resets and guarantee white text on the dark navy sidebar. */
+.app-shell .ws-header-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1481,17 +1487,24 @@ select.slack-input {
   transition: background 0.12s ease;
 }
 
-.ws-header-btn:hover {
+.app-shell .ws-header-btn:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.ws-header-chevron {
+/* Explicit white on the workspace name text so it is never overridden
+   by inheritance from a light-colored ancestor. */
+.app-shell .ws-header-btn strong {
+  color: #fff;
+}
+
+.app-shell .ws-header-chevron {
+  color: #fff;
   opacity: 0.6;
   transition: transform 0.12s ease, opacity 0.12s ease;
   flex-shrink: 0;
 }
 
-.ws-header-chevron--open {
+.app-shell .ws-header-chevron--open {
   transform: rotate(180deg);
   opacity: 1;
 }
