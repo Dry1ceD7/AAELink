@@ -86,7 +86,9 @@ export function useMessageKeyNav(
     const onKeyDown = (e: KeyboardEvent) => {
       if (isInputFocused()) return
 
-      const key = e.key.toLowerCase()
+      // e.key can be undefined for synthetic/composition events — guard before toLowerCase.
+      const key = (e.key || '').toLowerCase()
+      if (!key) return
       const len = postsRef.current.length
       if (len === 0) return
 
