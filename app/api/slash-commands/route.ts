@@ -6,6 +6,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { signPayload, generateSigningSecret } from '@/lib/webhooks/webhookSigning'
+import { mintResponseToken } from '@/lib/comms/slashResponseToken'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import {
   normalizeHostname,
@@ -366,6 +367,19 @@ async function dispatchCustomCommand(
     return NextResponse.json({ response_type: 'ephemeral', text: `Command delivery failed: ${dnsCheck.error}` })
   }
 
+  // Mint a signed, single-channel-scoped, expiring response_url so the external
+  // app can POST delayed/async replies back into THIS channel (Slack parity §14:
+  // up to 5 uses within ~30 min). The token binds channel/user/command/workspace
+  // and is consumed by POST /api/slash-commands/response. Best-effort: a mint
+  // failure must not block the synchronous dispatch (response_url falls back to
+  // null, matching prior behavior).
+  let responseUrl: string | null = null
+  try {
+    const token = await mintResponseToken(pool, { channelId, userId, command, workspaceId })
+    const base = process.env.NEXT_PUBLIC_APP_URL?.trim() || ''
+    responseUrl = `${base}/api/slash-commands/response?token=${encodeURIComponent(token)}`
+  } catch { /* response_url remains null when the token store is unavailable */ }
+
   // Compute the timestamp once so the payload's `ts` matches the value the
   // signature covers (signPayload signs `body`, which embeds this same ts).
   const ts = Math.floor(Date.now() / 1000)
@@ -375,7 +389,7 @@ async function dispatchCustomCommand(
     user_id: userId,
     channel_id: channelId,
     workspace_id: workspaceId,
-    response_url: null,
+    response_url: responseUrl,
     ts: String(ts),
   }
   const body = JSON.stringify(payload)

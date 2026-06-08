@@ -221,7 +221,13 @@ describe('slash-commands — dispatch', () => {
       expect(payload.user_id).toBe(adminUser.id)
       expect(payload.channel_id).toBe(channel.id)
       expect(payload.workspace_id).toBe(wsId)
-      expect(payload.response_url).toBeNull()
+      // Slack parity §14: dispatch now mints a delayed-response token and embeds
+      // it as response_url (was null). It points at the receiver endpoint and
+      // carries an opaque <rowId>.<hmac> token; the signed body is still valid
+      // (verifySignature above passed over this same payload).
+      expect(typeof payload.response_url).toBe('string')
+      expect(payload.response_url as string).toContain('/api/slash-commands/response?token=')
+      expect(payload.response_url as string).toMatch(/token=[0-9a-f-]+\.[0-9a-f]+/)
       expect(typeof payload.ts).toBe('string')
     } finally {
       vi.unstubAllGlobals()
