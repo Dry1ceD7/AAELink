@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 import { DocumentViewer } from './DocumentViewer'
 import { HtmlTemplatesPanel } from '@/components/workspace/HtmlTemplatesPanel'
 import { ClientsPanel } from '@/components/user/ClientsPanel'
@@ -50,7 +51,7 @@ export function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
     if (res.status === 401) { window.location.href = '/login'; return }
     if (res.status === 503) { setConfigError('Documents are not available. Contact IT.'); setDocs([]); return }
     if (res.status === 403) { setConfigError('You are not a member of this workspace.'); setDocs([]); return }
-    if (!res.ok) return
+    if (!res.ok) { toast.error('Failed to load documents.'); return }
     const data = await res.json()
     setDocs(data.documents ?? [])
     setConfigError('')
@@ -66,11 +67,12 @@ export function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
     data.set('file', next)
     const res = await apiFetch('/api/documents', { method: 'POST', body: data })
     setBusy(false)
-    if (res.status === 503) { setConfigError('Upload not available.'); return }
-    if (!res.ok) { setMessage('Upload failed.'); return }
+    if (res.status === 503) { setConfigError('Upload not available.'); toast.error('Upload not available.'); return }
+    if (!res.ok) { setMessage('Upload failed.'); toast.error('Upload failed.'); return }
     const body = await res.json()
     const id = body?.document?.id as string | undefined
     setFile(null); setMessage(id ? 'File saved.' : 'Upload complete.')
+    toast.success(id ? 'File saved.' : 'Upload complete.')
     if (id) setSelectedId(id)
     await loadDocs()
   }
@@ -85,7 +87,7 @@ export function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
     data.set('languages', 'eng')
     const res = await apiFetch('/api/documents/ocr', { method: 'POST', body: data })
     setBusy(false)
-    if (!res.ok) { setMessage('Processing failed. Check that Stirling-PDF is running.'); return }
+    if (!res.ok) { setMessage('Processing failed. Check that Stirling-PDF is running.'); toast.error('OCR processing failed. Check that Stirling-PDF is running.'); return }
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -100,23 +102,32 @@ export function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
   function pickFile() { inputRef.current?.click() }
 
   async function downloadStored(id: string) {
-    const res = await apiFetch(`/api/documents/${encodeURIComponent(id)}/download`)
-    if (!res.ok) { setMessage('Download failed.'); return }
-    const blob = await res.blob()
-    const row = docs.find(d => d.id === id)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = row?.filename || 'download'
-    a.click(); URL.revokeObjectURL(url)
+    try {
+      const res = await apiFetch(`/api/documents/${encodeURIComponent(id)}/download`)
+      if (res.status === 401) { window.location.href = '/login'; return }
+      if (!res.ok) { setMessage('Download failed.'); toast.error('Download failed.'); return }
+      const blob = await res.blob()
+      const row = docs.find(d => d.id === id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = row?.filename || 'download'
+      a.click(); URL.revokeObjectURL(url)
+    } catch {
+      setMessage('Download failed.'); toast.error('Download failed.')
+    }
   }
 
   async function confirmDeleteDoc() {
     const doc = pendingDeleteDoc; if (!doc) return
     setPendingDeleteDoc(null); setBusy(true); setMessage('Deleting...')
-    const res = await apiFetch(`/api/documents/${encodeURIComponent(doc.id)}`, { method: 'DELETE' })
-    setBusy(false)
-    if (!res.ok) { setMessage('Delete failed.'); return }
-    if (selectedId === doc.id) setSelectedId(null)
-    setMessage('File deleted.'); await loadDocs()
+    try {
+      const res = await apiFetch(`/api/documents/${encodeURIComponent(doc.id)}`, { method: 'DELETE' })
+      setBusy(false)
+      if (!res.ok) { setMessage('Delete failed.'); toast.error('Delete failed.'); return }
+      if (selectedId === doc.id) setSelectedId(null)
+      setMessage('File deleted.'); toast.success('File deleted.'); await loadDocs()
+    } catch {
+      setBusy(false); setMessage('Delete failed.'); toast.error('Delete failed.')
+    }
   }
 
   if (!workspaceId) return <p className="doc-muted">Choose a workspace to use documents.</p>
