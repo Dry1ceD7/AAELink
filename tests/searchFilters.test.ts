@@ -111,10 +111,17 @@ describe('parseSearchFilters — is: flags (multi-valued)', () => {
     } satisfies SearchFilters)
   })
 
-  it('leaves an unknown is:<flag> in the free text', () => {
-    const r = parseSearchFilters('plan is:dm')
+  it('supports is:dm', () => {
+    expect(parseSearchFilters('plan is:dm')).toEqual({
+      text: 'plan',
+      is: ['dm'],
+    } satisfies SearchFilters)
+  })
+
+  it('leaves a genuinely-unknown is:<flag> in the free text', () => {
+    const r = parseSearchFilters('plan is:bogus')
     expect(r.is).toBeUndefined()
-    expect(r.text).toContain('is:dm')
+    expect(r.text).toContain('is:bogus')
   })
 
   it('combines is: flags with single-value filters', () => {

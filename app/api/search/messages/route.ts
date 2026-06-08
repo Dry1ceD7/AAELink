@@ -13,7 +13,7 @@ import { searchMessages, type SearchHasFilter } from '@/lib/messaging/searchEngi
  * Full-text message search across channels the caller can read. Thin wrapper
  * over the shared FTS engine (lib/messaging/searchEngine.ts). All existing
  * params (q, workspace_id, channel_id, from, before, after, has) keep working;
- * channel_name, on, during, is, and sort are additive.
+ * channel_name, on, during, is (thread/pinned/saved/dm), and sort are additive.
  */
 const HAS_VALUES: SearchHasFilter[] = ['file', 'attachment', 'pin', 'reaction', 'link']
 
@@ -54,6 +54,7 @@ async function _GET(req: NextRequest) {
       isThread: isParams.has('thread'),
       isPinned: isParams.has('pinned'),
       isSaved: isParams.has('saved'),
+      isDm: isParams.has('dm'),
     },
   })
 

@@ -60,6 +60,7 @@ import { useStatusExpiry } from '@/lib/ui/useStatusExpiry'
 import { isDndActive } from '@/lib/comms/dndSchedule'
 import { evaluateNotification } from '@/lib/notifications/notificationSchedule'
 import AudioVideoClipRecorder from '@/components/media/AudioVideoClipRecorder'
+import FileBrowserPanel from '@/components/media/FileBrowserPanel'
 import { ModuleRenderer } from './ModuleRenderer'
 import { MORE_MODULE_KEYS } from './sidebarNav'
 import { InviteModal } from './InviteModal'
@@ -152,6 +153,7 @@ function HomeChat() {
   const [customStatusOpen, setCustomStatusOpen] = useState(false)
   const [channelNotifPrefsOpen, setChannelNotifPrefsOpen] = useState(false)
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false)
+  const [filesPaneOpen, setFilesPaneOpen] = useState(false)
   const [msgContextMenu, setMsgContextMenu] = useState<MessageContextMenuState | null>(null)
 
   /**
@@ -167,6 +169,7 @@ function HomeChat() {
     setPinnedPanelOpen(false)
     setMemberListOpen(false)
     setProfilePaneId(null)
+    setFilesPaneOpen(false)
   }, [])
 
   /**
@@ -180,6 +183,7 @@ function HomeChat() {
       setPinnedPanelOpen(false)
       setMemberListOpen(false)
       setProfilePaneId(null)
+      setFilesPaneOpen(false)
       return true
     })
   }, [])
@@ -189,6 +193,7 @@ function HomeChat() {
       setChannelInfoOpen(false)
       setMemberListOpen(false)
       setProfilePaneId(null)
+      setFilesPaneOpen(false)
       return true
     })
   }, [])
@@ -197,6 +202,17 @@ function HomeChat() {
       if (prev) return false
       setChannelInfoOpen(false)
       setPinnedPanelOpen(false)
+      setProfilePaneId(null)
+      setFilesPaneOpen(false)
+      return true
+    })
+  }, [])
+  const toggleFilesPane = useCallback(() => {
+    setFilesPaneOpen(prev => {
+      if (prev) return false
+      setChannelInfoOpen(false)
+      setPinnedPanelOpen(false)
+      setMemberListOpen(false)
       setProfilePaneId(null)
       return true
     })
@@ -211,6 +227,7 @@ function HomeChat() {
     setPinnedPanelOpen(false)
     setMemberListOpen(false)
     setProfilePaneId(null)
+    setFilesPaneOpen(false)
     setChannelInfoOpen(true)
   }, [])
 
@@ -1504,6 +1521,8 @@ function HomeChat() {
           streamUp={streamUp}
           meExists={Boolean(me)}
           onOpenChannelNotifPrefs={() => setChannelNotifPrefsOpen(true)}
+          onOpenFiles={toggleFilesPane}
+          filesPanelOpen={filesPaneOpen}
         />
 
         {/* ── Bookmark bar (Slack-style channel bookmarks) ──── */}
@@ -1762,6 +1781,17 @@ function HomeChat() {
           )}
         />
       )}
+
+      {/* ── Files browser panel (right sidebar) ───────────────── */}
+      {filesPaneOpen && (
+        <aside className="file-browser-pane" role="complementary" aria-label="Channel files">
+          <FileBrowserPanel
+            workspaceId={activeTeamId}
+            channelId={channel?.id}
+            onClose={() => setFilesPaneOpen(false)}
+          />
+        </aside>
+      )}
       </>
       )}
 
@@ -1866,6 +1896,7 @@ function HomeChat() {
           const match = channels.find(c => c.id === channelId)
           if (match) { setChannel(match); setChannelsOpen(false) }
         }}
+        onOpenProfile={uid => openProfilePane(uid)}
       />
 
       {/* ── Quick Switcher (Cmd+K) ────────────────────────────── */}
@@ -1885,6 +1916,7 @@ function HomeChat() {
       {profilePaneId && (
         <UserProfilePanel
           userId={profilePaneId}
+          currentUserId={me?.id}
           presenceStatus={getStatus(profilePaneId)}
           onClose={() => setProfilePaneId(null)}
           onMessage={(uid) => { void openDm(uid); setProfilePaneId(null) }}

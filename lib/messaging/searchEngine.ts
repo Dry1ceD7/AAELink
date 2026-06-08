@@ -70,6 +70,8 @@ export interface SearchEngineFilters {
   isPinned?: boolean
   /** is:saved — only messages the caller has saved. */
   isSaved?: boolean
+  /** is:dm — only direct-message channels (channel type 'D'). */
+  isDm?: boolean
 }
 
 export interface SearchEngineInput {
@@ -101,6 +103,16 @@ export interface SearchEngineHit {
   author_first_name: string
   author_last_name: string
   author_avatar_url: string | null
+  /** Presence status of the author (online/away/dnd/offline), defaults to 'offline' when unset. */
+  author_status: string
+  /** Number of replies under this message when it is a thread root (root_id = '' on replies pointing here). */
+  thread_reply_count: number
+  /** Total reaction rows attached to this message. */
+  reaction_count: number
+  /** Whether this message has at least one (non-deleted) file attachment. */
+  has_attachments: boolean
+  /** Whether this message is pinned in its channel. */
+  is_pinned: boolean
   rank: number
 }
 
@@ -237,7 +249,7 @@ export async function searchMessages(
     f.channelId || f.channelName || f.fromUser || f.on || f.during || f.before || f.after ||
     (typeof f.afterMs === 'number' && Number.isFinite(f.afterMs)) ||
     (Array.isArray(f.has) && f.has.length > 0) ||
-    f.isThread || f.isPinned || f.isSaved
+    f.isThread || f.isPinned || f.isSaved || f.isDm
   )
   // FTS text path requires >= 2 chars (websearch_to_tsquery on a 1-char token is
   // useless). Filters-only mode bypasses the @@ predicate entirely.
@@ -355,6 +367,11 @@ export async function searchMessages(
   if (f.isSaved) {
     extra.push(`EXISTS (SELECT 1 FROM aaelink.saved_messages sm WHERE sm.message_id = m.id AND sm.user_id = $1)`)
   }
+  // is:dm — restrict to direct-message channels. The ACL visibility clause already
+  // limits DMs to ones the caller participates in, so this just narrows channel type.
+  if (f.isDm) {
+    extra.push(`c.type = 'D'`)
+  }
 
   const visibility = visibilityClause(scope)
   const extraClause = extra.length ? ` AND ${extra.join(' AND ')}` : ''
@@ -399,11 +416,17 @@ export async function searchMessages(
       COALESCE(u.first_name, '') AS author_first_name,
       COALESCE(u.last_name, '') AS author_last_name,
       u.avatar_url AS author_avatar_url,
+      COALESCE(us.status, 'offline') AS author_status,
+      (SELECT COUNT(*) FROM aaelink.messages rm WHERE rm.root_id = m.id) AS thread_reply_count,
+      (SELECT COUNT(*) FROM aaelink.message_reactions mr WHERE mr.message_id = m.id) AS reaction_count,
+      EXISTS (SELECT 1 FROM aaelink.file_attachments fa2 WHERE fa2.message_id = m.id AND fa2.deleted_at = 0) AS has_attachments,
+      EXISTS (SELECT 1 FROM aaelink.pinned_messages pmf WHERE pmf.message_id = m.id) AS is_pinned,
       ${rankExpr} AS rank,
       ${highlightExpr} AS highlight
     FROM aaelink.messages m
     JOIN aaelink.channels c ON c.id = m.channel_id
     JOIN aaelink.users u ON u.id = m.user_id
+    LEFT JOIN aaelink.user_status us ON us.user_id = u.id
     WHERE ${whereCore}
     ORDER BY ${orderBy}
     LIMIT $${idx} OFFSET $${idx + 1}
@@ -440,6 +463,11 @@ export async function searchMessages(
       author_first_name: String(r.author_first_name || ''),
       author_last_name: String(r.author_last_name || ''),
       author_avatar_url: r.author_avatar_url == null ? null : String(r.author_avatar_url),
+      author_status: String(r.author_status || 'offline'),
+      thread_reply_count: Number(r.thread_reply_count) || 0,
+      reaction_count: Number(r.reaction_count) || 0,
+      has_attachments: r.has_attachments === true,
+      is_pinned: r.is_pinned === true,
       rank: Number(r.rank) || 0,
     })),
     total: countRows[0]?.total ?? 0,

@@ -15,7 +15,7 @@
  *   - on:<YYYY-MM-DD>            (whole calendar day)
  *   - during:<YYYY | YYYY-MM>   (whole year or month)
  *   - has:<link|file|attachment|pin|reaction>
- *   - is:<thread|pinned|saved>
+ *   - is:<thread|pinned|saved|dm>
  *
  * Anything not matching the `<key>:<value>` shape is left in the
  * `text` field, which is the actual `q` parameter the route uses for
@@ -32,7 +32,7 @@
  */
 
 /** `is:` boolean flags the engine understands. */
-export type IsFlag = 'thread' | 'pinned' | 'saved'
+export type IsFlag = 'thread' | 'pinned' | 'saved' | 'dm'
 
 export interface SearchFilters {
   text: string
@@ -50,7 +50,7 @@ export interface SearchFilters {
 // Single-value keys: last occurrence wins (matches the original behaviour).
 const FILTER_RE = /\b(from|in|before|after|on|during|has):(\S+)/gi
 // `is:` is multi-valued — one query can carry several (`is:thread is:pinned`).
-const IS_RE = /\bis:(thread|pinned|saved)\b/gi
+const IS_RE = /\bis:(thread|pinned|saved|dm)\b/gi
 
 /**
  * Parse a search query string into structured filters + free text.

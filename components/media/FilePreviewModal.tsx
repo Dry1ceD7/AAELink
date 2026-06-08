@@ -72,13 +72,19 @@ function isOffice(mime?: string, name?: string): boolean {
   return OFFICE_EXTS.has(ext(name))
 }
 
-// The convert route operates on aaelink.documents and needs the document id.
-// The modal only receives a URL, so derive the id from the canonical
-// /api/documents/:id/download shape. Returns '' when the URL is not a
-// documents-route URL (e.g. a file_attachments download) — office conversion
-// is unavailable in that case and we fall back to download.
+// The modal only receives a URL, so the convert routes are reached by deriving
+// the resource id from the canonical download URL shape. Two backends exist:
+//   - aaelink.documents        -> /api/documents/:id/download (JSON convert route)
+//   - aaelink.file_attachments -> /api/files/:id/download     (streaming convert)
+// Returns '' when the URL matches neither shape — office conversion is then
+// unavailable and the modal falls back to a download prompt.
 function documentIdFromUrl(url: string): string {
   const m = url.match(/\/api\/documents\/([^/]+)\/download/)
+  return m?.[1] || ''
+}
+
+function fileIdFromUrl(url: string): string {
+  const m = url.match(/\/api\/files\/([^/]+)\/download/)
   return m?.[1] || ''
 }
 
@@ -86,6 +92,7 @@ export function FilePreviewModal({ url, filename, mimeType, onClose }: Props) {
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const backdropRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   const showImage = isImage(mimeType, filename)
   const showPdf = isPdf(mimeType, filename)
@@ -99,19 +106,56 @@ export function FilePreviewModal({ url, filename, mimeType, onClose }: Props) {
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string>('')
   const [officeState, setOfficeState] = useState<'idle' | 'loading' | 'error'>('idle')
 
+  // Video poster: file attachments expose a generated thumbnail at
+  // /api/files/preview?file_id=…&thumb=1. Derive it from the download URL so the
+  // native player shows a frame before play. Empty when unavailable (no poster).
+  const videoPoster = (() => {
+    if (!showVideo) return undefined
+    const fileId = fileIdFromUrl(url)
+    return fileId ? `/api/files/preview?file_id=${encodeURIComponent(fileId)}&thumb=1` : undefined
+  })()
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
       if (e.key === '+' || e.key === '=') setZoom(z => Math.min(z + 0.25, 3))
       if (e.key === '-') setZoom(z => Math.max(z - 0.25, 0.25))
       if (e.key === 'r') setRotation(r => (r + 90) % 360)
+
+      // Video transport: spacebar toggles play/pause; arrows seek ±5s. Guarded to
+      // the video view so they don't fire for other previews.
+      const video = videoRef.current
+      if (!showVideo || !video) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        if (video.paused) void video.play().catch(() => { /* autoplay/gesture blocked */ })
+        else video.pause()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        video.currentTime = Math.min(video.currentTime + 5, video.duration || video.currentTime + 5)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        video.currentTime = Math.max(video.currentTime - 5, 0)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, showVideo])
 
   useEffect(() => {
-    if (!showOffice) return
+    if (!showOffice) { setConvertedPdfUrl(''); return }
+
+    // File attachments: the /api/files/:id/convert route streams the converted
+    // PDF bytes inline, so the iframe can point straight at it — no fetch needed.
+    const fileId = fileIdFromUrl(url)
+    if (fileId) {
+      setConvertedPdfUrl(`/api/files/${fileId}/convert`)
+      setOfficeState('idle')
+      return
+    }
+
+    // Documents: the /api/documents/:id/convert route persists a PDF version and
+    // returns its download URL as JSON; render that URL in the PDF iframe.
     const docId = documentIdFromUrl(url)
     if (!docId) { setOfficeState('error'); return }
     let cancelled = false
@@ -178,7 +222,9 @@ export function FilePreviewModal({ url, filename, mimeType, onClose }: Props) {
             />
           ) : showVideo ? (
             <video
+              ref={videoRef}
               src={url}
+              poster={videoPoster}
               controls
               autoPlay={false}
               style={{ maxWidth: '100%', maxHeight: '100%', outline: 'none' }}

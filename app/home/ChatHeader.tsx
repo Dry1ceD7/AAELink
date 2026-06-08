@@ -1,6 +1,6 @@
 'use client'
 
-import { Menu, Search, Hash, Lock, Info, Pin, Users } from 'lucide-react'
+import { Menu, Search, Hash, Lock, Info, Pin, Users, Folder } from 'lucide-react'
 import { ChannelHeaderDropdown } from '@/components/chat/ChannelHeaderDropdown'
 import { ChannelTopicInline } from '@/components/chat/ChannelTopicInline'
 import { ChannelNotificationPrefsPopover } from '@/components/chat/ChannelNotificationPrefsPopover'
@@ -28,6 +28,9 @@ interface ChatHeaderProps {
   streamUp: boolean
   meExists: boolean
   onOpenChannelNotifPrefs: () => void
+  /** Open the file browser in the right pane, pre-filtered to this channel. */
+  onOpenFiles?: () => void
+  filesPanelOpen?: boolean
 }
 
 export function ChatHeader({
@@ -50,6 +53,8 @@ export function ChatHeader({
   memberCount,
   streamUp,
   meExists,
+  onOpenFiles,
+  filesPanelOpen,
 }: ChatHeaderProps) {
   return (
     <header className="chat-header">
@@ -100,6 +105,13 @@ export function ChatHeader({
           onClick={onTogglePinnedPanel}>
           <Pin size={16} aria-hidden />
         </button>
+        {onOpenFiles && (
+          <button type="button" className={`mm-icon-btn${filesPanelOpen ? ' mm-icon-btn--active' : ''}`} title="Files"
+            aria-label="Channel files" aria-pressed={filesPanelOpen}
+            onClick={onOpenFiles}>
+            <Folder size={16} aria-hidden />
+          </button>
+        )}
         <NotificationsBell enabled={meExists} />
         {channel && channel.type !== 'D' && (
           <ChannelNotificationPrefsPopover
