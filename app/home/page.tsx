@@ -442,6 +442,14 @@ function HomeChat() {
   }, [])
 
   // ── Load workspace members ──────────────────────────────────────────────
+  const loadTeamMembers = useCallback(async () => {
+    if (!activeTeamId) return
+    const r = await apiFetch(`/api/collab/workspace-members?workspace_id=${encodeURIComponent(activeTeamId)}`, { method: 'GET' })
+    if (!r.ok) { setTeamMembers([]); return }
+    const data = (await r.json()) as { users?: AppUser[] }
+    setTeamMembers(data.users ?? [])
+  }, [activeTeamId])
+
   useEffect(() => {
     if (!activeTeamId) return
     let cancelled = false
@@ -1719,6 +1727,9 @@ function HomeChat() {
         displayName={displayName}
         onOpenDm={(uid) => void openDm(uid)}
         onClose={() => setMemberListOpen(false)}
+        channelId={channel?.id}
+        candidates={teamMembers}
+        onAdded={() => void loadTeamMembers()}
       />
 
       {/* ── Channel Info panel (right sidebar) ─────────────────── */}
