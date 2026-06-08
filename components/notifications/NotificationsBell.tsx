@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast as appToast } from '@/lib/ui/toast'
 import { hrefForNotification } from '@/lib/notifications/notificationHref'
 import {
   AAELINK_NOTIFICATIONS_BC,
@@ -327,7 +328,12 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
       } catch {
         invalidateClientNotifications()
       }
-    } else void load()
+      // Reconcile list + unread_count with the server so state stays consistent across tabs.
+      void load()
+    } else {
+      appToast.error('notification_update_failed')
+      void load()
+    }
   }
 
   async function markAllRead() {
@@ -349,7 +355,12 @@ export function NotificationsBell({ enabled }: { enabled: boolean }) {
       } catch {
         invalidateClientNotifications()
       }
-    } else void load()
+      // Reconcile list + unread_count with the server so state stays consistent across tabs.
+      void load()
+    } else {
+      appToast.error('notification_update_failed')
+      void load()
+    }
   }
 
   function onPick(n: ApiNotification) {

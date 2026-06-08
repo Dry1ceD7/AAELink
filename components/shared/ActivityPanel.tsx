@@ -14,6 +14,7 @@ import {
   User
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface ActivityItem {
   source_id: string
@@ -60,18 +61,28 @@ type FilterMode = 'all' | 'mentions' | 'reactions' | 'threads'
 export function ActivityPanel({ workspaceId, onClose, onNavigateToChannel }: Props) {
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [filter, setFilter] = useState<FilterMode>('all')
   const [hasMore, setHasMore] = useState(false)
 
   const load = useCallback(async (filterMode: FilterMode) => {
     setLoading(true)
+    setError(false)
     try {
       const res = await apiFetch(`/api/activity?workspace_id=${encodeURIComponent(workspaceId)}&filter=${filterMode}&limit=50`)
+      if (!res.ok) {
+        setActivities([])
+        setError(true)
+        toast.error('activity_load_failed')
+        return
+      }
       const data = await res.json()
       setActivities(data.activities || [])
       setHasMore(data.has_more || false)
     } catch {
       setActivities([])
+      setError(true)
+      toast.error('activity_load_failed')
     } finally {
       setLoading(false)
     }
@@ -84,10 +95,16 @@ export function ActivityPanel({ workspaceId, onClose, onNavigateToChannel }: Pro
     const oldest = activities[activities.length - 1].activity_at
     try {
       const res = await apiFetch(`/api/activity?workspace_id=${encodeURIComponent(workspaceId)}&filter=${filter}&limit=50&before=${oldest}`)
+      if (!res.ok) {
+        toast.error('activity_load_failed')
+        return
+      }
       const data = await res.json()
       setActivities(prev => [...prev, ...(data.activities || [])])
       setHasMore(data.has_more || false)
-    } catch { /* ignore */ }
+    } catch {
+      toast.error('activity_load_failed')
+    }
   }, [activities, workspaceId, filter])
 
   const getIcon = (type: string) => {
@@ -161,6 +178,21 @@ export function ActivityPanel({ workspaceId, onClose, onNavigateToChannel }: Pro
           <div className="activity-panel__empty">
             <RefreshCw size={24} className="spin" style={{ opacity: 0.4 }} />
             <p>Loading activity…</p>
+          </div>
+        ) : error && activities.length === 0 ? (
+          <div className="activity-panel__empty">
+            <Bell size={32} style={{ opacity: 0.25 }} />
+            <p style={{ marginTop: 8, fontSize: 14, color: 'var(--mm-text-muted)' }}>
+              Couldn&apos;t load activity
+            </p>
+            <button
+              type="button"
+              className="activity-panel__load-more"
+              style={{ marginTop: 8 }}
+              onClick={() => load(filter)}
+            >
+              Retry
+            </button>
           </div>
         ) : activities.length === 0 ? (
           <div className="activity-panel__empty">

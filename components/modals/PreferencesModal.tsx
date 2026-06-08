@@ -11,6 +11,7 @@ import {
   type UserPreferences,
 } from '@/lib/ui/userPreferences'
 import { readThemePreference, persistThemePreference, type ThemePreference } from '@/lib/ui/theme'
+import { NotificationQuietHours } from '@/components/modals/NotificationPrefsSection'
 import { PALETTES, readPalettePreference, persistPalettePreference } from '@/lib/ui/themePalette'
 import { apiFetch } from '@/lib/api/apiClient'
 import { normalizeKeyword } from '@/lib/notifications/keywords'
@@ -677,20 +678,9 @@ function NotificationsTab({ prefs, save }: { prefs: UserPreferences; save: (p: P
         <ToggleRow id="pref-weekday" title="Only allow notifications on weekdays"
           desc="Suppress notifications on Saturday and Sunday."
           checked={prefs.notifyOnlyWeekdays} onChange={v => save({ notifyOnlyWeekdays: v })} />
-        <div className="pref-row">
-          <span className="pref-row-text">
-            <span className="pref-row-title">Active hours</span>
-            <span className="pref-row-desc">Only receive notifications during these hours.</span>
-          </span>
-          <div className="pref-time-range">
-            <input type="time" value={prefs.notifyScheduleStart}
-              onChange={e => save({ notifyScheduleStart: e.target.value })} />
-            <span>to</span>
-            <input type="time" value={prefs.notifyScheduleEnd}
-              onChange={e => save({ notifyScheduleEnd: e.target.value })} />
-          </div>
-        </div>
       </div>
+
+      <NotificationQuietHours effectiveTimezone={getEffectiveTimezone(prefs)} />
 
       <h3 className="pref-section-title" style={{ marginTop: 24 }}>Channel Keywords</h3>
       <p className="pref-section-desc">Get notified when these words are mentioned (comma-separated).</p>

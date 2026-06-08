@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { isDndActiveNow } from '@/lib/notifications/dndWindow'
 
 /**
@@ -88,6 +89,8 @@ async function _GET(req: NextRequest) {
 /** PUT — update DND schedule */
 async function _PUT(req: NextRequest) {
   await ensureSchema()
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -127,6 +130,8 @@ async function _PUT(req: NextRequest) {
 /** POST — quick snooze for N minutes */
 async function _POST(req: NextRequest) {
   await ensureSchema()
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
