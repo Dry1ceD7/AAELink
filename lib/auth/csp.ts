@@ -88,10 +88,14 @@ export function buildCspPolicy(nonce: string, config: CspConfig = {}): string {
     ...c.trustedScriptSrcs,
   ].join(' ')
 
+  // style-src intentionally OMITS the nonce: per the CSP spec, a nonce in
+  // style-src makes the browser IGNORE 'unsafe-inline', which would block every
+  // React/Tiptap inline style={} and break layout app-wide. Scripts keep the
+  // nonce + strict-dynamic (the real XSS vector); inline styles are low risk, so
+  // style-src uses 'unsafe-inline' so inline styles render. Do not add a nonce here.
   const styleSrc = [
     "'self'",
-    `'nonce-${nonce}'`,
-    ...(c.allowUnsafeInlineStyles ? ["'unsafe-inline'"] : []),
+    "'unsafe-inline'",
     ...c.trustedStyleSrcs,
   ].join(' ')
 

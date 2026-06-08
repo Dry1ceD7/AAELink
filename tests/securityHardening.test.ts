@@ -34,12 +34,19 @@ describe('CSP — Nonce Generation', () => {
 // ── CSP: Policy Builder ──────────────────────────────────────────────
 
 describe('CSP — Policy Builder', () => {
-  it('includes nonce in script-src and style-src', () => {
+  it('nonces script-src but uses unsafe-inline (not a nonce) in style-src', () => {
+    // A nonce in style-src makes browsers IGNORE 'unsafe-inline', which would
+    // block every React/Tiptap inline style and break layout. Scripts keep the
+    // nonce; styles must allow inline.
     const nonce = 'test-nonce-123'
     const policy = buildCspPolicy(nonce)
-    expect(policy).toContain(`'nonce-${nonce}'`)
     expect(policy).toContain("script-src")
     expect(policy).toContain("style-src")
+    const scriptDirective = policy.split(';').find((d) => d.trim().startsWith('script-src')) || ''
+    const styleDirective = policy.split(';').find((d) => d.trim().startsWith('style-src')) || ''
+    expect(scriptDirective).toContain(`'nonce-${nonce}'`)
+    expect(styleDirective).toContain("'unsafe-inline'")
+    expect(styleDirective).not.toContain(`'nonce-${nonce}'`)
   })
 
   it('includes strict-dynamic in script-src', () => {
