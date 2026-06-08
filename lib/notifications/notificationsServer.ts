@@ -7,6 +7,7 @@ import { parseMentionUsernames } from '@/lib/messaging/mentionParse'
 import type { BroadcastToken } from '@/lib/messaging/mentionParse'
 import { matchKeywords } from '@/lib/notifications/keywords'
 import { selectPushTargets, enqueuePush, dropLevelNothing, dropMuted, channelMembersLevelAll } from '@/lib/notifications/pushTargeting'
+import { isDndActiveNow } from '@/lib/notifications/dndWindow'
 
 export type NotificationInsertRow = {
   user_id: string
@@ -77,6 +78,94 @@ export async function resolveMentionTargets(
   return rows.map(r => r.id)
 }
 
+/**
+ * True when an in-app notification for `userId` in `channelId` must be SUPPRESSED
+ * at insert time — i.e. never written to aaelink.notifications. Suppressed when:
+ *
+ *  - the channel is MUTED for the user (channel_notification_prefs.muted = true
+ *    for this channel), OR
+ *  - the user is currently in an ACTIVE Do-Not-Disturb window, mirroring the
+ *    /api/dnd route's `is_active`: an active snooze (snooze_until > now), an
+ *    enabled daily schedule whose window contains now (via the shared
+ *    isDndActiveNow helper — not duplicated here), OR a manual
+ *    user_status.status = 'dnd' that has not expired.
+ *
+ * Because suppressed rows are never inserted, unread badges naturally exclude
+ * them with no client-side filtering. This is the in-app analogue of the
+ * push-side gate in selectPushTargets (which shares isDndActiveNow + the same
+ * mute/DND semantics). Returns false on a missing pool or any query error so a
+ * lookup failure never silently swallows a legitimate notification.
+ */
+export async function shouldDropForUser(
+  pool: Pool,
+  userId: string,
+  channelId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  if (!userId || !channelId) return false
+  try {
+    // 1. Channel muted for this user.
+    const { rows: muted } = await pool.query<{ user_id: string }>(
+      `SELECT user_id FROM aaelink.channel_notification_prefs
+         WHERE channel_id = $1 AND user_id = $2 AND muted = true`,
+      [channelId, userId],
+    )
+    if (muted.length > 0) return true
+
+    // 2. DND schedule / snooze (same evaluation as selectPushTargets).
+    const { rows: dnd } = await pool.query<{
+      enabled: boolean
+      start_time: string
+      end_time: string
+      timezone: string
+      snooze_until: string
+    }>(
+      `SELECT enabled, start_time, end_time, timezone, snooze_until
+         FROM aaelink.dnd_settings WHERE user_id = $1`,
+      [userId],
+    )
+    const d = dnd[0]
+    if (d) {
+      if (Number(d.snooze_until) > now) return true
+      if (d.enabled && isDndActiveNow(d.start_time, d.end_time, d.timezone, new Date(now))) {
+        return true
+      }
+    }
+
+    // 3. Manual status = 'dnd' (expires_at = 0 ⇒ never expires; positive ⇒ cutoff).
+    const { rows: statusDnd } = await pool.query<{ user_id: string }>(
+      `SELECT user_id FROM aaelink.user_status
+         WHERE user_id = $1 AND status = 'dnd'
+           AND (expires_at = 0 OR expires_at > $2)`,
+      [userId, now],
+    )
+    if (statusDnd.length > 0) return true
+
+    return false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Filter `userIds` down to those NOT suppressed by mute/DND for `channelId`
+ * (see shouldDropForUser). Used by every channel notify path so suppressed
+ * in-app rows are never inserted. Order is not significant.
+ */
+async function dropSuppressedForChannel(
+  pool: Pool,
+  userIds: string[],
+  channelId: string,
+): Promise<string[]> {
+  if (userIds.length === 0) return []
+  const now = Date.now()
+  const kept: string[] = []
+  for (const u of userIds) {
+    if (!(await shouldDropForUser(pool, u, channelId, now))) kept.push(u)
+  }
+  return kept
+}
+
 export async function notifyChannelMentions(args: {
   pool: Pool
   workspaceId: string
@@ -102,6 +191,10 @@ export async function notifyChannelMentions(args: {
   // suppress the in-app mention row too, not just push — Slack parity. dropMuted
   // is a superset of dropLevelNothing so it covers the notifications-off case.
   targets = await dropMuted(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+  // Suppress in-app rows for muted-channel / active-DND users at insert time
+  // (so unread badges naturally exclude them — no client filtering).
+  targets = await dropSuppressedForChannel(args.pool, targets, args.channelId)
   if (targets.length === 0) return []
   const title = `Mention in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
@@ -181,6 +274,9 @@ export async function notifyKeywordMatches(args: {
   // Respect a per-channel level of 'nothing' (notifications off).
   hits = await dropLevelNothing(args.pool, hits, args.channelId)
   if (hits.length === 0) return []
+  // Suppress for muted-channel / active-DND users at insert time.
+  hits = await dropSuppressedForChannel(args.pool, hits, args.channelId)
+  if (hits.length === 0) return []
 
   const title = `Keyword in ${args.channelLabel}`
   const body = `${args.authorLabel}: ${snippet(args.body)}`
@@ -231,7 +327,10 @@ export async function notifyChannelLevelAll(args: {
   const exclude = new Set([args.authorId, ...(args.excludeUserIds || [])])
   // Channel mute wins over level='all' for the in-app every-message alert too,
   // not just push.
-  const targets = await dropMuted(args.pool, members.filter(u => !exclude.has(u)), args.channelId)
+  let targets = await dropMuted(args.pool, members.filter(u => !exclude.has(u)), args.channelId)
+  if (targets.length === 0) return
+  // Suppress for muted-channel / active-DND users at insert time.
+  targets = await dropSuppressedForChannel(args.pool, targets, args.channelId)
   if (targets.length === 0) return
 
   const title = `New message in ${args.channelLabel}`
@@ -550,6 +649,10 @@ export async function notifyBroadcastMentions(args: {
   targets = await dropLevelNothing(args.pool, targets, args.channelId)
   if (targets.length === 0) return []
 
+  // 6. Suppress for muted-channel / active-DND users at insert time.
+  targets = await dropSuppressedForChannel(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+
   const title = `Broadcast mention in ${args.channelLabel}`
   const body = `${args.senderLabel}: ${snippet(args.body)}`
 
@@ -632,6 +735,10 @@ export async function notifyThreadFollowers(args: {
 
   // 5. Respect per-channel level='nothing'.
   targets = await dropLevelNothing(args.pool, targets, args.channelId)
+  if (targets.length === 0) return []
+
+  // 6. Suppress for muted-channel / active-DND users at insert time.
+  targets = await dropSuppressedForChannel(args.pool, targets, args.channelId)
   if (targets.length === 0) return []
 
   const title = `New reply in ${args.channelLabel}`

@@ -1,8 +1,9 @@
 'use client'
 
-import { Menu, Search, Hash, Lock, Info, Pin, BellOff, Users } from 'lucide-react'
+import { Menu, Search, Hash, Lock, Info, Pin, Users } from 'lucide-react'
 import { ChannelHeaderDropdown } from '@/components/chat/ChannelHeaderDropdown'
 import { ChannelTopicInline } from '@/components/chat/ChannelTopicInline'
+import { ChannelNotificationPrefsPopover } from '@/components/chat/ChannelNotificationPrefsPopover'
 import { NotificationsBell } from '@/components/notifications/NotificationsBell'
 
 interface ChatHeaderProps {
@@ -49,7 +50,6 @@ export function ChatHeader({
   memberCount,
   streamUp,
   meExists,
-  onOpenChannelNotifPrefs,
 }: ChatHeaderProps) {
   return (
     <header className="chat-header">
@@ -102,11 +102,10 @@ export function ChatHeader({
         </button>
         <NotificationsBell enabled={meExists} />
         {channel && channel.type !== 'D' && (
-          <button type="button" className="mm-icon-btn" title="Notification preferences"
-            aria-label="Notification preferences"
-            onClick={onOpenChannelNotifPrefs}>
-            <BellOff size={16} aria-hidden />
-          </button>
+          <ChannelNotificationPrefsPopover
+            channelId={channel.id}
+            channelName={channel.display_name || channel.name}
+          />
         )}
         <button type="button" className={`mm-icon-btn${memberListOpen ? ' mm-icon-btn--active' : ''}`} title="Members"
           aria-label="Channel members" aria-pressed={memberListOpen}
