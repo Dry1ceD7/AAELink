@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
-import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { reactionSummariesForMessages, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { recordMessageEdit } from '@/lib/messaging/messageEdits'
 import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
 import { getPool } from '@/lib/infra/db'
@@ -75,6 +75,7 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
   const rx = await reactionSummariesForMessages(pool, uid, [row.id])
+  const rr = await readReceiptsForMessages(pool, [row.id])
   const post = rowToPost(
     {
       id: row.id,
@@ -86,7 +87,8 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
       root_id: row.root_id,
       reply_count: row.reply_count
     },
-    rx.get(row.id)
+    rx.get(row.id),
+    rr.get(row.id)
   )
   return NextResponse.json({
     workspace_id: row.workspace_id,
@@ -174,6 +176,7 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   })
 
   const rx = await reactionSummariesForMessages(pool, uid, [u.id])
+  const rr = await readReceiptsForMessages(pool, [u.id])
   const post = rowToPost(
     {
       id: u.id,
@@ -185,7 +188,8 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
       root_id: u.root_id,
       reply_count: u.reply_count
     },
-    rx.get(u.id)
+    rx.get(u.id),
+    rr.get(u.id)
   )
   return NextResponse.json({ ...post, reactions: post.reactions ?? [] })
 }

@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import { NextResponse } from 'next/server'
 import { userCanReadChannel, userCanPostToChannel, isChannelArchived } from '@/lib/enterprise/collab-access'
-import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { reactionSummariesForMessages, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { notifyChannelMentions, notifyDirectMessage, notifyKeywordMatches, notifyChannelLevelAll, notifyBroadcastMentions, notifyThreadFollowers } from '@/lib/notifications/notificationsServer'
@@ -198,7 +198,8 @@ async function _GET(req: Request) {
       uid,
       rows.map(r => r.id)
     )
-    const posts = rows.map(r => rowToPost(r, rx.get(r.id)))
+    const rr = await readReceiptsForMessages(pool, rows.map(r => r.id))
+    const posts = rows.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
     let older_available = false
     if (rows.length > 0) {
       const oldest = rows[0]
@@ -276,7 +277,8 @@ async function _GET(req: Request) {
           uid,
           rows.map(r => r.id)
         )
-        const posts = rows.map(r => rowToPost(r, rx.get(r.id)))
+        const rr = await readReceiptsForMessages(pool, rows.map(r => r.id))
+        const posts = rows.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
         let older_available = false
         if (rows.length > 0) {
           const oldest = rows[0]
@@ -318,7 +320,8 @@ async function _GET(req: Request) {
         uid,
         ordered.map(r => r.id)
       )
-      const posts = ordered.map(r => rowToPost(r, rx.get(r.id)))
+      const rr = await readReceiptsForMessages(pool, ordered.map(r => r.id))
+      const posts = ordered.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
       return NextResponse.json({ posts, has_more: oldRows.length === OLDER_PAGE })
     }
 
@@ -347,7 +350,8 @@ async function _GET(req: Request) {
       uid,
       rows.map(r => r.id)
     )
-    const posts = rows.map(r => rowToPost(r, rx.get(r.id)))
+    const rr = await readReceiptsForMessages(pool, rows.map(r => r.id))
+    const posts = rows.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
     if (useIncremental) {
       const deletions = await deletionsSince(pool, channel_id, since, threadRootId)
       if (deletions.length === 0) {
@@ -408,7 +412,8 @@ async function _GET(req: Request) {
       uid,
       ordered.map(r => r.id)
     )
-    const posts = ordered.map(r => rowToPost(r, rx.get(r.id)))
+    const rr = await readReceiptsForMessages(pool, ordered.map(r => r.id))
+    const posts = ordered.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
     return NextResponse.json({ posts, has_more: oldRows.length === OLDER_PAGE })
   }
 
@@ -446,7 +451,8 @@ async function _GET(req: Request) {
     uid,
     ordered.map(r => r.id)
   )
-  const posts = ordered.map(r => rowToPost(r, rx.get(r.id)))
+  const rr = await readReceiptsForMessages(pool, ordered.map(r => r.id))
+  const posts = ordered.map(r => rowToPost(r, rx.get(r.id), rr.get(r.id)))
   if (useIncremental) {
     const deletions = await deletionsSince(pool, channel_id, since)
     const rootIds = [

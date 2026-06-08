@@ -28,6 +28,8 @@ export interface ChatPost {
   pending?: boolean
   /** File attachments uploaded with this message. */
   file_attachments?: FileAttachment[]
+  /** Most recent readers of this message (excludes the author; capped server-side). */
+  read_receipts?: ReadReceipt[]
   /** System message type ('' = normal, 'system_join', 'system_leave', 'system_topic', 'system_purpose', 'system_pin', 'system_header', 'system_channel_converted', 'system_archive'). */
   type?: string
 }
@@ -120,6 +122,26 @@ export type CollabSsePayload = {
   reply_counts?: Record<string, number>
   /** Tombstones for messages removed since the client cursor (main channel collab). */
   deletions?: CollabDeletion[]
+}
+
+/** One reader of a message: who read it and when (ms epoch). */
+export type ReadReceipt = {
+  user_id: string
+  read_at: number
+}
+
+/**
+ * Realtime read-receipt fan-out: a member ({@link ReadReceipt.user_id}) read a
+ * message in a channel. Emitted by `POST /api/messages/:id/read` through
+ * redisPubSub and delivered to channel subscribers so reader avatar stacks can
+ * update live.
+ */
+export type MessageReadEvent = {
+  type: 'message_read'
+  channel_id: string
+  message_id: string
+  user_id: string
+  read_at: number
 }
 
 /**

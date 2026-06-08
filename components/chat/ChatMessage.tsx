@@ -11,7 +11,9 @@ import { MessageActions } from './MessageActions'
 import { MessageReactions } from './MessageReactions'
 import { formatUserTime } from '@/lib/ui/userPreferences'
 import { EditHistoryModal } from './EditHistoryModal'
-import { type Presence, presenceColor } from '@/lib/types/presence'
+import { type Presence } from '@/lib/types/presence'
+import { PresenceDot } from '@/components/chat/PresenceDot'
+import { ReadReceipts, useMarkReadOnView } from './ReadReceipts'
 
 export interface AppUser {
   id: string
@@ -109,6 +111,7 @@ export const ChatMessage = memo(function ChatMessage({
   const [reactBusy, setReactBusy] = useState(false)
   const [editHistoryOpen, setEditHistoryOpen] = useState(false)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rootRef = useRef<HTMLElement | null>(null)
 
   // Clean up hover timer on unmount
   useEffect(() => {
@@ -118,6 +121,17 @@ export const ChatMessage = memo(function ChatMessage({
   }, [])
 
   const isSelf = Boolean(me?.id && post.user_id === me.id)
+  const alreadyReadByMe = Boolean(
+    me?.id && post.read_receipts?.some(r => r.user_id === me.id)
+  )
+
+  // Mark as read once the message scrolls into view (skip self/pending/already-read).
+  useMarkReadOnView(
+    rootRef,
+    post.id,
+    Boolean(me?.id) && !isSelf && !post.pending && !alreadyReadByMe
+  )
+
   const u = userMap[post.user_id]
   const label = isSelf || post.pending ? 'You' : u ? displayName(u) : post.user_id.slice(0, 8)
   const initial = (u?.username || label).slice(0, 1).toUpperCase()
@@ -193,6 +207,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <article
+      ref={rootRef}
       className={`message${post.pending ? ' message--pending' : ''}${compact ? ' message--compact' : ''}${me && post.message.includes(`@${me.username}`) ? ' message--mention-me' : ''}`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -211,6 +226,7 @@ export const ChatMessage = memo(function ChatMessage({
         <div className="avatar"
           data-hovercard-userid={post.user_id}
           style={{
+            position: 'relative',
             cursor: onAvatarClick ? 'pointer' : undefined,
             ...(u?.avatar_url ? {
               backgroundImage: `url(${u.avatar_url})`,
@@ -222,10 +238,9 @@ export const ChatMessage = memo(function ChatMessage({
           onClick={() => onAvatarClick?.(post.user_id)}>
           {initial}
           {presence ? (
-            <span
-              className={`avatar-presence-dot avatar-presence-dot--${presence}`}
-              style={{ background: presenceColor(presence) }}
-            />
+            <span className="avatar-presence-dot-wrap" style={{ position: 'absolute', right: -1, bottom: -1 }}>
+              <PresenceDot status={presence} customEmoji={u?.status_emoji} />
+            </span>
           ) : null}
         </div>
       )}
@@ -244,6 +259,11 @@ export const ChatMessage = memo(function ChatMessage({
           <FileAttachmentCards attachments={post.file_attachments} />
         )}
         <MessageReactions messageId={post.id} reactions={post.reactions} reactBusy={reactBusy} toggleReaction={toggleReaction} onOpenPicker={() => setReactionPickerOpen(true)} />
+
+        {/* ── Read receipts (reader avatar stack) ──────────────── */}
+        {post.read_receipts && post.read_receipts.length > 0 ? (
+          <ReadReceipts receipts={post.read_receipts} userMap={userMap} />
+        ) : null}
 
         {/* ── Thread tease ─────────────────────────────────────── */}
         {!post.root_id && post.reply_count && post.reply_count > 0 ? (

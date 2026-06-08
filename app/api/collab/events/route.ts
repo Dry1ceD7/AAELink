@@ -1,4 +1,4 @@
-import { reactionSummariesForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { reactionSummariesForMessages, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
@@ -121,6 +121,7 @@ async function _GET(req: Request) {
               uid,
               rows.map(r => r.id)
             )
+            const rr = await readReceiptsForMessages(pool, rows.map(r => r.id))
             const posts = rows.map(r =>
               rowToPost(
                 {
@@ -133,7 +134,8 @@ async function _GET(req: Request) {
                   root_id: r.root_id,
                   reply_count: r.reply_count
                 },
-                rx.get(r.id)
+                rx.get(r.id),
+                rr.get(r.id)
               )
             )
             for (const r of rows) {

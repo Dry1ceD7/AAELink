@@ -4800,6 +4800,24 @@ async function migration059UserPreferences(pool: RunnerPool) {
   `)
 }
 
+// Read receipts / delivery status: one row per (user, message) recording when a
+// member read a given message. Powers the reader avatar stack rendered beneath a
+// message and the realtime read fan-out. Channel id is denormalised so reader
+// summaries can be scoped/cleaned per channel without a join back to messages.
+async function migration060MessageReads(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.message_reads (
+      user_id    TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      read_at    BIGINT NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, message_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_reads_message
+      ON aaelink.message_reads(message_id);
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4858,4 +4876,5 @@ const MIGRATIONS: Migration[] = [
   { id: '055_incoming_webhook_signing', up: migration055IncomingWebhookSigning },
   { id: '057_retention_policies', up: migration057RetentionPolicies },
   { id: '059_user_preferences', up: migration059UserPreferences },
+  { id: '060_message_reads', up: migration060MessageReads },
 ]
