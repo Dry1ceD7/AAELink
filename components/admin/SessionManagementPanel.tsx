@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Monitor, Smartphone, Globe, Trash2, Shield, Loader2, X } from 'lucide-react'
+import { Monitor, Smartphone, Globe, Trash2, Shield, Loader2, X, UserX, UserCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 import { useConfirm } from '@/components/a11y'
 
 /* ── Session Management — View & revoke active sessions (admin module) ─ */
@@ -15,6 +16,15 @@ interface SessionRow {
   expires_at: number
   last_active_at: number
   is_current: boolean
+}
+
+interface AdminUserRow {
+  id: string
+  username: string
+  email: string
+  first_name?: string
+  last_name?: string
+  platform_role?: string
 }
 
 function parseDevice(ua: string): { icon: 'desktop' | 'mobile' | 'web'; label: string } {
@@ -53,12 +63,60 @@ function DeviceIcon({ type }: { type: 'desktop' | 'mobile' | 'web' }) {
   return <Globe size={18} />
 }
 
+function fullNameOf(u: { first_name?: string; last_name?: string; username: string }): string {
+  return [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username
+}
+
+/* Single admin user row with deactivate/reactivate action. */
+function UserAccessRow({ user, isOff, busy, onToggle }: {
+  user: AdminUserRow; isOff: boolean; busy: boolean; onToggle: () => void
+}) {
+  return (
+    <div style={{
+      padding: 12, borderRadius: 10, border: '1px solid var(--mm-border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: isOff ? 0.6 : 1,
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {fullNameOf(user)}
+          {isOff && (
+            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#e01e5a20', color: '#e01e5a', fontWeight: 700 }}>
+              DEACTIVATED
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {user.email || user.username}
+        </div>
+      </div>
+      <button type="button" title={isOff ? 'Reactivate user' : 'Deactivate user'} disabled={busy} onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+          background: isOff ? '#2bac7620' : '#e01e5a20', color: isOff ? '#2bac76' : '#e01e5a',
+          border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        }}>
+        {busy ? <Loader2 size={14} className="spin" /> : isOff ? <UserCheck size={14} /> : <UserX size={14} />}
+        {isOff ? 'Reactivate' : 'Deactivate'}
+      </button>
+    </div>
+  )
+}
+
 export default function SessionManagementPanel({ onClose }: { onClose: () => void }) {
   const { confirm, confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [revoking, setRevoking] = useState<string | null>(null)
   const [revokingAll, setRevokingAll] = useState(false)
+
+  // Admin-only user access control. The users list endpoint returns 403 for
+  // non-admins; on 403 we simply hide the section. The list endpoint does not
+  // expose the scim_active flag, so we track deactivation state locally per the
+  // last action taken (default: active).
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [users, setUsers] = useState<AdminUserRow[]>([])
+  const [deactivated, setDeactivated] = useState<Record<string, boolean>>({})
+  const [togglingUser, setTogglingUser] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -70,7 +128,58 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
     setLoading(false)
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  const loadUsers = useCallback(async () => {
+    const res = await apiFetch('/api/admin/users')
+    if (res.ok) {
+      const data = (await res.json()) as { users?: AdminUserRow[] }
+      setUsers(data.users || [])
+      setIsAdmin(true)
+    } else {
+      // 403 (not admin) or any other failure: keep the section hidden.
+      setIsAdmin(false)
+    }
+  }, [])
+
+  useEffect(() => { void load(); void loadUsers() }, [load, loadUsers])
+
+  async function setUserActive(user: AdminUserRow, active: boolean) {
+    const fullName = fullNameOf(user)
+    const ok = await confirm({
+      title: active ? 'Reactivate user' : 'Deactivate user',
+      message: active
+        ? `Reactivate ${fullName}? They will be able to sign in again.`
+        : `Deactivate ${fullName}? They will be signed out of every device immediately and blocked from signing in.`,
+      danger: !active,
+      confirmLabel: active ? 'Reactivate' : 'Deactivate',
+    })
+    if (!ok) return
+    setTogglingUser(user.id)
+    try {
+      const res = await apiFetch('/api/admin/users/deactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, active }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        const map: Record<string, string> = {
+          cannot_deactivate_self: 'You cannot deactivate your own account.',
+          forbidden_target: 'You do not have permission to deactivate this user.',
+          forbidden: 'You do not have permission to perform this action.',
+          user_not_found: 'User not found.',
+        }
+        toast.error(map[data.error || ''] || 'Could not update user.')
+        return
+      }
+      setDeactivated(prev => ({ ...prev, [user.id]: !active }))
+      toast.success(active ? `${fullName} reactivated.` : `${fullName} deactivated.`)
+      void load()
+    } catch {
+      toast.error('Could not update user.')
+    } finally {
+      setTogglingUser(null)
+    }
+  }
 
   async function revoke(id: string) {
     if (!(await confirm({ title: 'Revoke session', message: 'Revoke this session? The device will be logged out immediately.', danger: true, confirmLabel: 'Revoke' }))) return
@@ -190,6 +299,29 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
                 No active sessions found.
               </p>
             )}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Shield size={16} />
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>User Access Control</h3>
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: 12, opacity: 0.6, lineHeight: 1.5 }}>
+              Deactivate a user to revoke their sessions and block sign-in immediately. Reactivate to restore access.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {users.map(u => (
+                <UserAccessRow key={u.id} user={u} isOff={deactivated[u.id] === true}
+                  busy={togglingUser === u.id} onToggle={() => void setUserActive(u, deactivated[u.id] === true)} />
+              ))}
+              {users.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--mm-muted)', fontSize: 13, padding: 16 }}>
+                  No users found.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>

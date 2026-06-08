@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Plus, RefreshCw, Users, Trash2 } from 'lucide-react'
+import { Building2, Plus, RefreshCw, Users, Trash2, Pencil, Check, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface Department {
   id: string
@@ -11,6 +12,90 @@ interface Department {
   name: string
   member_count: number
   created_at: number
+}
+
+interface RowProps {
+  dep: Department
+  editing: boolean
+  editName: string
+  savingEdit: boolean
+  confirmingDelete: boolean
+  deleting: boolean
+  onEditNameChange: (v: string) => void
+  onStartEdit: () => void
+  onSaveEdit: () => void
+  onCancelEdit: () => void
+  onAskDelete: () => void
+  onConfirmDelete: () => void
+  onCancelDelete: () => void
+}
+
+/* Single department table row: view, inline rename, and delete-confirm states. */
+function DepartmentRow(p: RowProps) {
+  const { dep: d } = p
+  return (
+    <tr>
+      <td>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Building2 size={14} style={{ color: 'var(--mm-muted)', flexShrink: 0 }} />
+          {p.editing ? (
+            <input
+              className="slack-input"
+              value={p.editName}
+              onChange={e => p.onEditNameChange(e.target.value)}
+              style={{ fontSize: 13, padding: '3px 8px', minWidth: 140 }}
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') p.onSaveEdit() }}
+            />
+          ) : (
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{d.name}</span>
+          )}
+        </div>
+      </td>
+      <td style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--mm-muted)' }}>{d.code}</td>
+      <td style={{ textAlign: 'center' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+          <Users size={13} style={{ color: 'var(--mm-muted)' }} />
+          {d.member_count ?? 0}
+        </span>
+      </td>
+      <td style={{ fontSize: 12, color: 'var(--mm-muted)', whiteSpace: 'nowrap' }}>
+        {new Date(d.created_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}
+      </td>
+      <td>
+        {p.editing ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button type="button" className="ghost-button" style={{ color: 'var(--aae-link)', fontSize: 12 }}
+              disabled={p.savingEdit} onClick={p.onSaveEdit} title="Save">
+              <Check size={13} />
+            </button>
+            <button type="button" className="ghost-button" style={{ fontSize: 12 }}
+              disabled={p.savingEdit} onClick={p.onCancelEdit} title="Cancel">
+              <X size={13} />
+            </button>
+          </div>
+        ) : p.confirmingDelete ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button type="button" className="ghost-button" style={{ color: 'var(--mm-danger)', fontSize: 12 }}
+              disabled={p.deleting} onClick={p.onConfirmDelete}>Confirm</button>
+            <button type="button" className="ghost-button" style={{ fontSize: 12 }}
+              onClick={p.onCancelDelete}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button type="button" className="ghost-button" style={{ fontSize: 12 }}
+              onClick={p.onStartEdit} title="Rename department">
+              <Pencil size={13} />
+            </button>
+            <button type="button" className="ghost-button" style={{ color: 'var(--mm-danger)', fontSize: 12 }}
+              onClick={p.onAskDelete} title="Delete department">
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  )
 }
 
 export function DepartmentManagementPanel() {
@@ -23,6 +108,10 @@ export function DepartmentManagementPanel() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -30,7 +119,10 @@ export function DepartmentManagementPanel() {
     try {
       const res = await apiFetch('/api/admin/departments')
       if (!res.ok) {
-        setError('Failed to load departments.')
+        const code = res.status === 403
+          ? 'You do not have permission to view departments.'
+          : 'Failed to load departments.'
+        setError(code)
         return
       }
       const data = await res.json()
@@ -59,16 +151,24 @@ export function DepartmentManagementPanel() {
         body: JSON.stringify({ name: trimName, code: newCode.trim() || undefined })
       })
       if (!res.ok) {
-        const data = await res.json()
-        setCreateError(data.error === 'department_already_exists' ? 'A department with this code already exists.' : data.error || 'Failed to create.')
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        const msg = data.error === 'department_already_exists'
+          ? 'A department with this code already exists.'
+          : data.error === 'name_required'
+            ? 'Name must be at least 2 characters.'
+            : 'Failed to create department.'
+        setCreateError(msg)
+        toast.error(msg)
         return
       }
       setNewName('')
       setNewCode('')
       setCreateOpen(false)
+      toast.success('Department created.')
       void load()
     } catch {
       setCreateError('Network error.')
+      toast.error('Network error.')
     } finally {
       setCreating(false)
     }
@@ -76,8 +176,55 @@ export function DepartmentManagementPanel() {
 
   const handleDelete = async (id: string) => {
     setConfirmDeleteId(null)
-    await apiFetch(`/api/admin/departments?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
-    void load()
+    setDeletingId(id)
+    try {
+      const res = await apiFetch(`/api/admin/departments?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        toast.error('Failed to delete department.')
+        return
+      }
+      toast.success('Department deleted.')
+      void load()
+    } catch {
+      toast.error('Failed to delete department.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const startEdit = (d: Department) => {
+    setConfirmDeleteId(null)
+    setEditId(d.id)
+    setEditName(d.name)
+  }
+
+  const handleSaveEdit = async (id: string) => {
+    const trimName = editName.trim()
+    if (trimName.length < 2) {
+      toast.error('Name must be at least 2 characters.')
+      return
+    }
+    setSavingEdit(true)
+    try {
+      const res = await apiFetch('/api/admin/departments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name: trimName })
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        toast.error(data.error === 'not_found' ? 'Department no longer exists.' : 'Failed to rename department.')
+        return
+      }
+      setEditId(null)
+      setEditName('')
+      toast.success('Department renamed.')
+      void load()
+    } catch {
+      toast.error('Failed to rename department.')
+    } finally {
+      setSavingEdit(false)
+    }
   }
 
   return (
@@ -148,7 +295,7 @@ export function DepartmentManagementPanel() {
             <th>Code</th>
             <th style={{ textAlign: 'center' }}>Members</th>
             <th>Created</th>
-            <th style={{ width: 80 }}>Actions</th>
+            <th style={{ width: 110 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -158,39 +305,22 @@ export function DepartmentManagementPanel() {
             <tr><td colSpan={5} style={{ textAlign: 'center', padding: 16, color: 'var(--mm-muted)' }}>No departments created yet.</td></tr>
           ) : (
             departments.map(d => (
-              <tr key={d.id}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Building2 size={14} style={{ color: 'var(--mm-muted)', flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{d.name}</span>
-                  </div>
-                </td>
-                <td style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--mm-muted)' }}>{d.code}</td>
-                <td style={{ textAlign: 'center' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
-                    <Users size={13} style={{ color: 'var(--mm-muted)' }} />
-                    {d.member_count ?? 0}
-                  </span>
-                </td>
-                <td style={{ fontSize: 12, color: 'var(--mm-muted)', whiteSpace: 'nowrap' }}>
-                  {new Date(d.created_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}
-                </td>
-                <td>
-                  {confirmDeleteId === d.id ? (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button type="button" className="ghost-button" style={{ color: 'var(--mm-danger)', fontSize: 12 }}
-                        onClick={() => void handleDelete(d.id)}>Confirm</button>
-                      <button type="button" className="ghost-button" style={{ fontSize: 12 }}
-                        onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-                    </div>
-                  ) : (
-                    <button type="button" className="ghost-button" style={{ color: 'var(--mm-danger)', fontSize: 12 }}
-                      onClick={() => setConfirmDeleteId(d.id)} title="Delete department">
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </td>
-              </tr>
+              <DepartmentRow
+                key={d.id}
+                dep={d}
+                editing={editId === d.id}
+                editName={editName}
+                savingEdit={savingEdit}
+                confirmingDelete={confirmDeleteId === d.id}
+                deleting={deletingId === d.id}
+                onEditNameChange={setEditName}
+                onStartEdit={() => startEdit(d)}
+                onSaveEdit={() => void handleSaveEdit(d.id)}
+                onCancelEdit={() => { setEditId(null); setEditName('') }}
+                onAskDelete={() => setConfirmDeleteId(d.id)}
+                onConfirmDelete={() => void handleDelete(d.id)}
+                onCancelDelete={() => setConfirmDeleteId(null)}
+              />
             ))
           )}
         </tbody>
