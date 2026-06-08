@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ChevronDown, Plus, Hash, Lock, Star, Search, PenLine, BellOff, X } from 'lucide-react'
 import { displayName, type AppUser } from '@/components/chat/ChatMessage'
-import { readUiDensity } from '@/lib/ui/uiDensity'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { TOP_NAV_ITEMS, MORE_NAV_ITEMS, MORE_MODULE_KEYS, ENTERPRISE_NAV_ITEMS, ADMIN_NAV_ITEMS, MORE_ICON } from './sidebarNav'
 import { ChannelContextMenu, type ChannelContextMenuTarget } from './ChannelContextMenu'
@@ -65,6 +64,72 @@ function readSidebarWidth(): number | null {
 /* The visible label used for client-side quick filtering. */
 function channelFilterLabel(c: Channel): string {
   return (c.dm_peer_display || c.display_name || c.name || '').toLowerCase()
+}
+
+/* ── Per-section channel-row ordering (drag-reorder within a section) ──
+   Persisted to localStorage with the same shape the file uses for section
+   collapse (`sidebar_section_<id>`): one key per section, key
+   `sidebar_order_<section>` holding a JSON array of channel ids in the
+   user's chosen order. Unknown / removed ids are ignored on apply; channels
+   missing from the saved order keep their server order, appended after the
+   saved ones, so new channels surface without clobbering the saved layout. */
+function rowOrderKey(section: string): string {
+  return `sidebar_order_${section}`
+}
+
+function readRowOrder(section: string): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(rowOrderKey(section))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function persistRowOrder(section: string, ids: string[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(rowOrderKey(section), JSON.stringify(ids))
+  } catch {
+    /* quota exceeded */
+  }
+}
+
+/* Apply a saved id ordering to a channel list: saved ids first (in saved
+   order, skipping any no longer present), then any remaining channels in
+   their original order. Pure — does not mutate the input. */
+function applyRowOrder<T extends { id: string }>(list: T[], savedIds: string[]): T[] {
+  if (savedIds.length === 0) return list
+  const byId = new Map(list.map(c => [c.id, c]))
+  const ordered: T[] = []
+  const used = new Set<string>()
+  for (const id of savedIds) {
+    const item = byId.get(id)
+    if (item && !used.has(id)) { ordered.push(item); used.add(id) }
+  }
+  for (const item of list) {
+    if (!used.has(item.id)) ordered.push(item)
+  }
+  return ordered
+}
+
+/* Compute the reordered id list when dropping `dragId` onto `overId`.
+   Removing the dragged id before re-inserting shifts every index after it down
+   by one, so when the drag source sits before the drop target the target index
+   must be decremented to land the item at the visually-intended slot. */
+function reorderIds(ids: string[], dragId: string, overId: string): string[] {
+  if (dragId === overId) return ids
+  const from = ids.indexOf(dragId)
+  const to = ids.indexOf(overId)
+  if (from < 0 || to < 0) return ids
+  const next = [...ids]
+  next.splice(from, 1)
+  const insertAt = from < to ? to - 1 : to
+  next.splice(insertAt, 0, dragId)
+  return next
 }
 
 /* ── Collapsible sidebar section (Slack-style <details>) ──────── */
@@ -188,13 +253,17 @@ export function ChannelSidebar({
   const [draggedSlot, setDraggedSlot] = useState<SidebarSlotId | null>(null)
   const [dragOverSlot, setDragOverSlot] = useState<SidebarSlotId | null>(null)
 
+  // Per-section channel-row ordering (drag-reorder within a section).
+  // `rowOrders` maps a section key (e.g. 'channels', 'dms', 'starred',
+  // 'custom-<key>') to the saved id order; `rowDrag` tracks the in-flight
+  // drag so we can highlight the drop target row.
+  const [rowOrders, setRowOrders] = useState<Record<string, string[]>>({})
+  const [rowDrag, setRowDrag] = useState<{ section: string; id: string } | null>(null)
+  const [rowDragOverId, setRowDragOverId] = useState<string | null>(null)
+
   // Quick filter (Slack-style): filters visible channels/DMs by name client-side.
   const [quickFilter, setQuickFilter] = useState('')
   const filterQuery = quickFilter.trim().toLowerCase()
-
-  // Density (read from the app-wide uiDensity localStorage key) applied to the
-  // sidebar root via data-density so compact tightens row padding/font.
-  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable')
 
   // Resizable rail — element ref points at the <nav>; its parent is the
   // owning .channel-list <aside> (rendered by page.tsx, which we do not own).
@@ -206,25 +275,84 @@ export function ChannelSidebar({
     setSlotOrder(readSidebarOrder())
   }, [])
 
-  // Read density once on mount (the app sets it elsewhere; we only consume it).
+  // Load saved per-section channel-row orders on mount. We read every section
+  // we know how to reorder; custom sections are read lazily on first render
+  // via `orderedRows` (which falls back to the server order until populated).
   useEffect(() => {
-    setDensity(readUiDensity())
+    setRowOrders({
+      starred: readRowOrder('starred'),
+      channels: readRowOrder('channels'),
+      dms: readRowOrder('dms'),
+    })
   }, [])
 
-  // Apply density + restored width to the owning .channel-list aside.
+  // Resolve the saved order for a section, reading lazily from localStorage the
+  // first time a (custom) section is seen so we don't need its key up-front.
+  function orderedRows<T extends { id: string }>(section: string, list: T[]): T[] {
+    const saved = rowOrders[section] ?? readRowOrder(section)
+    return applyRowOrder(list, saved)
+  }
+
+  // HTML5 DnD handlers for a single channel row inside `section`. `ids` is the
+  // current visible id order for that section (post manage/quick filters), so
+  // a drop persists exactly what the user sees.
+  function rowDragHandlersFor(section: string, id: string, ids: string[]) {
+    return {
+      // Reordering a filtered subset would persist a partial order over the full
+      // list and corrupt it — disable row drag while a quick-filter is active.
+      draggable: !filterQuery,
+      onDragStart: (e: React.DragEvent<HTMLButtonElement>) => {
+        // Stop the event reaching the enclosing <details> slot so a row drag
+        // never doubles as a section-slot drag on the same element.
+        e.stopPropagation()
+        setRowDrag({ section, id })
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', `row:${section}:${id}`)
+      },
+      onDragEnd: () => {
+        setRowDrag(null)
+        setRowDragOverId(null)
+      },
+      onDragOver: (e: React.DragEvent<HTMLButtonElement>) => {
+        // Only react to a row drag within the SAME section; ignore foreign
+        // payloads (files) and cross-section row drags.
+        if (!rowDrag || rowDrag.section !== section) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (rowDragOverId !== id) setRowDragOverId(id)
+      },
+      onDrop: (e: React.DragEvent<HTMLButtonElement>) => {
+        if (!rowDrag || rowDrag.section !== section) return
+        e.preventDefault()
+        e.stopPropagation()
+        const next = reorderIds(ids, rowDrag.id, id)
+        setRowOrders(prev => ({ ...prev, [section]: next }))
+        persistRowOrder(section, next)
+        setRowDrag(null)
+        setRowDragOverId(null)
+      },
+      style: {
+        opacity: rowDrag?.section === section && rowDrag.id === id ? 0.5 : undefined,
+        boxShadow:
+          rowDrag?.section === section && rowDragOverId === id && rowDrag.id !== id
+            ? 'inset 0 2px 0 0 var(--mm-sidebar-text-hover, #1264a3)'
+            : undefined,
+      } as React.CSSProperties,
+    }
+  }
+
+  // Apply the restored width to the owning .channel-list aside.
+  // Density is the single source of truth on <html> (set in app/layout.tsx);
+  // the sidebar no longer mirrors data-density onto the aside.
   useEffect(() => {
     const aside = rootRef.current?.parentElement
     if (!aside) return
-    aside.setAttribute('data-density', density)
     const saved = readSidebarWidth()
     if (saved != null && window.innerWidth > SIDEBAR_RESIZE_BREAKPOINT) {
       aside.style.setProperty('width', `${saved}px`)
       aside.style.setProperty('max-width', `${saved}px`)
     }
-    return () => {
-      aside.removeAttribute('data-density')
-    }
-  }, [density])
+  }, [])
 
   // Drag-resize: pointer-driven width update with clamp + persistence.
   const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -483,14 +611,19 @@ export function ChannelSidebar({
           if (slot === 'starred') {
             if (starredChannels.length === 0) return null
             return (
+              (() => {
+                const rows = orderedRows('starred', starredChannels)
+                const ids = rows.map(c => c.id)
+                return (
               <SidebarSection key="slot-starred" id="starred" title="Starred"
                 {...dragHandlersFor('starred')}>
-                {starredChannels.map(item => (
+                {rows.map(item => (
                   <button type="button"
                     className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
                     key={`star-${item.id}`}
                     onContextMenu={(e) => openContextMenu(e, item)}
-                    onClick={() => onSelectChannel(item)}>
+                    onClick={() => onSelectChannel(item)}
+                    {...rowDragHandlersFor('starred', item.id, ids)}>
                     <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
                     <span className="channel-name">{item.display_name || item.name}</span>
                     {(item.unread_count ?? 0) > 0 ? (
@@ -499,6 +632,8 @@ export function ChannelSidebar({
                   </button>
                 ))}
               </SidebarSection>
+                )
+              })()
             )
           }
 
@@ -508,14 +643,17 @@ export function ChannelSidebar({
             return customSectionNames.map(secKey => {
               const list = grouped.sections.get(secKey) || []
               if (list.length === 0) return null
+              const sectionId = `custom-${secKey}`
+              const rows = orderedRows(sectionId, list)
+              const ids = rows.map(c => c.id)
               return (
                 <SidebarSection
                   key={`section-${secKey}`}
-                  id={`custom-${secKey}`}
+                  id={sectionId}
                   title={sectionLabel(secKey)}
                   {...dragHandlersFor('__custom__')}
                 >
-                  {list.map(item => {
+                  {rows.map(item => {
                     const muted = mutedIds.has(item.id)
                     const mentions = item.mention_count ?? 0
                     const unread = item.unread_count ?? 0
@@ -525,7 +663,8 @@ export function ChannelSidebar({
                         key={`${secKey}-${item.id}`}
                         title={item.purpose ? `${item.display_name || item.name}\n${item.purpose}` : (item.display_name || item.name)}
                         onContextMenu={(e) => openContextMenu(e, item)}
-                        onClick={() => onSelectChannel(item)}>
+                        onClick={() => onSelectChannel(item)}
+                        {...rowDragHandlersFor(sectionId, item.id, ids)}>
                         {muted
                           ? <BellOff size={14} className="channel-icon" aria-label="Muted" />
                           : starredIds.has(item.id)
@@ -546,10 +685,12 @@ export function ChannelSidebar({
           }
 
           if (slot === 'channels') {
+            const rows = orderedRows('channels', regularChannels)
+            const ids = rows.map(c => c.id)
             return (
               <SidebarSection key="slot-channels" id="channels" title="Channels" onAdd={onNewChannel}
                 {...dragHandlersFor('channels')}>
-                {regularChannels.map(item => {
+                {rows.map(item => {
                   const muted = mutedIds.has(item.id)
                   const mentions = item.mention_count ?? 0
                   const unread = item.unread_count ?? 0
@@ -559,7 +700,8 @@ export function ChannelSidebar({
                       key={item.id}
                       title={item.purpose ? `${item.display_name || item.name}\n${item.purpose}` : (item.display_name || item.name)}
                       onContextMenu={(e) => openContextMenu(e, item)}
-                      onClick={() => onSelectChannel(item)}>
+                      onClick={() => onSelectChannel(item)}
+                      {...rowDragHandlersFor('channels', item.id, ids)}>
                       {muted
                         ? <BellOff size={14} className="channel-icon" aria-label="Muted" />
                         : starredIds.has(item.id)
@@ -594,17 +736,20 @@ export function ChannelSidebar({
           }
 
           if (slot === 'dms') {
+            const rows = orderedRows('dms', dmChannels)
+            const ids = rows.map(c => c.id)
             return (
               <SidebarSection key="slot-dms" id="dms" title="Direct messages" onAdd={onNewMessage}
                 {...dragHandlersFor('dms')}>
-                {dmChannels.map(item => {
+                {rows.map(item => {
                   if (item.type === 'G') {
                     return (
                       <button type="button"
                         className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
                         key={item.id}
                         onContextMenu={(e) => openContextMenu(e, item)}
-                        onClick={() => onSelectChannel(item)}>
+                        onClick={() => onSelectChannel(item)}
+                        {...rowDragHandlersFor('dms', item.id, ids)}>
                         <div className="dm-group-badge">
                           {item.display_name.split(',').length + 1}
                         </div>
@@ -623,7 +768,8 @@ export function ChannelSidebar({
                       className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
                       key={item.id}
                       onContextMenu={(e) => openContextMenu(e, item)}
-                      onClick={() => onSelectChannel(item)}>
+                      onClick={() => onSelectChannel(item)}
+                      {...rowDragHandlersFor('dms', item.id, ids)}>
                       <span className={`presence presence--${status}`} aria-hidden="true" />
                       <span className="channel-name">{item.dm_peer_display || item.display_name || item.name}</span>
                       {peerEmoji ? (

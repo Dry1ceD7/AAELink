@@ -72,10 +72,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     if (p.accentColor) document.documentElement.style.setProperty('--aae-accent', p.accentColor);
                     if (p.uiScale && p.uiScale !== 100) document.documentElement.style.fontSize = p.uiScale + '%';
                     if (p.messageDensity) {
-                      document.documentElement.setAttribute('data-density', p.messageDensity);
-                      // Mirror message density to UI density so the sidebar / header / composer
-                      // tighten in lockstep with the message timeline (no FOUC on cold load).
-                      if (p.messageDensity === 'compact') {
+                      // Drive a single app-wide density signal off the same UI-density source
+                      // (aaelink_ui_density / data-mm-density). data-density on <html> lets the
+                      // WHOLE app respond -- sidebar, header, composer, panels, timeline -- in
+                      // lockstep, not just the message timeline (no FOUC on cold load).
+                      var compact = p.messageDensity === 'compact';
+                      document.documentElement.setAttribute('data-density', compact ? 'compact' : 'comfortable');
+                      if (compact) {
                         document.documentElement.setAttribute('data-mm-density', 'compact');
                         try { localStorage.setItem('aaelink_ui_density', 'compact'); } catch (e) {}
                       } else {
