@@ -671,6 +671,7 @@ async function migration001InitialSchema(pool: RunnerPool) {
       channel_id TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       secret_token TEXT NOT NULL,
+      signing_secret TEXT NOT NULL DEFAULT '',
       created_by TEXT NOT NULL REFERENCES aaelink.users(id),
       created_at BIGINT NOT NULL
     );
@@ -4563,6 +4564,191 @@ async function migration050ChannelRetentionOverrides(pool: RunnerPool) {
   )
 }
 
+/**
+ * Migration 052 — slash command delayed-response (response_url) tokens.
+ *
+ * Backs Slack parity §14 (response_url / delayed responses). When a custom
+ * slash command is dispatched to its callback_url, the app mints a signed,
+ * single-channel-scoped token persisted here so the receiver endpoint
+ * (POST /api/slash-commands/response) can deliver up to MAX_RESPONSE_USES (5)
+ * delayed messages into the bound channel within the token's TTL (~30 min).
+ *
+ * Persistence (not a stateless token) is required to enforce the <=5 use cap
+ * and bound replay. The conditional UPDATE on `uses` makes consumption
+ * race/replay-safe. See lib/comms/slashResponseToken.ts.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration052SlashCommandResponseTokens(pool: RunnerPool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.slash_command_response_tokens (
+       id            TEXT PRIMARY KEY,
+       workspace_id  TEXT NOT NULL,
+       channel_id    TEXT NOT NULL,
+       user_id       TEXT NOT NULL,
+       command       TEXT NOT NULL,
+       nonce         TEXT NOT NULL DEFAULT '',
+       signature     TEXT NOT NULL,
+       uses          INT NOT NULL DEFAULT 0,
+       max_uses      INT NOT NULL DEFAULT 5,
+       expires_at    BIGINT NOT NULL,
+       created_at    BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_slash_response_tokens_expires
+       ON aaelink.slash_command_response_tokens(expires_at)`
+  )
+}
+
+async function migration053AppViews(pool: RunnerPool) {
+  // Interactive views/modals (Integrations parity §28 — Slack views.open/push/
+  // update/publish). Two tables:
+  //
+  //   view_triggers — single-use, short-lived trigger_id grants. Slack mints a
+  //   trigger_id on every interaction and an app must spend it (once, within
+  //   ~3s) to open/push a modal. Nothing in this codebase minted one before, so
+  //   this table IS the mint+consume ledger: mintViewTrigger() inserts a row,
+  //   consumeViewTrigger() atomically flips consumed_at (single-use) and checks
+  //   expiry. bot_id/user_id bind the grant so an app can't replay another app's
+  //   trigger. lib/apps/views.ts owns the lifecycle.
+  //
+  //   app_views — persisted modal/home views. type 'modal' stacks via
+  //   root_view_id (the modal the stack belongs to) + parent_view_id (the view
+  //   pushed under). type 'home' is upserted one-per (app_id,user_id) — the Home
+  //   tab. state holds the last-known input values; hash gates concurrent
+  //   updates. channel_id is nullable (modals are not channel-bound).
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.view_triggers (
+       id           TEXT PRIMARY KEY,
+       bot_id       TEXT REFERENCES aaelink.bot_users(id) ON DELETE CASCADE,
+       user_id      TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       channel_id   TEXT REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+       workspace_id TEXT,
+       consumed_at  BIGINT,
+       expires_at   BIGINT NOT NULL,
+       created_at   BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_view_triggers_user ON aaelink.view_triggers(user_id)`
+  )
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.app_views (
+       id               TEXT PRIMARY KEY,
+       bot_id           TEXT REFERENCES aaelink.bot_users(id) ON DELETE CASCADE,
+       app_id           TEXT REFERENCES aaelink.apps(id) ON DELETE CASCADE,
+       user_id          TEXT NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
+       channel_id       TEXT REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+       workspace_id     TEXT,
+       type             TEXT NOT NULL DEFAULT 'modal' CHECK (type IN ('modal', 'home')),
+       root_view_id     TEXT,
+       parent_view_id   TEXT,
+       external_id      TEXT,
+       view             JSONB NOT NULL DEFAULT '{}',
+       state            JSONB NOT NULL DEFAULT '{"values":{}}',
+       hash             TEXT NOT NULL DEFAULT '',
+       created_at       BIGINT NOT NULL,
+       updated_at       BIGINT NOT NULL
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_app_views_root ON aaelink.app_views(root_view_id)`
+  )
+  // One Home-tab view per (bot_id, user_id) — publish is an upsert against this.
+  // Keyed on bot_id (not app_id) because the bot is the acting identity and an app
+  // may register without a dedicated apps row; COALESCE folds a NULL bot into a
+  // sentinel so the partial unique index still collapses repeat publishes.
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_app_views_home
+       ON aaelink.app_views((COALESCE(bot_id, '')), user_id) WHERE type = 'home'`
+  )
+  // external_id is app-supplied and must be unique per bot when present
+  // (views.update by external_id targets exactly one view).
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_app_views_external
+       ON aaelink.app_views(bot_id, external_id) WHERE external_id IS NOT NULL AND external_id <> ''`
+  )
+}
+
+/**
+ * Migration 055 — inbound signing + rich content for incoming webhooks.
+ *
+ * (Assigned 052, but 052/053/054 were already claimed by parallel lanes —
+ * slash_command_response_tokens / app_views / workflow_engine — so this entry
+ * takes the next free number to avoid collision. Append-only, never renumbered.)
+ *
+ * Two idempotent additions backing the public incoming-webhook receiver
+ * (app/api/webhooks/[token]/route.ts):
+ *
+ *  - incoming_webhooks.signing_secret: per-webhook HMAC secret. When set, the
+ *    receiver verifies an X-AAELink-Signature header on the inbound POST
+ *    (lib/webhooks/inboundVerify.ts, mirroring the OUTBOUND v0 scheme in
+ *    lib/webhooks/webhookSigning.ts). The empty-string default preserves the
+ *    pre-existing OPEN behaviour: webhooks with no secret stay unauthenticated
+ *    for back-compat (documented in the route).
+ *  - messages.metadata: JSONB holding bot identity (username/icon) plus
+ *    Slack-compatible attachments/blocks for messages posted by webhooks/apps.
+ *    Normal user messages keep the empty-object default.
+ *
+ * Forward-only, idempotent.
+ */
+async function migration055IncomingWebhookSigning(pool: RunnerPool) {
+  await pool.query(
+    `ALTER TABLE aaelink.incoming_webhooks
+       ADD COLUMN IF NOT EXISTS signing_secret TEXT NOT NULL DEFAULT ''`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.messages
+       ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`
+  )
+}
+
+async function migration054WorkflowEngine(pool: RunnerPool) {
+  // Workflow execution engine (Integrations parity §30 — Slack Workflow Builder).
+  // Until now workflow_executions only ever held status 'running'; no engine ran
+  // the steps. lib/workflows/engine.ts now drives steps sequentially. Two pieces
+  // of state are required:
+  //
+  //   workflow_executions.context — JSONB bag threading prior-step outputs into
+  //   later steps (conditional predicates read it; post_message/call_webhook write
+  //   their results into it). Defaults to '{}' so existing rows are valid.
+  //
+  //   workflow_executions.step_cursor — index of the next step to run, so a
+  //   'delay' step can suspend the run, reschedule a worker continuation, and
+  //   resume mid-workflow without re-running completed steps.
+  await pool.query(
+    `ALTER TABLE aaelink.workflow_executions ADD COLUMN IF NOT EXISTS context JSONB NOT NULL DEFAULT '{}'`
+  )
+  await pool.query(
+    `ALTER TABLE aaelink.workflow_executions ADD COLUMN IF NOT EXISTS step_cursor INT NOT NULL DEFAULT 0`
+  )
+
+  // Per-step execution ledger — one row per step attempt. This is where the
+  // engine records step_completed / step_failed (previously these existed only as
+  // external-caller route actions with no engine to populate them). status is
+  // 'completed' | 'failed' | 'skipped'; output holds the step's result, error the
+  // failure reason. Bound to its execution via execution_id.
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS aaelink.workflow_step_executions (
+       id           TEXT PRIMARY KEY,
+       execution_id TEXT NOT NULL,
+       workflow_id  TEXT NOT NULL,
+       step_id      TEXT NOT NULL DEFAULT '',
+       position     INT NOT NULL DEFAULT 0,
+       type         TEXT NOT NULL DEFAULT '',
+       status       TEXT NOT NULL DEFAULT 'completed',
+       output       JSONB NOT NULL DEFAULT '{}',
+       error        TEXT NOT NULL DEFAULT '',
+       created_at   BIGINT NOT NULL DEFAULT 0
+     )`
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_wf_step_execs_exec
+       ON aaelink.workflow_step_executions(execution_id, position)`
+  )
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4612,7 +4798,11 @@ const MIGRATIONS: Migration[] = [
   { id: '046_event_subscription_verification', up: migration046EventSubscriptionVerification },
   { id: '047_thread_replies_enabled', up: migration047ThreadRepliesEnabled },
   { id: '048_user_groups_org_id', up: migration048UserGroupsOrgId },
-  { id: '051_idp_group_role_mappings', up: migration051IdpGroupRoleMappings },
   { id: '049_seed_guest_expire_job', up: migration049SeedGuestExpireJob },
   { id: '050_channel_retention_overrides', up: migration050ChannelRetentionOverrides },
+  { id: '051_idp_group_role_mappings', up: migration051IdpGroupRoleMappings },
+  { id: '052_slash_command_response_tokens', up: migration052SlashCommandResponseTokens },
+  { id: '053_app_views', up: migration053AppViews },
+  { id: '054_workflow_engine', up: migration054WorkflowEngine },
+  { id: '055_incoming_webhook_signing', up: migration055IncomingWebhookSigning },
 ]

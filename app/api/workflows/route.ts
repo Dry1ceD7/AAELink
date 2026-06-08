@@ -4,6 +4,9 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { dispatchWorkflowExecution } from '@/lib/workflows/dispatch'
+import { loadWorkflowDetail, listRecentExecutions } from '@/lib/workflows/queries'
 
 /**
  * Workflows API — Slack workflows.* parity.
@@ -33,48 +36,14 @@ async function _GET(req: NextRequest) {
 
   // Single workflow
   if (workflowId) {
-    const { rows } = await pool.query<{
-      id: string; name: string; description: string; icon: string;
-      status: string; is_featured: boolean; created_by: string; created_at: number;
-    }>(`SELECT * FROM aaelink.workflows WHERE id = $1`, [workflowId])
-    if (!rows[0]) return NextResponse.json({ error: 'workflow_not_found' }, { status: 404 })
-
-    const wf = rows[0]
-    const { rows: steps } = await pool.query<{
-      id: string; workflow_id: string; position: number; type: string;
-      function_id: string; config: string; created_at: number;
-    }>(
-      `SELECT * FROM aaelink.workflow_steps WHERE workflow_id = $1 ORDER BY position ASC`, [workflowId]
-    )
-    const { rows: triggers } = await pool.query<{
-      id: string; workflow_id: string; type: string; config: string; created_at: number;
-    }>(
-      `SELECT * FROM aaelink.workflow_triggers WHERE workflow_id = $1`, [workflowId]
-    )
-    const { rows: executions } = await pool.query(
-      `SELECT * FROM aaelink.workflow_executions WHERE workflow_id = $1 ORDER BY created_at DESC LIMIT 20`,
-      [workflowId]
-    )
-
-    return NextResponse.json({
-      workflow: {
-        ...wf,
-        steps: steps.map(s => ({ ...s, config: parseJSON(s.config) })),
-        triggers: triggers.map(t => ({ ...t, config: parseJSON(t.config) })),
-        recent_executions: executions,
-      },
-    })
+    const workflow = await loadWorkflowDetail(pool, workflowId)
+    if (!workflow) return NextResponse.json({ error: 'workflow_not_found' }, { status: 404 })
+    return NextResponse.json({ workflow })
   }
 
   // Executions view
   if (view === 'executions') {
-    const { rows } = await pool.query(
-      `SELECT e.*, w.name AS workflow_name
-       FROM aaelink.workflow_executions e
-       LEFT JOIN aaelink.workflows w ON w.id = e.workflow_id
-       ORDER BY e.created_at DESC LIMIT 100`
-    )
-    return NextResponse.json({ executions: rows })
+    return NextResponse.json({ executions: await listRecentExecutions(pool) })
   }
 
   // List workflows
@@ -93,6 +62,8 @@ async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -165,12 +136,10 @@ async function _POST(req: NextRequest) {
 
   if (action === 'execute') {
     if (!body.workflow_id) return NextResponse.json({ error: 'workflow_id required' }, { status: 400 })
-    const execId = randomUUID()
-    await pool.query(`
-      INSERT INTO aaelink.workflow_executions (id, workflow_id, status, triggered_by, created_at)
-      VALUES ($1, $2, 'running', $3, $4)
-    `, [execId, body.workflow_id, uid, now])
-    return NextResponse.json({ execution: { id: execId, workflow_id: body.workflow_id, status: 'running' } })
+    // RBAC + execution-row + worker-job enqueue + audit (extracted to lib/).
+    const res = await dispatchWorkflowExecution(pool, body.workflow_id, uid, body.outputs || {})
+    if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
+    return NextResponse.json({ execution: { id: res.executionId, workflow_id: body.workflow_id, status: 'running' } })
   }
 
   if (action === 'step_completed') {
@@ -214,11 +183,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
-}
-
-function parseJSON(val: unknown): unknown {
-  if (typeof val === 'string') { try { return JSON.parse(val) } catch { return val } }
-  return val
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

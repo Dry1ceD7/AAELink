@@ -68,11 +68,6 @@ interface JobRow {
   run_after: number; created_at: number
 }
 
-interface WorkflowStepRow {
-  id: string; workflow_id: string; position: number
-  type: string; function_id: string | null; config: string | null
-}
-
 interface ScheduledMessageRow {
   id: string; channel_id: string; user_id: string
   content: string; root_id: string | null; status: string
@@ -345,54 +340,38 @@ const handlers: Record<string, JobHandler> = {
     }
   },
 
-  // Workflow step execution (v0.0.8)
-  workflow_execute: async (payload, pool) => {
+  // Workflow run — drives the execution engine (Integrations parity §30).
+  // The /api/workflows execute action enqueues one of these per run. The engine
+  // runs the ordered steps, records step_completed/step_failed per step, threads
+  // an execution context, and finalizes the execution status. A 'delay' step
+  // suspends the run: the engine returns { status: 'suspended', resumeAfterMs }
+  // and we self-reschedule a continuation 'workflow_run' job (NOT a worker retry —
+  // the engine already persisted the cursor, so the resume picks up the next step).
+  workflow_run: async (payload, pool) => {
     const { workflow_id, execution_id } = payload as { workflow_id: string; execution_id: string }
-    log.info(`⚡ [workflow_execute] ${workflow_id} exec:${execution_id}`)
+    log.info(`⚡ [workflow_run] ${workflow_id} exec:${execution_id}`)
+    if (!execution_id) throw new Error('workflow_run_missing_execution_id')
 
-    try {
-      // Fetch workflow steps
-      const { rows: steps } = await pool.query<WorkflowStepRow>(
-        `SELECT * FROM aaelink.workflow_steps WHERE workflow_id = $1 ORDER BY position ASC`,
-        [workflow_id]
-      )
+    const { runWorkflowExecution } = await import('@/lib/workflows/engine')
+    const result = await runWorkflowExecution(pool, execution_id)
 
-      for (const s of steps) {
-        const stepType = String(s.type || 'function')
-
-        if (stepType === 'function' && s.function_id) {
-          // Execute the function
-          const { rows: fnRows } = await pool.query(
-            `SELECT * FROM aaelink.functions_registry WHERE id = $1 AND is_active = true`,
-            [s.function_id]
-          )
-          if (!fnRows[0]) {
-            throw new Error(`Function ${s.function_id} not found or inactive`)
-          }
-
-          // Create function execution record
-          const { randomUUID } = await import('crypto')
-          await pool.query(`
-            INSERT INTO aaelink.function_executions (id, function_id, status, inputs, triggered_by, created_at)
-            VALUES ($1, $2, 'completed', $3, $4, $5)
-          `, [randomUUID(), s.function_id, JSON.stringify(s.config || {}), `workflow:${execution_id}`, Date.now()])
-        }
-
-        log.info(`   ✅ Step ${s.position}: ${stepType}`)
-      }
-
-      await pool.query(
-        `UPDATE aaelink.workflow_executions SET status = 'completed', completed_at = $1 WHERE id = $2`,
-        [Date.now(), execution_id]
-      )
-      log.info(`   ✅ Workflow completed`)
-    } catch (err: unknown) {
-      await pool.query(
-        `UPDATE aaelink.workflow_executions SET status = 'failed', error = $1, completed_at = $2 WHERE id = $3`,
-        [err instanceof Error ? err.message : 'Unknown', Date.now(), execution_id]
-      )
-      throw err
+    if (result.status === 'suspended') {
+      const { randomUUID } = await import('crypto')
+      const runAfter = Date.now() + (result.resumeAfterMs || 1000)
+      await pool.query(`
+        INSERT INTO aaelink.jobs
+          (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+        VALUES ($1, 'workflow_run', 'pending', 5, $2, $3, 3, 0, $4)
+      `, [randomUUID(), JSON.stringify({ workflow_id, execution_id }), runAfter, Date.now()])
+      log.info(`   ⏸️ suspended (delay); resume scheduled in ${result.resumeAfterMs}ms after ${result.stepsRun} step(s)`)
+      return
     }
+
+    // completed | failed are both terminal for the engine. A 'failed' run is a
+    // business outcome already persisted on the execution row (step_failed +
+    // execution failed), NOT a job error — so we do NOT throw, to avoid the worker
+    // re-running the (already finalized) execution on retry.
+    log.info(`   ${result.status === 'completed' ? '✅' : '❌'} ${result.status} after ${result.stepsRun} step(s)${result.error ? ` (${result.error})` : ''}`)
   },
 
   // Function async execution (v0.0.8)
@@ -605,6 +584,10 @@ const handlers: Record<string, JobHandler> = {
 // Legacy alias: POST /api/search/files enqueues 'index_rebuild' jobs (no handler
 // existed before Stage B). Route them to the file_index handler.
 handlers.index_rebuild = handlers.file_index
+
+// Legacy alias: the pre-engine stub enqueued 'workflow_execute' jobs. Route any
+// in-flight ones to the real engine-driven 'workflow_run' handler.
+handlers.workflow_execute = handlers.workflow_run
 
 // ── Worker Engine ────────────────────────────────────────────────────
 
