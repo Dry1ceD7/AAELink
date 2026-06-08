@@ -21,7 +21,7 @@ import { log } from '@/lib/infra/log'
 export type PubSubEvent =
   | { type: 'message'; channel_id: string; payload: unknown }
   | { type: 'typing'; channel_id: string; user_id: string; active: boolean }
-  | { type: 'presence'; user_id: string; status: string; last_seen: number }
+  | { type: 'presence'; user_id: string; status: string; last_seen: number; custom_emoji?: string; custom_text?: string; expires_at?: number }
   | { type: 'reaction'; channel_id: string; message_id: string; emoji: string; user_id: string; action: 'add' | 'remove' }
   | { type: 'deletion'; channel_id: string; message_id: string; deleted_at: number }
   | { type: 'read_state'; channel_id: string; user_id: string; last_read: number }

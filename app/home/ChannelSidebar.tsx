@@ -3,6 +3,8 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { ChevronDown, Plus, Hash, Lock, Star, Search, PenLine, BellOff, X } from 'lucide-react'
 import { displayName, type AppUser } from '@/components/chat/ChatMessage'
+import { PresenceDot } from '@/components/chat/PresenceDot'
+import type { Presence } from '@/lib/types/presence'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { TOP_NAV_ITEMS, MORE_NAV_ITEMS, MORE_MODULE_KEYS, ENTERPRISE_NAV_ITEMS, ADMIN_NAV_ITEMS, MORE_ICON } from './sidebarNav'
 import { ChannelContextMenu, type ChannelContextMenuTarget } from './ChannelContextMenu'
@@ -64,6 +66,75 @@ export function readSidebarWidth(): number | null {
 /* The visible label used for client-side quick filtering. */
 function channelFilterLabel(c: Channel): string {
   return (c.dm_peer_display || c.display_name || c.name || '').toLowerCase()
+}
+
+/* ── Section collapse persistence (consolidated key) ──────────────
+   All section open/closed states live under one localStorage key
+   (`aaelink-sidebar-sections`) as a JSON map of sectionId → open(boolean),
+   so Enterprise/Admin/People + conversation sections persist across reloads.
+   We migrate transparently from the legacy per-section keys
+   (`sidebar_section_<id>`) on read so existing users keep their layout. */
+const SIDEBAR_SECTIONS_KEY = 'aaelink-sidebar-sections'
+
+function readSectionCollapse(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_SECTIONS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'boolean') out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/* Resolve a single section's open state, preferring the consolidated map and
+   falling back to the legacy per-section key (so prior collapses survive the
+   migration). Returns undefined when no preference has ever been saved. */
+function readSectionOpen(id: string): boolean | undefined {
+  if (typeof window === 'undefined') return undefined
+  const map = readSectionCollapse()
+  if (Object.prototype.hasOwnProperty.call(map, id)) return map[id]
+  try {
+    const legacy = window.localStorage.getItem(`sidebar_section_${id}`)
+    if (legacy !== null) return legacy === 'true'
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
+function persistSectionOpen(id: string, open: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    const map = readSectionCollapse()
+    map[id] = open
+    window.localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(map))
+  } catch {
+    /* quota exceeded */
+  }
+}
+
+/* Map the live presence-listener status ('online'|'away'|'dnd'|'offline') onto
+   the shared Presence union ('active'|'away'|'dnd'|'offline') consumed by
+   PresenceDot. Only 'online' differs ('active'); everything else is identical. */
+function toPresence(status: string): Presence {
+  switch (status) {
+    case 'online':
+    case 'active':
+      return 'active'
+    case 'away':
+      return 'away'
+    case 'dnd':
+      return 'dnd'
+    default:
+      return 'offline'
+  }
 }
 
 /* ── Per-section channel-row ordering (drag-reorder within a section) ──
@@ -150,13 +221,13 @@ function SidebarSection({
 }) {
   const [open, setOpen] = useState(true)
   useEffect(() => {
-    const val = localStorage.getItem(`sidebar_section_${id}`)
-    if (val !== null) setOpen(val === 'true')
+    const saved = readSectionOpen(id)
+    if (saved !== undefined) setOpen(saved)
   }, [id])
   const handleToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
     const next = e.currentTarget.open
     setOpen(next)
-    localStorage.setItem(`sidebar_section_${id}`, String(next))
+    persistSectionOpen(id, next)
   }
   return (
     <details
@@ -486,12 +557,16 @@ export function ChannelSidebar({
   const MoreIcon = MORE_ICON
   const isAdmin = me && isPlatformAdmin(me.platform_role)
 
-  // Custom-status emoji lookup for DM peers (Slack shows the peer's status
-  // emoji next to the presence dot). Sourced from the user lists already
-  // passed to the sidebar — no new fetch, no breaking existing props.
-  const customStatusEmoji = new Map<string, string>()
+  // Custom-status lookup for DM peers (Slack shows the peer's status emoji +
+  // text next to the presence dot). Sourced from the user lists already passed
+  // to the sidebar — no new fetch, no breaking existing props. PresenceDot
+  // renders the emoji/text inline, so we just carry both through.
+  const customStatus = new Map<string, { emoji?: string; text?: string }>()
   for (const u of [...teamMembers, ...dmPreview]) {
-    if (u?.id && u.status_emoji) customStatusEmoji.set(u.id, u.status_emoji)
+    if (!u?.id) continue
+    if (u.status_emoji || u.status_text) {
+      customStatus.set(u.id, { emoji: u.status_emoji, text: u.status_text })
+    }
   }
 
   // Sync muted channels from the server when the workspace changes.
@@ -705,9 +780,10 @@ export function ChannelSidebar({
                   const muted = mutedIds.has(item.id)
                   const mentions = item.mention_count ?? 0
                   const unread = item.unread_count ?? 0
+                  const hasDraft = draftIds.has(item.id)
                   return (
                     <button type="button"
-                      className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${unread > 0 ? ' channel--unread' : ''}${muted ? ' channel--muted' : ''}${mentions > 0 ? ' channel--mention' : ''}`}
+                      className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${unread > 0 ? ' channel--unread' : ''}${muted ? ' channel--muted' : ''}${mentions > 0 ? ' channel--mention' : ''}${hasDraft ? ' channel--draft' : ''}`}
                       key={item.id}
                       title={item.purpose ? `${item.display_name || item.name}\n${item.purpose}` : (item.display_name || item.name)}
                       onContextMenu={(e) => openContextMenu(e, item)}
@@ -719,16 +795,30 @@ export function ChannelSidebar({
                           ? <Star size={14} className="channel-icon" style={{ color: '#f5ab00', fill: '#f5ab00' }} />
                           : item.type === 'P' ? <Lock size={15} className="channel-icon" /> : <Hash size={15} className="channel-icon" />}
                       <span className="channel-name">{item.display_name || item.name}</span>
+                      {/* Prominent amber draft pen next to the name (with tooltip),
+                          shown whenever a draft exists — independent of unread/mention.
+                          Amber accent is applied inline so it does not depend on the
+                          muted trailing-edge .channel-draft-icon CSS. */}
+                      {hasDraft ? (
+                        <span
+                          className="channel-draft-flag"
+                          title="You have an unsent draft in this channel"
+                          aria-label="Unsent draft"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            marginLeft: 4,
+                            flexShrink: 0,
+                            color: '#f5ab00',
+                          }}
+                        >
+                          <PenLine size={12} aria-hidden="true" style={{ color: '#f5ab00', opacity: 1 }} />
+                        </span>
+                      ) : null}
                       {mentions > 0 ? (
                         <span className="channel-mention-pill" aria-label={`${mentions} unread mentions`}>{mentions}</span>
                       ) : unread > 0 ? (
                         <span className="channel-unread">{unread}</span>
-                      ) : draftIds.has(item.id) ? (
-                        <PenLine
-                          size={12}
-                          className="channel-draft-icon"
-                          style={{ opacity: 1, marginLeft: 'auto', color: 'var(--mm-sidebar-text-hover)' }}
-                        />
                       ) : null}
                     </button>
                   )
@@ -772,8 +862,8 @@ export function ChannelSidebar({
                     )
                   }
                   const peerId = item.name.split('__').find(id => id !== me?.id) || ''
-                  const status = getStatus(peerId)
-                  const peerEmoji = customStatusEmoji.get(peerId)
+                  const status = toPresence(getStatus(peerId))
+                  const peerStatus = customStatus.get(peerId)
                   return (
                     <button type="button"
                       className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
@@ -781,11 +871,13 @@ export function ChannelSidebar({
                       onContextMenu={(e) => openContextMenu(e, item)}
                       onClick={() => onSelectChannel(item)}
                       {...rowDragHandlersFor('dms', item.id, ids)}>
-                      <span className={`presence presence--${status}`} aria-hidden="true" />
+                      <PresenceDot
+                        status={status}
+                        customEmoji={peerStatus?.emoji}
+                        customText={peerStatus?.text}
+                        size={10}
+                      />
                       <span className="channel-name">{item.dm_peer_display || item.display_name || item.name}</span>
-                      {peerEmoji ? (
-                        <span className="channel-status-emoji" aria-hidden="true">{peerEmoji}</span>
-                      ) : null}
                       {(item.unread_count ?? 0) > 0 ? (
                         <span className="channel-unread">{item.unread_count}</span>
                       ) : null}

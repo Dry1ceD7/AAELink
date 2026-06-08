@@ -4,8 +4,34 @@ import { useMemo, useState } from 'react'
 import { UserPlus, X, Check } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { toast } from '@/lib/ui/toast'
+import { PresenceDot } from '@/components/chat/PresenceDot'
+import type { Presence } from '@/lib/types/presence'
 
-type MemberUser = { id: string; username?: string; first_name?: string; last_name?: string; nickname?: string }
+type MemberUser = {
+  id: string
+  username?: string
+  first_name?: string
+  last_name?: string
+  nickname?: string
+  status_emoji?: string
+  status_text?: string
+}
+
+/* Map the live presence-listener status ('online'|'away'|'dnd'|'offline') onto
+   the shared Presence union ('active'|'away'|'dnd'|'offline') PresenceDot uses. */
+function toPresence(status: string): Presence {
+  switch (status) {
+    case 'online':
+    case 'active':
+      return 'active'
+    case 'away':
+      return 'away'
+    case 'dnd':
+      return 'dnd'
+    default:
+      return 'offline'
+  }
+}
 
 interface MemberListPanelProps {
   open: boolean
@@ -115,17 +141,35 @@ export function MemberListPanel({
           <p className="member-list-empty">No members to display.</p>
         ) : (
           members.map(u => {
-            const status = getStatus(u.id)
+            const status = toPresence(getStatus(u.id))
             const name = displayName(u)
+            const hasCustom = Boolean(u.status_emoji || u.status_text)
             return (
               <button key={u.id} type="button" className="member-list-item" onClick={() => { onOpenDm(u.id); onClose() }}>
                 <div className="member-list-avatar">
                   {(u.username || name).slice(0, 1).toUpperCase()}
-                  <span className={`member-list-presence presence--${status}`} />
+                  {/* Server-derived presence dot, positioned over the avatar's
+                      bottom-right corner. PresenceDot renders the CSS-colored dot;
+                      custom status (if any) is shown inline beside the name below. */}
+                  <span
+                    className="member-list-presence"
+                    style={{ background: 'transparent', border: 'none', display: 'inline-flex' }}
+                  >
+                    <PresenceDot status={status} size={10} />
+                  </span>
                 </div>
                 <div className="member-list-info">
                   <strong>{name}</strong>
-                  <span>@{u.username}</span>
+                  {hasCustom ? (
+                    <span className="member-list-custom-status">
+                      {u.status_emoji ? (
+                        <span className="member-list-status-emoji" aria-hidden="true">{u.status_emoji}</span>
+                      ) : null}
+                      {u.status_text ? <span>{u.status_text}</span> : null}
+                    </span>
+                  ) : (
+                    <span>@{u.username}</span>
+                  )}
                 </div>
               </button>
             )

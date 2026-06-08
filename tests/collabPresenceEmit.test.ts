@@ -65,7 +65,9 @@ describe('POST /api/collab/presence — emits on global:presence', () => {
     expect(event).toMatchObject({
       type: 'presence',
       user_id: 'u-1',
-      status: 'online',
+      // Presence fan-out derives the canonical Presence vocabulary (active/away/
+      // dnd/offline); a heartbeating user with no manual status resolves to active.
+      status: 'active',
     })
     expect(typeof (event as { last_seen: number }).last_seen).toBe('number')
   })
