@@ -1931,7 +1931,13 @@ function HomeChat() {
               mode={clipRecorder.mode}
               onClose={() => setClipRecorder(null)}
               onSend={(clip) => {
-                void handleSend(`[${clip.type} clip — ${Math.floor(clip.duration / 60)}:${String(clip.duration % 60).padStart(2, '0')}]${clip.transcript ? `\n> ${clip.transcript}` : ''}`)
+                // Upload the recorded clip as a real media attachment via the
+                // same /api/documents path drag-and-drop uploads use.
+                const ext = clip.blob.type.includes('mp4') ? 'mp4' : 'webm'
+                const form = new FormData()
+                form.append('workspace_id', activeTeamId || '')
+                form.append('file', clip.blob, `clip-${clip.type}.${ext}`)
+                void apiFetch('/api/documents', { method: 'POST', body: form })
                 setClipRecorder(null)
               }}
             />
