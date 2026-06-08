@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Star, BellOff, Bell, Link2, Info, LogOut, Check, FolderPlus, FolderMinus, ChevronRight, MailCheck } from 'lucide-react'
+import { Star, BellOff, Bell, Link2, Info, LogOut, Check, FolderPlus, FolderMinus, ChevronRight, MailCheck, Archive, Lock, Hash } from 'lucide-react'
 import { isChannelMuted, toggleMuteChannel } from '@/lib/channels/channelMute'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 export interface ChannelContextMenuTarget {
   id: string
@@ -31,6 +32,8 @@ interface ChannelContextMenuProps {
   onToggleStar: () => void
   onOpenInfo?: () => void
   onLeave?: () => void
+  /** Called after a successful archive/convert so the parent can refresh its list. */
+  onChanged?: () => void
   /** Existing custom-section keys (already slug-form). */
   customSections?: string[]
   /** The section the target is currently in, if any. */
@@ -50,6 +53,7 @@ export function ChannelContextMenu({
   onToggleStar,
   onOpenInfo,
   onLeave,
+  onChanged,
   customSections,
   currentSection,
   onMoveToSection,
@@ -63,11 +67,73 @@ export function ChannelContextMenu({
   const [copied, setCopied] = useState(false)
   const [focusIndex, setFocusIndex] = useState(0)
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   /* Clamp the menu inside the viewport. */
   const left = Math.min(target.x, window.innerWidth - MENU_WIDTH - MENU_PAD)
   const topRaw = target.y
   const isDM = target.type === 'D' || target.type === 'G'
+  const isPrivate = target.type === 'P'
+
+  const onArchive = async () => {
+    if (busy) return
+    const label = `#${target.displayName}`
+    if (!window.confirm(`Archive ${label}? Members will lose access until it is unarchived.`)) {
+      onClose()
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await apiFetch('/api/channels', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel_id: target.id, action: 'archive' }),
+      })
+      if (res.ok) {
+        toast.success(`Archived ${label}`)
+        onChanged?.()
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        toast.error(data.error || 'archive_failed')
+      }
+    } catch {
+      toast.error('archive_failed')
+    } finally {
+      setBusy(false)
+      onClose()
+    }
+  }
+
+  const onConvert = async () => {
+    if (busy) return
+    const label = `#${target.displayName}`
+    const targetType = isPrivate ? 'O' : 'P'
+    const verb = isPrivate ? 'public' : 'private'
+    if (!window.confirm(`Convert ${label} to ${verb}? This cannot always be undone.`)) {
+      onClose()
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await apiFetch(`/api/channels/${encodeURIComponent(target.id)}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: targetType }),
+      })
+      if (res.ok) {
+        toast.success(`Converted ${label} to ${verb}`)
+        onChanged?.()
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        toast.error(data.error || 'convert_failed')
+      }
+    } catch {
+      toast.error('convert_failed')
+    } finally {
+      setBusy(false)
+      onClose()
+    }
+  }
 
   const items: ItemDef[] = []
   items.push({
@@ -176,6 +242,25 @@ export function ChannelContextMenu({
         onRemoveFromSection()
         onClose()
       },
+    })
+  }
+  if (!isDM && (isPrivate || target.type === 'O')) {
+    items.push({
+      id: 'convert',
+      label: isPrivate ? 'Convert to public' : 'Convert to private',
+      icon: isPrivate ? <Hash size={14} /> : <Lock size={14} />,
+      disabled: busy,
+      onSelect: onConvert,
+    })
+  }
+  if (!isDM) {
+    items.push({
+      id: 'archive',
+      label: 'Archive channel',
+      icon: <Archive size={14} />,
+      danger: true,
+      disabled: busy,
+      onSelect: onArchive,
     })
   }
   if (onLeave && !isDM) {
