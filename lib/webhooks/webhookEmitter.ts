@@ -20,6 +20,8 @@
 import type { Pool } from 'pg'
 import { randomUUID, createHmac } from 'crypto'
 import { claimEventDelivery } from '@/lib/events/eventDedup'
+import { getPubSub } from '@/lib/realtime/redisPubSub'
+import { publishAppEvent } from '@/lib/apps/socketMode'
 
 /** All supported webhook event types */
 export const WEBHOOK_EVENT_TYPES = [
@@ -206,9 +208,9 @@ async function fanOutEventSubscriptions(
   // workspace-bound subs match only when their workspace equals the event's.
   // `events` is stored as JSONB; pg returns it already-parsed as a JS array.
   const { rows: subs } = await pool.query<{
-    id: string; endpoint_url: string; events: unknown; signing_secret: string
+    id: string; endpoint_url: string; events: unknown; signing_secret: string; bot_id: string | null
   }>(`
-    SELECT id, endpoint_url, events, signing_secret
+    SELECT id, endpoint_url, events, signing_secret, bot_id
     FROM aaelink.event_subscriptions
     WHERE status = 'active'
       AND verified = true
@@ -222,6 +224,8 @@ async function fanOutEventSubscriptions(
   // Collect the rows for one batched INSERT instead of N serial round-trips.
   const valueTuples: string[] = []
   const params: unknown[] = []
+  // Bot ids that have a live socket-mode connection to also publish to.
+  const socketBotIds: string[] = []
   let queued = 0
 
   for (const sub of subs) {
@@ -265,6 +269,9 @@ async function fanOutEventSubscriptions(
     )
     params.push(randomUUID(), jobPayload, now, jobCreatedBy)
     queued++
+
+    // Collect bot ids for socket-mode bridging (below).
+    if (sub.bot_id) socketBotIds.push(sub.bot_id)
   }
 
   if (valueTuples.length > 0) {
@@ -273,6 +280,33 @@ async function fanOutEventSubscriptions(
         (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
       VALUES ${valueTuples.join(', ')}
     `, params)
+  }
+
+  // ── Socket-mode bridge ───────────────────────────────────────────────
+  // For each matched subscription that owns a bot, also publish the envelope
+  // onto the bot's `app:<botId>` pub/sub topic so socket-mode-connected apps
+  // receive the event in real time alongside the queued HTTP delivery. This is
+  // best-effort: a publish failure must never break the HTTP path.
+  // PubSubEvent is a discriminated union; we use the 'notification' variant and
+  // pack the full event envelope into `payload` so the socket-mode gateway can
+  // forward it verbatim without the union narrowing every subscriber.
+  if (socketBotIds.length > 0) {
+    const envelope = {
+      type: 'notification' as const,
+      user_id: actorId,
+      payload: {
+        event_type: String(eventType),
+        timestamp: new Date(now).toISOString(),
+        data,
+        actor_id: actorId,
+      },
+    }
+    const pubsub = getPubSub()
+    for (const botId of socketBotIds) {
+      try {
+        await publishAppEvent(pubsub, botId, envelope)
+      } catch { /* best-effort: never block the write path */ }
+    }
   }
 
   return queued
@@ -297,9 +331,16 @@ export function emitMessageDeleted(
 
 export function emitChannelCreated(
   pool: Pool,
-  data: { channel_id: string; name: string; type: string; user_id: string }
+  data: { channel_id: string; name: string; type: string; user_id: string; workspace_id?: string }
 ) {
-  return emitWebhookEvent(pool, 'channel.created', data, data.user_id)
+  return emitWebhookEvent(pool, 'channel.created', data, data.user_id, data.channel_id, data.workspace_id)
+}
+
+export function emitChannelArchived(
+  pool: Pool,
+  data: { channel_id: string; name?: string; type?: string; user_id: string; workspace_id?: string }
+) {
+  return emitWebhookEvent(pool, 'channel.archived', data, data.user_id, data.channel_id, data.workspace_id)
 }
 
 export function emitUserCreated(
@@ -309,16 +350,30 @@ export function emitUserCreated(
   return emitWebhookEvent(pool, 'user.created', data, data.created_by)
 }
 
+export function emitUserUpdated(
+  pool: Pool,
+  data: { user_id: string; fields: string[]; actor_id: string }
+) {
+  return emitWebhookEvent(pool, 'user.updated', data, data.actor_id)
+}
+
+export function emitUserDeactivated(
+  pool: Pool,
+  data: { user_id: string; active: boolean; actor_id: string }
+) {
+  return emitWebhookEvent(pool, 'user.deactivated', data, data.actor_id)
+}
+
 export function emitFileUploaded(
   pool: Pool,
-  data: { file_id: string; filename: string; size: number; user_id: string; channel_id?: string }
+  data: { file_id: string; filename: string; size: number; user_id: string; channel_id?: string; workspace_id?: string }
 ) {
-  return emitWebhookEvent(pool, 'file.uploaded', data, data.user_id, data.channel_id)
+  return emitWebhookEvent(pool, 'file.uploaded', data, data.user_id, data.channel_id, data.workspace_id)
 }
 
 export function emitDlpViolation(
   pool: Pool,
-  data: { rule_id: string; rule_name: string; message_id?: string; user_id: string; severity: string }
+  data: { rule_id: string; rule_name?: string; channel_id?: string; user_id: string; action: string; severity?: string }
 ) {
-  return emitWebhookEvent(pool, 'compliance.dlp_violation', data, data.user_id)
+  return emitWebhookEvent(pool, 'compliance.dlp_violation', data, data.user_id, data.channel_id)
 }

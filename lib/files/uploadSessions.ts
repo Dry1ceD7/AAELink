@@ -65,6 +65,7 @@ import { checkUploadPolicy, MULTIPART_MAX_BYTES } from '@/lib/files/uploadPolicy
 import { enqueueUploadJobs } from '@/lib/files/fileJobs'
 import { writeAuditLog } from '@/lib/enterprise/auditLog'
 import { log } from '@/lib/infra/log'
+import { emitFileUploaded } from '@/lib/webhooks/webhookEmitter'
 
 // Fixed 8 MB part size. S3 requires every non-final part be >= 5 MB, so a fixed
 // 8 MB keeps every interior part comfortably legal while the final part may be
@@ -597,6 +598,18 @@ export async function completeUploadSession(
       backend: session.backend,
     },
   })
+
+  // Emit file.uploaded best-effort — mirrors the single-shot upload path.
+  try {
+    await emitFileUploaded(pool, {
+      file_id: session.file_id,
+      filename: session.filename,
+      size: declaredSize,
+      user_id: session.user_id,
+      channel_id: session.channel_id ?? undefined,
+      workspace_id: session.workspace_id ?? undefined,
+    })
+  } catch { /* best-effort */ }
 
   return buildAttachment(session)
 }

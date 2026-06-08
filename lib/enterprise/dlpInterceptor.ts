@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { log } from '@/lib/infra/log'
+import { emitDlpViolation } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * DLP (Data Loss Prevention) interceptor.
@@ -185,6 +186,22 @@ export async function recordDlpViolation(v: DlpViolation): Promise<void> {
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [id, v.ruleId, v.userId, v.channelId, v.snippet, v.action, Date.now()]
   ).catch((e) => log.error('[dlp] violation record failed:', e))
+
+  // Fan out compliance.dlp_violation to outgoing webhooks + Events-API
+  // subscriptions so security/compliance integrations see violations in real
+  // time. Best-effort: a delivery-queue hiccup must never break the DLP scan
+  // that gates message persistence. The content snippet is intentionally NOT
+  // forwarded — the event carries metadata only, not the sensitive matched text.
+  try {
+    await emitDlpViolation(pool, {
+      rule_id: v.ruleId,
+      channel_id: v.channelId || undefined,
+      user_id: v.userId,
+      action: v.action,
+    })
+  } catch (e) {
+    log.error('[dlp] emitDlpViolation failed', { error: e instanceof Error ? e.message : String(e) })
+  }
 }
 
 /**

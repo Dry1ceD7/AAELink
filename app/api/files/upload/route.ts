@@ -9,6 +9,7 @@ import { storeFileBytes } from '@/lib/files/storage'
 import { enqueueUploadJobs } from '@/lib/files/fileJobs'
 import { getScanPolicy } from '@/lib/files/scanGate'
 import { checkUploadPolicy, SINGLE_SHOT_MAX_BYTES } from '@/lib/files/uploadPolicy'
+import { emitFileUploaded } from '@/lib/webhooks/webhookEmitter'
 import { log } from '@/lib/infra/log'
 
 /**
@@ -102,6 +103,25 @@ async function _POST(req: NextRequest) {
       now,
     ]
   )
+
+  // Fan out file.uploaded to subscribed outgoing webhooks + Events-API
+  // subscriptions (no-op when none configured). Best-effort: a delivery-queue
+  // hiccup must never fail the upload.
+  try {
+    await emitFileUploaded(pool, {
+      file_id: id,
+      filename: file.name,
+      size: file.size,
+      user_id: uid,
+      channel_id: channelId || undefined,
+      workspace_id: workspaceId || undefined,
+    })
+  } catch (err) {
+    log.error('file upload: emitFileUploaded failed', {
+      name: 'files.upload.emit',
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   // Fire-and-forget the post-upload pipeline (virus scan + content index). A
   // queue hiccup must never fail the upload, so enqueue errors are swallowed.

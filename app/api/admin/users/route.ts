@@ -9,6 +9,7 @@ import { isItAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
 import { autoJoinDefaultChannels } from '@/lib/channels/defaultChannel'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 const ALLOWED_ROLES = new Set(['', 'employee', 'it_employee', 'it_admin'])
 
@@ -94,6 +95,10 @@ async function _POST(req: Request) {
     }
     return NextResponse.json({ error: 'create_failed' }, { status: 400 })
   }
+  // Emit user.created best-effort — must not block or fail the admin create.
+  try {
+    await emitUserCreated(pool, { user_id: id, email, role: roleToStore, created_by: adm.userId })
+  } catch { /* best-effort */ }
   return NextResponse.json({ user: { id, username, email, first_name, last_name, platform_role } })
 }
 

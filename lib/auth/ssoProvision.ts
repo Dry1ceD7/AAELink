@@ -5,6 +5,7 @@ import { enforceSessionLimits } from '@/lib/auth/sessionEnforcement'
 import type { SsoProviderConfig } from '@/lib/auth/ssoProvider'
 import { resolveWorkspaceRole, type MappedIdentity } from '@/lib/auth/ssoClaims'
 import { applyGroupRoleMappings } from '@/lib/auth/idpRoleMappings'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * Link-or-provision an SSO identity and establish an AAELink session.
@@ -69,6 +70,10 @@ async function findUserId(
      VALUES ($1,$2,$3,'sso_managed',$4,$5,$6,$7,$7,'employee')`,
     [id, username, identity.email, identity.firstName, identity.lastName, identity.displayName, now]
   )
+  // Emit user.created best-effort — JIT provisioned via SSO.
+  try {
+    await emitUserCreated(pool, { user_id: id, email: identity.email, role: 'employee', created_by: id })
+  } catch { /* best-effort */ }
   return { userId: id, provisioned: true }
 }
 

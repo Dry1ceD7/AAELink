@@ -3,6 +3,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserUpdated } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * User Profile API — Slack users.profile.get/set parity.
@@ -94,15 +95,20 @@ async function _PUT(req: NextRequest) {
 
   // Updatable profile fields
   const allowedFields = ['real_name', 'title', 'phone', 'pronouns', 'timezone', 'skype', 'location']
+  // Track which fields actually changed so the user.updated emit below carries an
+  // accurate field list and stays a no-op for an empty PUT.
+  const changedFields: string[] = []
 
   // Update display_name directly on users table
   if (body.display_name) {
     await pool.query(`UPDATE aaelink.users SET display_name = $1 WHERE id = $2`, [body.display_name, uid])
+    changedFields.push('display_name')
   }
 
   // Update avatar_url directly
   if (body.avatar_url) {
     await pool.query(`UPDATE aaelink.users SET avatar_url = $1 WHERE id = $2`, [body.avatar_url, uid])
+    changedFields.push('avatar_url')
   }
 
   // Update profile metadata
@@ -113,6 +119,7 @@ async function _PUT(req: NextRequest) {
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (user_id, key) DO UPDATE SET value = $3, updated_at = $4
       `, [uid, `profile.${field}`, String(body[field]), now])
+      changedFields.push(field)
     }
   }
 
@@ -126,8 +133,17 @@ async function _PUT(req: NextRequest) {
           VALUES ($1, $2, $3, $4)
           ON CONFLICT (user_id, key) DO UPDATE SET value = $3, updated_at = $4
         `, [uid, `profile.custom.${k}`, String(v), now])
+        changedFields.push(`custom.${k}`)
       }
     } catch { /* ignore malformed */ }
+  }
+
+  // Fan out user.updated to subscribed outgoing webhooks + Events-API
+  // subscriptions when something actually changed. Best-effort: never block.
+  if (changedFields.length > 0) {
+    try {
+      await emitUserUpdated(pool, { user_id: uid, fields: changedFields, actor_id: uid })
+    } catch (e) { console.error('emitUserUpdated', e) }
   }
 
   return NextResponse.json({ ok: true })
@@ -154,6 +170,7 @@ async function _POST(req: NextRequest) {
   if (!body.user_id) return NextResponse.json({ error: 'user_id required' }, { status: 400 })
   const now = Date.now()
 
+  const changedFields: string[] = []
   if (body.fields) {
     for (const [k, v] of Object.entries(body.fields)) {
       await pool.query(`
@@ -161,7 +178,16 @@ async function _POST(req: NextRequest) {
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (user_id, key) DO UPDATE SET value = $3, updated_at = $4
       `, [body.user_id, `profile.${k}`, String(v), now])
+      changedFields.push(k)
     }
+  }
+
+  // Fan out user.updated for the targeted user (actor = admin) when something
+  // changed. Best-effort: never block the admin mutation.
+  if (changedFields.length > 0) {
+    try {
+      await emitUserUpdated(pool, { user_id: body.user_id, fields: changedFields, actor_id: uid })
+    } catch (e) { console.error('emitUserUpdated', e) }
   }
 
   return NextResponse.json({ ok: true })

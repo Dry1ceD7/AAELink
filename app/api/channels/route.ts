@@ -8,6 +8,7 @@ import { slugifySegment } from '@/lib/ui/slug'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { isDmBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 import { enforceScope, SCOPES, grantWorkspaceMatches, type OAuthGrant } from '@/lib/api/oauthScopes'
+import { emitChannelCreated, emitChannelArchived } from '@/lib/webhooks/webhookEmitter'
 
 async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: string) {
   const { rows } = await pool.query<{ ok: number }>(
@@ -329,7 +330,15 @@ async function _POST(req: Request) {
       [id, uid, now]
     )
     await pool.query('COMMIT')
-    
+
+    // Fan out to subscribed outgoing webhooks + Events-API subscriptions
+    // (no-op when none configured). Best-effort: never block the create.
+    try {
+      await emitChannelCreated(pool, {
+        channel_id: id, name, type, user_id: uid, workspace_id,
+      })
+    } catch (e) { console.error('emitChannelCreated', e) }
+
     const channel = {
       id,
       team_id: workspace_id,
@@ -455,6 +464,13 @@ async function _PATCH(req: Request) {
         [randomUUID(), channelId, uid, now]
       )
     } catch { /* best-effort */ }
+    // Fan out to subscribed outgoing webhooks + Events-API subscriptions.
+    // Best-effort: never block the archive.
+    try {
+      await emitChannelArchived(pool, {
+        channel_id: channelId, type: ch.type, user_id: uid, workspace_id: ch.workspace_id,
+      })
+    } catch (e) { console.error('emitChannelArchived', e) }
   } else if (action === 'unarchive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = 0 WHERE id = $1`,
@@ -580,6 +596,13 @@ async function _DELETE(req: Request) {
        VALUES ($1, $2, $3, 'channel.delete', $4, $5, $6)`,
       [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ name: ch.name, type: ch.type }), Date.now()]
     )
+  } catch { /* best-effort */ }
+
+  // Emit channel.archived (convention for hard-delete) best-effort.
+  try {
+    await emitChannelArchived(pool, {
+      channel_id: channelId, name: ch.name, type: ch.type, user_id: uid, workspace_id: ch.workspace_id,
+    })
   } catch { /* best-effort */ }
 
   return NextResponse.json({ ok: true, deleted: channelId })

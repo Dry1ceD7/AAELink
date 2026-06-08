@@ -7,6 +7,7 @@ import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { turnConfigured } from '@/lib/calls/turnCredentials'
 import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { emitWebhookEvent } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * Calls & Huddles API — call signaling, room management, and screen share sessions.
@@ -150,6 +151,13 @@ async function _POST(req: NextRequest) {
       callType === 'screen_share',
       now])
 
+  // Emit call.started best-effort — must not block or fail the create.
+  try {
+    await emitWebhookEvent(pool, 'call.started', {
+      room_id: id, call_type: callType, channel_id: body.channel_id || null, created_by: uid,
+    }, uid, body.channel_id || undefined)
+  } catch { /* best-effort */ }
+
   return NextResponse.json({
     room: { id, call_type: callType, status: 'active', created_at: now },
     participant: { role: 'host', joined_at: now },
@@ -271,6 +279,13 @@ async function _PUT(req: NextRequest) {
       userAgent: req.headers.get('user-agent') || '',
       metadata: { ended_at: now, participants_ended: Number(endCount?.n || 0) },
     })
+
+    // Emit call.ended best-effort — must not block or fail the end action.
+    try {
+      await emitWebhookEvent(pool, 'call.ended', {
+        room_id: roomId, ended_at: now, ended_by: uid,
+      }, uid)
+    } catch { /* best-effort */ }
 
     return NextResponse.json({ ok: true, ended_at: now })
   }

@@ -6,6 +6,7 @@ import { hashPassword } from '@/lib/auth/password'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { findCapturingOrg } from '@/lib/enterprise/domainClaiming'
 import { getPasswordPolicy, validatePassword } from '@/lib/auth/passwordPolicy'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 /** Self-service sign-up is only on when explicitly set to `1` (internal deployments usually leave it off). */
 function openRegistration(): boolean {
@@ -67,6 +68,10 @@ async function _POST(req: Request) {
        VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, 'employee', $7)`,
       [id, username, email, password_hash, first_name, last_name, now]
     )
+    // Emit user.created best-effort — must not block or fail the registration.
+    try {
+      await emitUserCreated(pool, { user_id: id, email, role: 'employee', created_by: id })
+    } catch { /* best-effort */ }
     // D2 domain-based account capture: if the email's domain is verified by an
     // org, enroll the new user as an org member (lib/enterprise/domainClaiming).
     const capturedOrgId = await findCapturingOrg(pool, email)

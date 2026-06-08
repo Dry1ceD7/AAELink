@@ -19,6 +19,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { hashPassword } from '@/lib/auth/password'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 // ── SCIM Types ──────────────────────────────────────────────────────
 
@@ -306,6 +307,11 @@ async function _POST(req: Request) {
     `INSERT INTO aaelink.scim_sync_log (id, action, external_id, user_id, status, created_at) VALUES ($1, 'create', $2, $3, 'success', $4)`,
     [randomUUID(), externalId, id, now]
   ).catch(() => {})
+
+  // Emit user.created best-effort — must not block or fail the SCIM provision.
+  try {
+    await emitUserCreated(pool, { user_id: id, email, role: 'member', created_by: id })
+  } catch { /* best-effort */ }
 
   const { rows } = await pool.query(
     `SELECT id, username, email, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active

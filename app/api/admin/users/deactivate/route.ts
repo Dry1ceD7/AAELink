@@ -7,6 +7,7 @@ import { verifyCsrf } from '@/lib/auth/csrf'
 import { setUserActive } from '@/lib/auth/userDeactivation'
 import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserDeactivated } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * POST /api/admin/users/deactivate — deactivate or reactivate a user.
@@ -72,6 +73,15 @@ async function _POST(req: Request) {
     userAgent: req.headers.get('user-agent') || '',
     metadata: { active, sessions_revoked: result.sessionsRevoked },
   })
+
+  // Fan out user.deactivated to outgoing webhooks + Events-API subscriptions
+  // only on a real deactivation (reactivation is a different lifecycle event and
+  // out of scope here). Best-effort: never block the admin mutation.
+  if (!active) {
+    try {
+      await emitUserDeactivated(pool, { user_id: userId, active, actor_id: adm.userId })
+    } catch (e) { console.error('emitUserDeactivated', e) }
+  }
 
   return NextResponse.json({ ok: true, user_id: userId, active, sessions_revoked: result.sessionsRevoked })
 }
