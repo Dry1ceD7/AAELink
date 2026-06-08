@@ -4818,6 +4818,34 @@ async function migration060MessageReads(pool: RunnerPool) {
   `)
 }
 
+/**
+ * Migration 061 — channel join requests (member approval flow).
+ *
+ * Backs the request-to-join / approve-deny flow for private channels. One row
+ * per (channel, requester, attempt). status is 'pending' until a channel admin
+ * approves (adds the requester to channel_members) or denies. created_at is an
+ * epoch-millis BIGINT to match the rest of the channel schema. Both FKs CASCADE
+ * so requests vanish with their channel or user. The partial unique index keeps
+ * at most one pending request per (channel, user); historical approved/denied
+ * rows are retained for the audit trail. Forward-only, idempotent.
+ */
+async function migration061ChannelMemberRequests(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.channel_member_requests (
+      id         TEXT PRIMARY KEY,
+      channel_id TEXT NOT NULL REFERENCES aaelink.channels(id) ON DELETE CASCADE,
+      user_id    TEXT NOT NULL REFERENCES aaelink.users(id)    ON DELETE CASCADE,
+      status     TEXT NOT NULL DEFAULT 'pending',
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_member_requests_channel
+      ON aaelink.channel_member_requests(channel_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_channel_member_requests_pending
+      ON aaelink.channel_member_requests(channel_id, user_id)
+      WHERE status = 'pending';
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4877,4 +4905,5 @@ const MIGRATIONS: Migration[] = [
   { id: '057_retention_policies', up: migration057RetentionPolicies },
   { id: '059_user_preferences', up: migration059UserPreferences },
   { id: '060_message_reads', up: migration060MessageReads },
+  { id: '061_channel_member_requests', up: migration061ChannelMemberRequests },
 ]

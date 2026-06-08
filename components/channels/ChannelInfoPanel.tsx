@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Hash, Pin, X, Pencil, Users, Info, UserPlus, Archive, Trash2, BellOff, Bell, LogOut, Search, Lock, Unlock } from 'lucide-react'
+import { Hash, Pin, X, Pencil, Users, Info, UserPlus, Archive, Trash2, BellOff, Bell, LogOut, Search, Lock, Unlock, Clock, Check, UserCheck } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { MessageRichText } from '@/lib/messaging/messageRich'
 import { isChannelMuted, toggleMuteChannel } from '@/lib/channels/channelMute'
@@ -39,6 +39,30 @@ interface ChannelMember {
   avatar_url?: string | null
 }
 
+interface JoinRequest {
+  id: string
+  channel_id: string
+  user_id: string
+  status: string
+  created_at: number
+  username: string
+  first_name: string
+  last_name: string
+  avatar_url?: string | null
+}
+
+interface RetentionPolicy {
+  scope: string
+  retention_days: number
+  enabled: boolean
+}
+
+interface RetentionOverride {
+  channel_id: string
+  retention_days: number
+  enabled: boolean
+}
+
 interface Props {
   channelId: string
   onClose: () => void
@@ -62,6 +86,22 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
   const [inviteMsg, setInviteMsg] = useState('')
   const [muted, setMuted] = useState(false)
   const [memberSearch, setMemberSearch] = useState('')
+  const [requests, setRequests] = useState<JoinRequest[]>([])
+  const [requestBusy, setRequestBusy] = useState<string | null>(null)
+  const [retentionDefault, setRetentionDefault] = useState<RetentionPolicy | null>(null)
+  const [retentionOverride, setRetentionOverride] = useState<RetentionOverride | null>(null)
+  const [retentionMode, setRetentionMode] = useState<'default' | 'custom'>('default')
+  const [retentionDays, setRetentionDays] = useState('0')
+  const [retentionSaving, setRetentionSaving] = useState(false)
+  const [retentionMsg, setRetentionMsg] = useState('')
+
+  // Current user's per-channel role + platform role, derived from the loaded
+  // member list. Channel admins/owners can moderate join requests; platform
+  // admins additionally manage the per-channel retention override.
+  const self = useMemo(() => members.find(m => m.user_id === currentUserId), [members, currentUserId])
+  const isChannelAdmin = self?.role === 'admin' || self?.role === 'owner'
+  const isPlatformAdmin = self?.platform_role === 'admin' || self?.platform_role === 'owner'
+  const canModerateRequests = isChannelAdmin || isPlatformAdmin
 
   useEffect(() => {
     setMuted(isChannelMuted(channelId))
@@ -91,9 +131,103 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
     }
   }, [channelId])
 
+  const loadRequests = useCallback(async () => {
+    const res = await apiFetch(`/api/channel-members/requests?channel_id=${encodeURIComponent(channelId)}`)
+    if (res.ok) {
+      const data = (await res.json()) as { requests: JoinRequest[] }
+      setRequests(data.requests || [])
+    } else {
+      setRequests([])
+    }
+  }, [channelId])
+
+  const loadRetention = useCallback(async () => {
+    // Workspace-default policy (channel scope) + this channel's override, if any.
+    const [defRes, ovRes] = await Promise.all([
+      apiFetch('/api/admin/retention'),
+      apiFetch(`/api/admin/retention/channels?channel_id=${encodeURIComponent(channelId)}`),
+    ])
+    if (defRes.ok) {
+      const data = (await defRes.json()) as { policies: RetentionPolicy[] }
+      const channelScope = data.policies?.find(p => p.scope === 'channel')
+        || data.policies?.find(p => p.scope === 'workspace')
+        || null
+      setRetentionDefault(channelScope)
+    }
+    if (ovRes.ok) {
+      const data = (await ovRes.json()) as { override: RetentionOverride }
+      setRetentionOverride(data.override)
+      setRetentionMode(data.override?.enabled ? 'custom' : 'default')
+      setRetentionDays(String(data.override?.retention_days ?? 0))
+    } else {
+      setRetentionOverride(null)
+      setRetentionMode('default')
+      setRetentionDays('0')
+    }
+  }, [channelId])
+
   useEffect(() => { void load() }, [load])
   useEffect(() => { if (tab === 'pins') void loadPins() }, [tab, loadPins])
   useEffect(() => { if (tab === 'members') void loadMembers() }, [tab, loadMembers])
+  useEffect(() => { if (tab === 'members' && canModerateRequests) void loadRequests() }, [tab, canModerateRequests, loadRequests])
+  useEffect(() => { if (tab === 'about' && isPlatformAdmin && info?.type !== 'D' && info?.type !== 'G') void loadRetention() }, [tab, isPlatformAdmin, info?.type, loadRetention])
+
+  async function resolveRequest(requestId: string, action: 'approve' | 'deny') {
+    if (requestBusy) return
+    setRequestBusy(requestId)
+    const res = await apiFetch('/api/channel-members/requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_id: channelId, request_id: requestId, action }),
+    })
+    if (res.ok) {
+      setRequests(prev => prev.filter(r => r.id !== requestId))
+      if (action === 'approve') { void loadMembers(); void load() }
+    }
+    setRequestBusy(null)
+  }
+
+  async function saveRetention() {
+    if (retentionSaving) return
+    setRetentionSaving(true)
+    setRetentionMsg('')
+    if (retentionMode === 'default') {
+      // Clearing the override falls back to the workspace-default policy. A
+      // missing override (404) is already the desired state.
+      const res = await apiFetch(`/api/admin/retention/channels?channel_id=${encodeURIComponent(channelId)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (res.ok || res.status === 404) {
+        setRetentionMsg('Saved')
+        await loadRetention()
+      } else {
+        const d = (await res.json().catch(() => ({}))) as { error?: string }
+        setRetentionMsg(d.error || 'save_failed')
+      }
+    } else {
+      const days = Number.parseInt(retentionDays, 10)
+      if (!Number.isFinite(days) || days < 0) {
+        setRetentionMsg('invalid_retention_days')
+        setRetentionSaving(false)
+        return
+      }
+      const res = await apiFetch('/api/admin/retention/channels', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel_id: channelId, retention_days: days, enabled: true }),
+      })
+      if (res.ok) {
+        setRetentionMsg('Saved')
+        await loadRetention()
+      } else {
+        const d = (await res.json().catch(() => ({}))) as { error?: string }
+        setRetentionMsg(d.error || 'save_failed')
+      }
+    }
+    setRetentionSaving(false)
+    setTimeout(() => setRetentionMsg(''), 2000)
+  }
 
   async function saveField() {
     if (!editing || saving) return
@@ -284,6 +418,62 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
               </button>
             </div>
           )}
+          {/* Data retention (platform admins, non-DM channels) */}
+          {isPlatformAdmin && info.type !== 'D' && info.type !== 'G' && (
+            <div className="channel-info-field" style={{ marginTop: 16 }}>
+              <div className="channel-info-field-head">
+                <span><Clock size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Data retention</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--mm-muted)', marginBottom: 8 }}>
+                {retentionDefault?.enabled
+                  ? `Workspace default: keep for ${retentionDefault.retention_days} day${retentionDefault.retention_days !== 1 ? 's' : ''}.`
+                  : 'Workspace default: keep messages forever.'}
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 6 }}>
+                <input
+                  type="radio"
+                  name="retention-mode"
+                  checked={retentionMode === 'default'}
+                  onChange={() => setRetentionMode('default')}
+                />
+                Use workspace default
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 6 }}>
+                <input
+                  type="radio"
+                  name="retention-mode"
+                  checked={retentionMode === 'custom'}
+                  onChange={() => setRetentionMode('custom')}
+                />
+                Custom for this channel
+              </label>
+              {retentionMode === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0 8px 24px' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    className="mm-settings-input"
+                    value={retentionDays}
+                    onChange={e => setRetentionDays(e.target.value)}
+                    style={{ width: 80, fontSize: 13, padding: '4px 8px' }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--mm-muted)' }}>days (0 = keep forever)</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button type="button" className="slack-button" disabled={retentionSaving}
+                  style={{ padding: '6px 12px', fontSize: 12 }}
+                  onClick={() => void saveRetention()}>
+                  {retentionSaving ? 'Saving…' : 'Save retention'}
+                </button>
+                {retentionMsg && (
+                  <span style={{ fontSize: 12, color: retentionMsg === 'Saved' ? '#3db265' : '#d24b4e' }}>
+                    {retentionMsg === 'Saved' ? <><Check size={12} style={{ verticalAlign: 'middle' }} /> Saved</> : retentionMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -316,6 +506,49 @@ export function ChannelInfoPanel({ channelId, onClose, onArchived, onLeft, onMut
 
       {tab === 'members' && (
         <div role="tabpanel" id="channel-info-panel-members" aria-labelledby="channel-info-tab-members" className="channel-info-body">
+          {/* Pending join requests (channel admins / platform admins) */}
+          {canModerateRequests && requests.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mm-muted)', marginBottom: 6 }}>
+                <UserCheck size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                Pending requests ({requests.length})
+              </div>
+              <div className="channel-members-list">
+                {requests.map(r => (
+                  <div key={r.id} className="channel-member-row">
+                    <div className="channel-member-avatar"
+                      style={r.avatar_url ? {
+                        backgroundImage: `url(${r.avatar_url})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        color: 'transparent',
+                      } : undefined}
+                    >
+                      {(r.username || '?').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="channel-member-info">
+                      <span className="channel-member-name">
+                        {[r.first_name, r.last_name].filter(Boolean).join(' ') || r.username}
+                      </span>
+                      <span className="channel-member-handle">@{r.username}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button type="button" className="slack-button" disabled={requestBusy === r.id}
+                        style={{ padding: '4px 8px', fontSize: 11 }}
+                        onClick={() => void resolveRequest(r.id, 'approve')}>
+                        Approve
+                      </button>
+                      <button type="button" className="link-button" disabled={requestBusy === r.id}
+                        style={{ fontSize: 11, color: '#c4510d' }}
+                        onClick={() => void resolveRequest(r.id, 'deny')}>
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Invite input */}
           {info?.type !== 'D' && info?.type !== 'G' && (
             <div style={{ marginBottom: 12 }}>

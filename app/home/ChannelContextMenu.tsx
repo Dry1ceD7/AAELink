@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Star, BellOff, Bell, Link2, Info, LogOut, Check, FolderPlus, FolderMinus, ChevronRight, MailCheck, Archive, Lock, Hash } from 'lucide-react'
+import { Star, BellOff, Bell, Link2, Info, LogOut, Check, FolderPlus, FolderMinus, ChevronRight, MailCheck, Archive, ArchiveRestore, Lock, Hash } from 'lucide-react'
 import { isChannelMuted, toggleMuteChannel } from '@/lib/channels/channelMute'
 import { apiFetch } from '@/lib/api/apiClient'
 import { toast } from '@/lib/ui/toast'
@@ -12,6 +12,8 @@ export interface ChannelContextMenuTarget {
   name: string
   displayName: string
   type?: string
+  /** When true the channel is archived; the menu offers Unarchive instead of Archive. */
+  archived?: boolean
   x: number
   y: number
 }
@@ -78,7 +80,12 @@ export function ChannelContextMenu({
   const onArchive = async () => {
     if (busy) return
     const label = `#${target.displayName}`
-    if (!window.confirm(`Archive ${label}? Members will lose access until it is unarchived.`)) {
+    const isArchived = target.archived === true
+    const action = isArchived ? 'unarchive' : 'archive'
+    const prompt = isArchived
+      ? `Unarchive ${label}? Members will regain access.`
+      : `Archive ${label}? Members will lose access until it is unarchived.`
+    if (!window.confirm(prompt)) {
       onClose()
       return
     }
@@ -87,17 +94,17 @@ export function ChannelContextMenu({
       const res = await apiFetch('/api/channels', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel_id: target.id, action: 'archive' }),
+        body: JSON.stringify({ channel_id: target.id, action }),
       })
       if (res.ok) {
-        toast.success(`Archived ${label}`)
+        toast.success(isArchived ? `Unarchived ${label}` : `Archived ${label}`)
         onChanged?.()
       } else {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
-        toast.error(data.error || 'archive_failed')
+        toast.error(data.error || `${action}_failed`)
       }
     } catch {
-      toast.error('archive_failed')
+      toast.error(`${action}_failed`)
     } finally {
       setBusy(false)
       onClose()
@@ -254,11 +261,12 @@ export function ChannelContextMenu({
     })
   }
   if (!isDM) {
+    const isArchived = target.archived === true
     items.push({
-      id: 'archive',
-      label: 'Archive channel',
-      icon: <Archive size={14} />,
-      danger: true,
+      id: isArchived ? 'unarchive' : 'archive',
+      label: isArchived ? 'Unarchive channel' : 'Archive channel',
+      icon: isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />,
+      danger: !isArchived,
       disabled: busy,
       onSelect: onArchive,
     })
