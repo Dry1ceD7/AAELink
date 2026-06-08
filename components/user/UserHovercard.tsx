@@ -106,7 +106,10 @@ export function UserHovercard({ userMap, getStatus, onStartDm, onOpenFullProfile
   useEffect(() => {
     if (typeof document === 'undefined') return
     const onEnter = (ev: Event) => {
-      const target = (ev.target as HTMLElement | null)?.closest(TRIGGER_SELECTOR) as HTMLElement | null
+      // ev.target may be a non-Element node (e.g. a Text node) for delegated
+      // hover events; Element guard avoids "closest is not a function".
+      const node = ev.target
+      const target = (node instanceof Element ? node.closest(TRIGGER_SELECTOR) : null) as HTMLElement | null
       if (!target) return
       const user = resolveUser(target)
       if (!user) return

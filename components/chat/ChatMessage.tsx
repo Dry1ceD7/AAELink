@@ -230,8 +230,9 @@ export const ChatMessage = memo(function ChatMessage({
         </div>
       )}
       <div className="message-body-wrap" onClick={(e) => {
-        // Event delegation for @mention clicks
-        const target = (e.target as HTMLElement).closest('[data-mention-username]') as HTMLElement | null
+        // Event delegation for @mention clicks (Element guard avoids closest crash)
+        const node = e.target
+        const target = (node instanceof Element ? node.closest('[data-mention-username]') : null) as HTMLElement | null
         if (target && onMentionClick) {
           e.stopPropagation()
           onMentionClick(target.dataset.mentionUsername!)
