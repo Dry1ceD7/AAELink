@@ -579,6 +579,39 @@ const handlers: Record<string, JobHandler> = {
       )
     }
   },
+
+  // Custom-status expiry sweep (Slack-style "clear after"). Recurring heartbeat,
+  // same self-rescheduling pattern as saved_search_alerts/email_digest/guest_expire:
+  // find users whose custom status has expired and is not 'online', clear the
+  // profile fields + reset the user_status row, emit a presence event per cleared
+  // user (best-effort), then re-arm. Armed once on worker boot (see main()) since
+  // it has no migration seed; it keeps itself alive here. Idempotent — a status
+  // already cleared (expires_at = 0) no longer matches, so a crash-retry is safe.
+  user_status_expire: async (payload, pool) => {
+    log.info(`🕓 [user_status_expire] clearing expired custom statuses`)
+    const { clearExpiredStatuses } = await import('@/lib/notifications/userStatusExpiry')
+    const cleared = await clearExpiredStatuses(pool, Date.now())
+    log.info(`   ✅ cleared ${cleared.length} expired custom status(es)`)
+
+    // Self-reschedule unless explicitly told not to (tests pass once:true to run
+    // a single pass without re-arming the heartbeat).
+    const once = (payload as { once?: boolean }).once === true
+    if (!once) {
+      const intervalMs = Number(process.env.USER_STATUS_EXPIRE_INTERVAL_MS) || 60_000
+      const { randomUUID } = await import('crypto')
+      // Idempotent re-arm (see saved_search_alerts): one pending row at a time
+      // so a crash between this INSERT and the completion UPDATE can't double-arm.
+      await pool.query(
+        `INSERT INTO aaelink.jobs
+           (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+         SELECT $1, 'user_status_expire', 'pending', 2, '{}', $2, 3, 0, $3
+          WHERE NOT EXISTS (
+            SELECT 1 FROM aaelink.jobs WHERE type = 'user_status_expire' AND status = 'pending'
+          )`,
+        [randomUUID(), Date.now() + intervalMs, Date.now()]
+      )
+    }
+  },
 }
 
 // Legacy alias: POST /api/search/files enqueues 'index_rebuild' jobs (no handler
@@ -679,6 +712,28 @@ async function main() {
   } catch (err: unknown) {
     log.error('database connection failed', { name: 'worker.boot', error: err instanceof Error ? err.message : String(err) })
     process.exit(1)
+  }
+
+  // Arm the custom-status expiry heartbeat. Unlike the other heartbeats
+  // (email_digest/saved_search_alerts/upload_session_sweep/guest_expire), this
+  // job has no migration seed, so the worker seeds it once on boot. The INSERT is
+  // guarded the same way the handler's self-reschedule is — one pending row at a
+  // time — so a restart never stacks duplicate heartbeats. Best-effort: a failure
+  // here must not block the poll loop (the lazy GET/expire paths still clear).
+  try {
+    const { randomUUID } = await import('crypto')
+    await pool.query(
+      `INSERT INTO aaelink.jobs
+         (id, type, status, priority, payload, run_after, max_retries, attempts, created_at)
+       SELECT $1, 'user_status_expire', 'pending', 2, '{}', $2, 3, 0, $2
+        WHERE NOT EXISTS (
+          SELECT 1 FROM aaelink.jobs
+           WHERE type = 'user_status_expire' AND status IN ('pending', 'running')
+        )`,
+      [randomUUID(), Date.now()]
+    )
+  } catch (err: unknown) {
+    log.warn('failed to arm user_status_expire heartbeat', { name: 'worker.boot', error: err instanceof Error ? err.message : String(err) })
   }
 
   // Poll loop

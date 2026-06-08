@@ -3,10 +3,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Mail, MessageSquare, Phone, Building2, Clock, Shield, Headphones,
-  Loader2, AlertCircle, RefreshCw, Copy, Check, Calendar,
+  Loader2, AlertCircle, RefreshCw, Copy, Check, Calendar, Smile,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { AvatarLightbox } from '@/components/media/AvatarLightbox'
+import { CustomStatusPopup } from '@/app/home/CustomStatusPopup'
 
 /* ─────────────────────────────────────────────────────────────────────
    UserProfilePanel — right-rail profile pane (Slack §9.2 parity).
@@ -55,6 +56,13 @@ const STATUS_LABEL: Record<string, string> = {
 interface Props {
   /** The user id to fetch and display. Pane returns null when this is null. */
   userId: string | null
+  /**
+   * The signed-in viewer's id. When it equals `userId` the pane is showing the
+   * viewer's OWN profile, which unlocks the "Set status" action (opens the shared
+   * CustomStatusPopup). Optional so existing callers that never pass it simply
+   * never see the self-only affordance.
+   */
+  currentUserId?: string | null
   /** Pre-resolved presence string from the page-level helper. */
   presenceStatus: string
   /** Pane wants to close itself (Esc, X, error close button). */
@@ -87,14 +95,19 @@ function localTimeFor(timezone: string): string {
 }
 
 export const UserProfilePanel = memo(function UserProfilePanel({
-  userId, presenceStatus, onClose, onMessage, onHuddle, onViewFullProfile,
+  userId, currentUserId, presenceStatus, onClose, onMessage, onHuddle, onViewFullProfile,
 }: Props) {
   const [data, setData] = useState<ProfileApiResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [statusPopupOpen, setStatusPopupOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+
+  // True only when the viewer is looking at their OWN profile. Drives the
+  // self-only "Set status" affordance.
+  const isOwnProfile = !!userId && !!currentUserId && userId === currentUserId
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -251,6 +264,15 @@ export const UserProfilePanel = memo(function UserProfilePanel({
 
           {/* 3. Action buttons */}
           <section className="user-profile-panel-actions">
+            {isOwnProfile && (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setStatusPopupOpen(true)}
+              >
+                <Smile size={14} /> Set status
+              </button>
+            )}
             <button
               type="button"
               className="slack-button"
@@ -370,6 +392,17 @@ export const UserProfilePanel = memo(function UserProfilePanel({
           src={lightboxOpen && data.user.avatar_url ? data.user.avatar_url : null}
           name={displayName}
           onClose={() => setLightboxOpen(false)}
+        />
+      )}
+
+      {/* Set-status — reuses the shared CustomStatusPopup (it self-fetches the
+          signed-in user's status, so no userId is threaded). Only mounted for the
+          viewer's own profile. Reload the profile on close so the panel reflects a
+          just-saved/cleared status. */}
+      {isOwnProfile && (
+        <CustomStatusPopup
+          open={statusPopupOpen}
+          onClose={() => { setStatusPopupOpen(false); void load() }}
         />
       )}
     </aside>
