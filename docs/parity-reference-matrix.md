@@ -38,6 +38,30 @@ state of the codebase as of **2026-06-06**, verified via production-path wiring.
 **"Parity" does not require identical Slack UX** — it means comparable
 organizational outcomes for the behavior in that row.
 
+### UI-Wired dimension (added 2026-06-08)
+
+This matrix grades **backend capability** (response shape, RBAC, CSRF, audit, realtime,
+invoked end-to-end). It does **not** grade whether a discoverable UI surface exists or
+whether the feature is reachable by a user. The 2026-06-08 UI audit
+(`docs/parity-ui-audit-2026-06-08.md`) measured that separately:
+
+- 306 backend `route.ts` files exist; **~180 wired (~59%)**, **~64 orphaned** (no UI caller).
+- Backend method-group "Full" parity ~72% materially **overstates** user-reachable parity.
+- True end-to-end "feels like enterprise Slack" UX parity: **~55–65%**.
+
+**Backend-Full but UI-absent / UI-stub (re-grade as UI-Wired = No/Partial):**
+`messages/:id/edits` (edit-history popover — no caller), `kb/articles/:id` detail (no
+fresh fetch on open), in-call reactions (HuddlePanel local-only), file preview for
+code/video/audio/office (`FilePreviewModal` does image+PDF only), canvas version history,
+canvas pin, thread broadcast (no composer toggle), ephemeral messages.
+
+**Admin compliance UI is mock/theater** (verified: hardcoded `useState`, zero `apiFetch`),
+regardless of any Full compliance row: `InformationBarriers`, `DataRetentionSettings`,
+`EMMPanel`, `LegalHoldPanel`. Do not treat these rows as user-usable until Slice 7 lands.
+
+Until a per-row UI-Wired column is backfilled, treat any "Full" row in the gap list above
+as **backend-Full / UI-incomplete**.
+
 ---
 
 ## Per-area matrices
