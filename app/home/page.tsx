@@ -149,26 +149,74 @@ function HomeChat() {
   const [msgContextMenu, setMsgContextMenu] = useState<MessageContextMenuState | null>(null)
 
   /**
-   * Right-rail mutual-exclusion helper. Only one of channelInfo / thread /
-   * pinned / memberList / profile is shown at a time. Callers wanting to open
-   * one rail surface call this first, then their own setter.
+   * Right-rail stacking model (Slack-style). The THREAD pane is independent
+   * and may coexist with exactly ONE "secondary" info pane. The secondary
+   * group — channelInfo / pinned / memberList / profile — is mutually
+   * exclusive *among itself* but NOT versus the thread. Openers for a
+   * secondary pane call this first to evict the previously-open secondary,
+   * leaving any open thread untouched.
    */
-  const closeAllRailPanes = useCallback(() => {
+  const closeSecondaryPanes = useCallback(() => {
     setChannelInfoOpen(false)
-    setThreadRoot(null)
     setPinnedPanelOpen(false)
     setMemberListOpen(false)
     setProfilePaneId(null)
   }, [])
 
   /**
-   * Open the profile pane. Replaces any other right-rail surface.
+   * Toggle a single secondary pane on/off. When turning one ON, every other
+   * secondary pane is closed first (group exclusivity); the thread pane is
+   * left as-is so thread + one info pane can stack.
+   */
+  const toggleChannelInfo = useCallback(() => {
+    setChannelInfoOpen(prev => {
+      if (prev) return false
+      setPinnedPanelOpen(false)
+      setMemberListOpen(false)
+      setProfilePaneId(null)
+      return true
+    })
+  }, [])
+  const togglePinnedPanel = useCallback(() => {
+    setPinnedPanelOpen(prev => {
+      if (prev) return false
+      setChannelInfoOpen(false)
+      setMemberListOpen(false)
+      setProfilePaneId(null)
+      return true
+    })
+  }, [])
+  const toggleMemberList = useCallback(() => {
+    setMemberListOpen(prev => {
+      if (prev) return false
+      setChannelInfoOpen(false)
+      setPinnedPanelOpen(false)
+      setProfilePaneId(null)
+      return true
+    })
+  }, [])
+
+  /**
+   * Force the channel-info pane open (always on, never a toggle). Evicts the
+   * other secondary panes; leaves the thread pane intact. Used by deep
+   * "open channel info" affordances (empty-state CTAs).
+   */
+  const openChannelInfo = useCallback(() => {
+    setPinnedPanelOpen(false)
+    setMemberListOpen(false)
+    setProfilePaneId(null)
+    setChannelInfoOpen(true)
+  }, [])
+
+  /**
+   * Open the profile pane. Replaces any other *secondary* rail surface but
+   * keeps the thread pane open so the two can stack.
    * URL is synced separately via the effect below so deep-links work.
    */
   const openProfilePane = useCallback((uid: string) => {
-    closeAllRailPanes()
+    closeSecondaryPanes()
     setProfilePaneId(uid)
-  }, [closeAllRailPanes])
+  }, [closeSecondaryPanes])
 
   // Open preferences from query string (?prefs=1) — used by the /settings redirect
   useEffect(() => {
@@ -1133,7 +1181,7 @@ function HomeChat() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
         e.preventDefault()
-        setChannelInfoOpen(v => !v)
+        toggleChannelInfo()
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault()
@@ -1176,7 +1224,7 @@ function HomeChat() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [channels, teams, activeTeamId, router])
+  }, [channels, teams, activeTeamId, router, toggleChannelInfo])
 
   // ── Desktop badge count sync ────────────────────────────────────────────
   useEffect(() => {
@@ -1330,6 +1378,10 @@ function HomeChat() {
             const ch = channels.find(c => c.id === chId)
             if (ch) {
               setChannel(ch)
+              // Group-exclusive: evict the other secondary panes, keep thread.
+              setPinnedPanelOpen(false)
+              setMemberListOpen(false)
+              setProfilePaneId(null)
               setChannelInfoOpen(true)
               router.push(`/home?team=${encodeURIComponent(activeTeamId)}`)
             }
@@ -1421,11 +1473,11 @@ function HomeChat() {
           searchOpen={searchOpen}
           onSearchOpen={() => setSearchOpen(true)}
           channelInfoOpen={channelInfoOpen}
-          onToggleChannelInfo={() => setChannelInfoOpen(o => !o)}
+          onToggleChannelInfo={toggleChannelInfo}
           pinnedPanelOpen={pinnedPanelOpen}
-          onTogglePinnedPanel={() => setPinnedPanelOpen(o => !o)}
+          onTogglePinnedPanel={togglePinnedPanel}
           memberListOpen={memberListOpen}
-          onToggleMemberList={() => setMemberListOpen(o => !o)}
+          onToggleMemberList={toggleMemberList}
           memberCount={teamMembers.length}
           streamUp={streamUp}
           meExists={Boolean(me)}
@@ -1505,7 +1557,7 @@ function HomeChat() {
                     type="button"
                     className="ghost-button"
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', gap: 4 }}
-                    onClick={() => setChannelInfoOpen(true)}
+                    onClick={openChannelInfo}
                   >
                     <strong style={{ fontSize: 13 }}>Add a description</strong>
                     <span style={{ fontSize: 12, opacity: 0.7 }}>Tell members what this channel is for.</span>
@@ -1523,7 +1575,7 @@ function HomeChat() {
                     type="button"
                     className="ghost-button"
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', gap: 4 }}
-                    onClick={() => setChannelInfoOpen(true)}
+                    onClick={openChannelInfo}
                   >
                     <strong style={{ fontSize: 13 }}>Set channel topic</strong>
                     <span style={{ fontSize: 12, opacity: 0.7 }}>Add a one-line summary of what's happening.</span>
