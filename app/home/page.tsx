@@ -72,7 +72,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { MemberListPanel } from './MemberListPanel'
 import { ChatHeader } from './ChatHeader'
 import { MessageTimeline } from './MessageTimeline'
-import { ChannelSidebar } from './ChannelSidebar'
+import { ChannelSidebar, readSidebarWidth } from './ChannelSidebar'
 import { useMessageKeyNav } from '@/components/chat/useMessageKeyNav'
 import { ToastProvider } from '@/components/shared/ToastProvider'
 import { MessageContextMenu, type MessageContextMenuState } from '@/components/chat/MessageContextMenu'
@@ -110,6 +110,12 @@ function HomeChat() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const activeModule = searchParams.get('module') || null
+  // Read the persisted sidebar width synchronously so the grid track and aside
+  // width are correct on the very first render frame (no flash). The lazy
+  // initializer only runs on the client; on SSR window is undefined so
+  // readSidebarWidth returns null and the CSS default (260px) applies.
+  const [initialSidebarWidth] = useState<number | null>(() => readSidebarWidth())
+
   const [teams, setTeams] = useState<Team[]>([])
   const [activeTeamId, setActiveTeamId] = useState('')
   const [channels, setChannels] = useState<Channel[]>([])
@@ -1279,7 +1285,10 @@ function HomeChat() {
   }, [])
 
   return (
-    <main className={`app-shell${channelsOpen ? ' app-shell--channels-open' : ''}`}>
+    <main
+      className={`app-shell${teams.length > 1 ? ' app-shell--has-rail' : ''}${channelsOpen ? ' app-shell--channels-open' : ''}`}
+      style={initialSidebarWidth != null ? { '--sidebar-track': `${initialSidebarWidth}px` } as React.CSSProperties : undefined}
+    >
       {/* ── Toast notifications (mounted once at app root, Slice 1/4) ── */}
       <ToastProvider />
       {/* ── Workspace rail ──────────────────────────────────────── */}
@@ -1332,7 +1341,12 @@ function HomeChat() {
       )}
 
       {/* ── Channel sidebar ─────────────────────────────────────── */}
-      <aside id="app-shell-channel-list" className="channel-list" aria-label="Channels and modules">
+      <aside
+        id="app-shell-channel-list"
+        className="channel-list"
+        aria-label="Channels and modules"
+        style={initialSidebarWidth != null ? { width: `${initialSidebarWidth}px`, maxWidth: `${initialSidebarWidth}px` } : undefined}
+      >
         {/* ── Workspace header dropdown (Slack/Mattermost style) ── */}
         <header className="team-header" style={{ position: 'relative' }}>
           <button type="button" className="ws-header-btn" onClick={() => setWsMenuOpen(o => !o)}

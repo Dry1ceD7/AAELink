@@ -1222,14 +1222,27 @@ select.slack-input {
 /* -------------------------------------------------------------------------- */
 .app-shell {
   display: grid;
-  grid-template-columns: 65px 260px minmax(0, 1fr); /* Tighter rail, standard mm sidebar, flexible chat */
-  /* Right-rail panes (thread + one secondary info pane) flow into implicit
-     columns, each sized to the pane's own width. The thread pane can stack
-     with one of channel-info / pinned / members / profile (Wave3 Slice1), so
-     up to TWO right columns may appear. The JS layer caps the secondary group
-     at one open pane, so at most two implicit columns are ever populated. */
-  grid-auto-flow: column;
-  grid-auto-columns: auto;
+  /* Deterministic, named-line grid. Every direct child is placed by name
+     (rail / sidebar / chat / pane-a / pane-b) instead of relying on
+     grid-auto-flow, so the chat-pane ALWAYS occupies the flexible `chat`
+     track regardless of which other children are present.
+
+     The workspace rail (65px first column) only renders for multi-workspace
+     users; the `rail` track collapses to 0 by default and expands to 65px via
+     the `.app-shell--has-rail` modifier, so the sidebar/chat tracks never
+     shift when the rail is absent.
+
+     Two trailing `auto` tracks (`pane-a`, `pane-b`) host the optional
+     right-rail panes. The thread pane uses `pane-a`; the single open member of
+     the secondary group (channel-info / pinned / members / profile) uses
+     `pane-b`, so thread + one secondary pane stack side-by-side. Empty `auto`
+     tracks collapse to zero width. */
+  grid-template-columns:
+    [rail] 0
+    [sidebar] var(--sidebar-track, 260px)
+    [chat] minmax(0, 1fr)
+    [pane-a] auto
+    [pane-b] auto;
   grid-template-rows: minmax(0, 1fr);
   width: 100%;
   height: 100dvh;
@@ -1239,6 +1252,39 @@ select.slack-input {
   overflow: hidden;
   background: var(--mm-main-bg);
   color: var(--mm-text);
+}
+
+.app-shell.app-shell--has-rail {
+  grid-template-columns:
+    [rail] 65px
+    [sidebar] var(--sidebar-track, 260px)
+    [chat] minmax(0, 1fr)
+    [pane-a] auto
+    [pane-b] auto;
+}
+
+/* Explicit, deterministic placement of every app-shell grid child. */
+.app-shell > .workspace-rail {
+  grid-column: rail;
+}
+
+.app-shell > .channel-list {
+  grid-column: sidebar;
+}
+
+.app-shell > .chat-pane {
+  grid-column: chat;
+}
+
+.app-shell > .thread-pane {
+  grid-column: pane-a;
+}
+
+.app-shell > .member-list-panel,
+.app-shell > .channel-info-panel,
+.app-shell > .pinned-panel,
+.app-shell > .user-profile-panel {
+  grid-column: pane-b;
 }
 
 .app-shell > aside,
@@ -1353,8 +1399,19 @@ select.slack-input {
 .app-shell .channel-list {
   display: flex;
   flex-direction: column;
+  /* Fill the grid track. Without an explicit width a flex container sizes to
+     its content width (ignoring the track size), which produces the ~165px
+     narrow-sidebar bug when no saved width exists. width: 100% makes the aside
+     always fill its named [sidebar] grid track (260px default or the saved
+     --sidebar-track value). The resize path overrides this with an inline
+     width: Xpx, which takes precedence over the stylesheet rule. */
+  width: 100%;
   min-width: 0;
-  max-width: 260px;
+  /* max-width is driven by the resizable grid track (--sidebar-track on
+     .app-shell); the component sets both the aside width and the custom
+     property together, so this cap matches SIDEBAR_MAX_WIDTH in
+     ChannelSidebar.tsx (420px). */
+  max-width: 420px;
   min-height: 0;
   border-right: 1px solid var(--mm-sidebar-border);
   background: var(--slack-sidebar-grad-1);
@@ -2574,7 +2631,21 @@ select.slack-input {
 
 @media (max-width: 1180px) {
   .app-shell {
-    grid-template-columns: 52px minmax(180px, 220px) minmax(0, 1fr);
+    grid-template-columns:
+      [rail] 0
+      [sidebar] minmax(180px, 220px)
+      [chat] minmax(0, 1fr)
+      [pane-a] auto
+      [pane-b] auto;
+  }
+
+  .app-shell.app-shell--has-rail {
+    grid-template-columns:
+      [rail] 52px
+      [sidebar] minmax(180px, 220px)
+      [chat] minmax(0, 1fr)
+      [pane-a] auto
+      [pane-b] auto;
   }
 
   .app-shell .thread-pane {
@@ -2583,8 +2654,13 @@ select.slack-input {
 }
 
 @media (max-width: 920px) {
-  .app-shell {
-    grid-template-columns: 52px minmax(0, 1fr);
+  .app-shell,
+  .app-shell.app-shell--has-rail {
+    grid-template-columns:
+      [rail] 52px
+      [chat] minmax(0, 1fr)
+      [pane-a] auto
+      [pane-b] auto;
   }
 
   .app-shell .app-shell-menu-btn {

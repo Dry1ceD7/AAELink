@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { ChevronDown, Plus, Hash, Lock, Star, Search, PenLine, BellOff, X } from 'lucide-react'
 import { displayName, type AppUser } from '@/components/chat/ChatMessage'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
@@ -49,7 +49,7 @@ function clampSidebarWidth(px: number): number {
   return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(px)))
 }
 
-function readSidebarWidth(): number | null {
+export function readSidebarWidth(): number | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
@@ -341,16 +341,24 @@ export function ChannelSidebar({
     }
   }
 
-  // Apply the restored width to the owning .channel-list aside.
+  // Apply the restored width to the owning .channel-list aside AND sync the
+  // --sidebar-track custom property on .app-shell so the grid track matches.
+  // useLayoutEffect (vs useEffect) runs synchronously after DOM mutation but
+  // before the browser paints, eliminating the one-frame flash where the
+  // sidebar renders at the CSS default 260px before jumping to the saved width.
   // Density is the single source of truth on <html> (set in app/layout.tsx);
   // the sidebar no longer mirrors data-density onto the aside.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const aside = rootRef.current?.parentElement
     if (!aside) return
     const saved = readSidebarWidth()
     if (saved != null && window.innerWidth > SIDEBAR_RESIZE_BREAKPOINT) {
       aside.style.setProperty('width', `${saved}px`)
       aside.style.setProperty('max-width', `${saved}px`)
+      // Keep the grid track in sync so chat-pane starts at the sidebar's
+      // right edge instead of overflowing the fixed 260px default track.
+      const shell = aside.parentElement
+      shell?.style.setProperty('--sidebar-track', `${saved}px`)
     }
   }, [])
 
@@ -365,12 +373,15 @@ export function ChannelSidebar({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
 
+    const shell = aside.parentElement
     const onMove = (ev: PointerEvent) => {
       const state = resizeStateRef.current
       if (!state) return
       const next = clampSidebarWidth(state.startWidth + (ev.clientX - state.startX))
       aside.style.setProperty('width', `${next}px`)
       aside.style.setProperty('max-width', `${next}px`)
+      // Sync grid track so chat-pane right-edge tracks the sidebar during drag.
+      shell?.style.setProperty('--sidebar-track', `${next}px`)
     }
     const onUp = () => {
       resizeStateRef.current = null
@@ -920,6 +931,8 @@ export function ChannelSidebar({
           if (!aside) return
           aside.style.removeProperty('width')
           aside.style.removeProperty('max-width')
+          // Reset grid track back to the CSS default (var fallback: 260px).
+          aside.parentElement?.style.removeProperty('--sidebar-track')
           try { window.localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
         }}
       />
