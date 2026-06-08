@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { Calendar, Clock, UserCheck, Plus, Check, X, Trash2, MapPin } from 'lucide-react'
 import { useConfirm } from '@/components/a11y'
+import { toast } from '@/lib/ui/toast'
 
 type Tab = 'calendar' | 'leave' | 'attendance'
 
@@ -159,8 +160,9 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       })
       if (!res.ok) throw new Error('Failed to create event')
       setShowEventForm(false)
+      toast.success('Event created.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'event_create_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'event_create_failed') }
   }
 
   const handleDeleteEvent = async (id: string) => {
@@ -171,8 +173,9 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         const json = await res.json().catch(() => ({}))
         throw new Error(json.error || 'Failed to delete event')
       }
+      toast.success('Event deleted.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'event_delete_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'event_delete_failed') }
   }
 
   const handleCreateLeave = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -191,8 +194,9 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
       })
       if (!res.ok) throw new Error('Failed to submit leave request')
       setShowLeaveForm(false)
+      toast.success('Leave request submitted.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'leave_submit_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'leave_submit_failed') }
   }
 
   const handleLeaveAction = async (id: string, status: 'approved' | 'rejected') => {
@@ -203,8 +207,9 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         body: JSON.stringify({ status })
       })
       if (!res.ok) throw new Error('Failed to update leave request')
+      toast.success(status === 'approved' ? 'Leave request approved.' : 'Leave request rejected.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'leave_action_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'leave_action_failed') }
   }
 
   const handleAttendance = async (action: 'in' | 'out') => {
@@ -215,8 +220,9 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
         body: JSON.stringify({ workspace_id: workspaceId, action })
       })
       if (!res.ok) throw new Error('Failed to update attendance')
+      toast.success(action === 'in' ? 'Clocked in.' : 'Clocked out.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'attendance_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'attendance_failed') }
   }
 
   const filteredAttendance = useMemo(() => {

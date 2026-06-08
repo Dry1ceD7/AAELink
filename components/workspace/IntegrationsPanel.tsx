@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { Webhook, AppWindow, Plus, Trash2, Copy, Check, Lock } from 'lucide-react'
 import { TabList, useConfirm } from '@/components/a11y'
+import { toast } from '@/lib/ui/toast'
 
 type Tab = 'webhooks' | 'apps'
 
@@ -101,8 +102,9 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         throw new Error(json.error || 'Failed to create webhook')
       }
       setShowWebhookForm(false)
+      toast.success('Webhook created.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'webhook_create_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'webhook_create_failed') }
   }
 
   const handleDeleteWebhook = async (id: string) => {
@@ -113,8 +115,9 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         const json = await res.json().catch(() => ({}))
         throw new Error(json.error || 'Failed to delete webhook')
       }
+      toast.success('Webhook deleted.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'webhook_delete_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'webhook_delete_failed') }
   }
 
   const handleCreateApp = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -135,8 +138,9 @@ export function IntegrationsPanel({ workspaceId }: { workspaceId: string }) {
         throw new Error(json.error || 'Failed to register app')
       }
       setShowAppForm(false)
+      toast.success('App registered.')
       loadData()
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'app_register_failed') }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'app_register_failed') }
   }
 
   const buildWebhookUrl = (token: string): string => {

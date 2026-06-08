@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { useConfirm } from '@/components/a11y'
+import { toast } from '@/lib/ui/toast'
 import {
   Check, X, Clock, FileText, CheckCircle2, XCircle, Plus,
   ChevronDown, ChevronRight, Ban, MessageSquare, ArrowRight, Loader2
@@ -182,9 +183,10 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
       })
       if (res.ok) {
         setReviewTarget(null)
+        toast.success(reviewDecision === 'approved' ? 'Request approved.' : 'Request rejected.')
         await loadData()
       } else {
-        alert('Failed to submit review.')
+        toast.error('Failed to submit review.')
       }
     } finally { setReviewBusy(false) }
   }
@@ -194,8 +196,10 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
     setSubmitting(id)
     try {
       const res = await apiFetch(`/api/approvals/requests/${id}`, { method: 'DELETE' })
-      if (res.ok) await loadData()
-      else alert('Failed to cancel request.')
+      if (res.ok) {
+        toast.success('Request canceled.')
+        await loadData()
+      } else { toast.error('Failed to cancel request.') }
     } finally { setSubmitting(null) }
   }
 
