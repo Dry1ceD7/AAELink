@@ -4,115 +4,137 @@ import { useCallback, useEffect, useState } from 'react'
 import { Globe, Lightbulb, Plus, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { useConfirm } from '@/components/a11y'
+import { toast } from '@/lib/ui/toast'
 
 /* ─────────────────────────────────────────────────────────────────────
-   DomainClaimingPanel — Domain Verification & Auto-Capture
-   • Verify ownership of email domains
-   • Auto-capture users signing up with verified domains
-   • Manage verified/pending domains
+   DomainClaimingPanel — Domain Verification (Slack domain claiming)
+   Wires /api/admin/org/[orgId]/domains:
+     GET    → { domains, total }    (list claims)
+     POST   { domain }              (claim → TXT record)
+     PATCH  { domain }              (verify pending claim via DNS TXT)
+     DELETE { domain }              (remove claim)
+   Self-resolves an orgId from /api/admin/org (first org).
    ───────────────────────────────────────────────────────────────────── */
 
-interface Domain {
-  id: string
+interface OrgDomain {
   domain: string
-  status: string
-  verification_method: string
-  auto_capture: boolean
-  users_count: number
-  added_at: string
-  verified_at?: string
+  verification_token: string
+  verified: boolean
+  verified_at: number
+  created_at: number
 }
+interface Org { id: string; name: string; domain: string }
 
-const statusConfig: Record<string, { bg: string; text: string; icon: string }> = {
-  verified: { bg: '#2bac7620', text: '#2bac76', icon: '✓' },
-  pending: { bg: '#e8912d20', text: '#e8912d', icon: '⏳' },
-  failed: { bg: '#e01e5a20', text: '#e01e5a', icon: '✗' },
-}
+const VERIFY_RECORD = (token: string): string => `aaelink-verify=${token}`
 
 export default function DomainClaimingPanel({ onClose }: { onClose: () => void }) {
   const { confirm, confirmDialog } = useConfirm()
-  const [domains, setDomains] = useState<Domain[]>([])
+  const [orgId, setOrgId] = useState<string | null>(null)
+  const [orgName, setOrgName] = useState('')
+  const [domains, setDomains] = useState<OrgDomain[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [newDomain, setNewDomain] = useState('')
-  const [verifyMethod, setVerifyMethod] = useState<'dns_txt' | 'dns_cname' | 'email'>('dns_txt')
-  const [expandedDomain, setExpandedDomain] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const loadDomains = useCallback(async (id: string) => {
+    setLoading(true); setError(null)
     try {
-      const res = await apiFetch('/api/admin/domains')
-      if (res.ok) {
-        const data = await res.json() as { domains?: Domain[] }
-        setDomains(data.domains || [])
-      }
-    } catch {
-      // API may not exist yet — start with empty
-    } finally {
-      setLoading(false)
-    }
+      const res = await apiFetch(`/api/admin/org/${id}/domains`)
+      if (!res.ok) { setError('load_failed'); return }
+      const data = await res.json() as { domains?: OrgDomain[] }
+      setDomains(data.domains || [])
+    } catch { setError('load_failed') } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  const init = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const res = await apiFetch('/api/admin/org')
+      if (!res.ok) { setError('no_org'); setLoading(false); return }
+      const data = await res.json() as { organizations?: Org[] }
+      const org = (data.organizations || [])[0]
+      if (!org) { setError('no_org'); setLoading(false); return }
+      setOrgId(org.id); setOrgName(org.name)
+      await loadDomains(org.id)
+    } catch { setError('no_org'); setLoading(false) }
+  }, [loadDomains])
 
-  const toggleAutoCapture = async (id: string, current: boolean) => {
-    await apiFetch('/api/admin/domains', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, auto_capture: !current }),
-    })
-    setDomains(prev => prev.map(d => d.id === id ? { ...d, auto_capture: !current } : d))
-  }
+  useEffect(() => { void init() }, [init])
 
   const addDomain = async () => {
-    if (!newDomain) return
-    await apiFetch('/api/admin/domains', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain: newDomain, verification_method: verifyMethod }),
-    })
-    setShowAdd(false)
-    setNewDomain('')
-    void load()
+    if (!newDomain.trim() || !orgId) return
+    setBusy('add')
+    try {
+      const res = await apiFetch(`/api/admin/org/${orgId}/domains`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: newDomain.trim() }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; toast.error(e.error || 'claim_failed'); return }
+      toast.success('Domain claimed. Publish the TXT record, then verify.')
+      setShowAdd(false); setNewDomain('')
+      await loadDomains(orgId)
+    } catch { toast.error('claim_failed') } finally { setBusy(null) }
   }
 
-  const removeDomain = async (id: string) => {
-    if (!(await confirm({ title: 'Remove domain', message: 'Remove this domain? Users will no longer be auto-captured.', danger: true, confirmLabel: 'Remove' }))) return
-    await apiFetch('/api/admin/domains', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    void load()
+  const verify = async (domain: string) => {
+    if (!orgId) return
+    setBusy(domain)
+    try {
+      const res = await apiFetch(`/api/admin/org/${orgId}/domains`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; toast.error(e.error || 'verify_failed'); return }
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string }
+      if (!data.ok) { toast.error(data.error || 'verify_failed'); return }
+      toast.success(`${domain} verified.`)
+      await loadDomains(orgId)
+    } catch { toast.error('verify_failed') } finally { setBusy(null) }
   }
 
-  const dnsRecord = newDomain ? `aaelink-verify=${btoa(newDomain).slice(0, 16)}` : ''
+  const remove = async (domain: string) => {
+    if (!orgId) return
+    if (!(await confirm({ title: 'Remove domain', message: `Remove ${domain}? This revokes the claim.`, danger: true, confirmLabel: 'Remove' }))) return
+    setBusy(domain)
+    try {
+      const res = await apiFetch(`/api/admin/org/${orgId}/domains`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; toast.error(e.error || 'remove_failed'); return }
+      toast.success(`${domain} removed.`)
+      await loadDomains(orgId)
+    } catch { toast.error('remove_failed') } finally { setBusy(null) }
+  }
+
+  const verifiedCount = domains.filter(d => d.verified).length
+  const pendingCount = domains.length - verifiedCount
 
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--mm-main-bg)', color: 'var(--mm-text)' }}>
-      {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mm-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #2bac76, #059669)', display: 'grid', placeItems: 'center', color: '#fff' }}><Globe size={18} /></div>
             <div>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Domain Claiming</h2>
-              <p style={{ margin: 0, fontSize: 12, opacity: 0.6 }}>Verify domains & auto-capture signups</p>
+              <p style={{ margin: 0, fontSize: 12, opacity: 0.6 }}>{orgName ? `Verify domains for ${orgName}` : 'Verify ownership of email domains'}</p>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setShowAdd(true)} style={{ background: 'linear-gradient(135deg, #2bac76, #059669)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}><Plus size={13} /> Add Domain</button>
+            <button onClick={() => setShowAdd(true)} disabled={!orgId} style={{ background: 'linear-gradient(135deg, #2bac76, #059669)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: orgId ? 'pointer' : 'not-allowed', opacity: orgId ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 4 }}><Plus size={13} /> Claim Domain</button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mm-muted)' }}><X size={18} /></button>
           </div>
         </div>
-
-        {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {[
-            { label: 'Verified Domains', value: domains.filter(d => d.status === 'verified').length, color: '#2bac76' },
-            { label: 'Auto-Captured Users', value: domains.reduce((s, d) => s + (d.users_count || 0), 0), color: '#4361EE' },
-            { label: 'Pending Verification', value: domains.filter(d => d.status === 'pending').length, color: '#e8912d' },
+            { label: 'Verified Domains', value: verifiedCount, color: '#2bac76' },
+            { label: 'Total Claims', value: domains.length, color: '#4361EE' },
+            { label: 'Pending Verification', value: pendingCount, color: '#e8912d' },
           ].map(s => (
             <div key={s.label} style={{ padding: 12, borderRadius: 10, border: '1px solid var(--mm-border)', textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -122,58 +144,51 @@ export default function DomainClaimingPanel({ onClose }: { onClose: () => void }
         </div>
       </div>
 
-      {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
         <div style={{ padding: 12, borderRadius: 8, background: '#4361EE08', border: '1px solid #4361EE20', fontSize: 12, lineHeight: 1.6, marginBottom: 16 }}>
-          <Lightbulb size={14} style={{ color: '#4361EE', flexShrink: 0 }} /> <strong>Auto-capture</strong> automatically adds users who sign up with a verified domain email to your workspace. They will be added to all default channels.
+          <Lightbulb size={14} style={{ color: '#4361EE', flexShrink: 0 }} /> Claim a domain, publish the <strong>TXT record</strong> at the domain root, then verify. A verified domain may belong to only one organization.
         </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24, color: 'var(--mm-muted)' }}><Loader2 size={20} className="spin" /> Loading domains…</div>
+        ) : error === 'no_org' ? (
+          <div style={{ textAlign: 'center', padding: 24, opacity: 0.6, fontSize: 13 }}>No organization found. Create an organization first.</div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: 24, fontSize: 13, color: '#e01e5a' }}>Failed to load domains. <button onClick={() => orgId && void loadDomains(orgId)} style={{ background: 'none', border: 'none', color: '#4361EE', cursor: 'pointer', textDecoration: 'underline' }}>Retry</button></div>
         ) : domains.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 24, opacity: 0.5, fontSize: 13 }}>No domains configured. Add a domain to enable auto-capture.</div>
+          <div style={{ textAlign: 'center', padding: 24, opacity: 0.5, fontSize: 13 }}>No domains claimed. Claim a domain to verify ownership.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {domains.map(domain => {
-              const st = statusConfig[domain.status] || statusConfig.pending
-              const expanded = expandedDomain === domain.id
+            {domains.map(d => {
+              const open = expanded === d.domain
+              const c = d.verified ? { bg: '#2bac7620', text: '#2bac76', icon: '✓', label: 'verified' } : { bg: '#e8912d20', text: '#e8912d', icon: '⏳', label: 'pending' }
               return (
-                <div key={domain.id} style={{ borderRadius: 12, border: '1px solid var(--mm-border)', overflow: 'hidden' }}>
-                  <div onClick={() => setExpandedDomain(expanded ? null : domain.id)}
-                    className="aae-hoverable"
-                    aria-expanded={expanded}
-                    style={{ padding: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                  >
+                <div key={d.domain} style={{ borderRadius: 12, border: '1px solid var(--mm-border)', overflow: 'hidden' }}>
+                  <div onClick={() => setExpanded(open ? null : d.domain)} className="aae-hoverable" aria-expanded={open}
+                    style={{ padding: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, background: st.bg, display: 'grid', placeItems: 'center', fontSize: 16, color: st.text, fontWeight: 700 }}>{st.icon}</div>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, background: c.bg, display: 'grid', placeItems: 'center', fontSize: 16, color: c.text, fontWeight: 700 }}>{c.icon}</div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>{domain.domain}</div>
-                        <div style={{ fontSize: 12, opacity: 0.6 }}>
-                          {domain.status === 'verified' ? `${domain.users_count || 0} users · Verified ${domain.verified_at || ''}` : 'Awaiting verification'}
-                          {domain.auto_capture && ' · Auto-capture ON'}
-                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{d.domain}</div>
+                        <div style={{ fontSize: 12, opacity: 0.6 }}>{d.verified ? 'Verified' : 'Awaiting DNS TXT verification'}</div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8, background: st.bg, color: st.text, fontWeight: 600, textTransform: 'capitalize' }}>{domain.status}</span>
-                      <span className={`aae-chevron-toggle${expanded ? ' aae-chevron-toggle--open' : ''}`} style={{ fontSize: 14, display: 'inline-block' }}>▾</span>
+                      <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8, background: c.bg, color: c.text, fontWeight: 600, textTransform: 'capitalize' }}>{c.label}</span>
+                      <span className={`aae-chevron-toggle${open ? ' aae-chevron-toggle--open' : ''}`} style={{ fontSize: 14, display: 'inline-block' }}>▾</span>
                     </div>
                   </div>
-                  {expanded && (
+                  {open && (
                     <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--mm-border)', fontSize: 13 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                        <div><span style={{ opacity: 0.5 }}>Verification:</span> {(domain.verification_method || '').replace('_', ' ').toUpperCase()}</div>
-                        <div><span style={{ opacity: 0.5 }}>Added:</span> {domain.added_at}</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, padding: 10, borderRadius: 8, background: 'var(--mm-hover-bg)' }}>
-                        <div><div style={{ fontWeight: 600 }}>Auto-capture signups</div><div style={{ fontSize: 11, opacity: 0.6 }}>Auto-add users with @{domain.domain} emails</div></div>
-                        <div onClick={() => void toggleAutoCapture(domain.id, domain.auto_capture)} style={{ width: 44, height: 24, borderRadius: 12, background: domain.auto_capture ? '#2bac76' : 'var(--mm-border)', cursor: 'pointer', position: 'relative', transition: 'background 200ms' }}>
-                          <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: domain.auto_capture ? 23 : 3, transition: 'left 200ms' }} />
+                      {!d.verified && d.verification_token && (
+                        <div style={{ padding: 12, borderRadius: 8, background: 'var(--mm-hover-bg)', margin: '12px 0', fontSize: 12 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>Add this TXT record at <code>{d.domain}</code>:</div>
+                          <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{VERIFY_RECORD(d.verification_token)}</code>
                         </div>
-                      </div>
+                      )}
                       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                        {domain.status === 'pending' && <button style={{ background: '#4361EE', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Verify Now</button>}
-                        <button onClick={(e) => { e.stopPropagation(); void removeDomain(domain.id) }} style={{ background: '#e01e5a20', color: '#e01e5a', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Remove Domain</button>
+                        {!d.verified && <button onClick={(e) => { e.stopPropagation(); void verify(d.domain) }} disabled={busy === d.domain} style={{ background: '#4361EE', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: busy === d.domain ? 'wait' : 'pointer', fontWeight: 600, opacity: busy === d.domain ? 0.6 : 1 }}>{busy === d.domain ? 'Verifying…' : 'Verify Now'}</button>}
+                        <button onClick={(e) => { e.stopPropagation(); void remove(d.domain) }} disabled={busy === d.domain} style={{ background: '#e01e5a20', color: '#e01e5a', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: busy === d.domain ? 'wait' : 'pointer', fontWeight: 600, opacity: busy === d.domain ? 0.6 : 1 }}>Remove Domain</button>
                       </div>
                     </div>
                   )}
@@ -184,38 +199,16 @@ export default function DomainClaimingPanel({ onClose }: { onClose: () => void }
         )}
       </div>
 
-      {/* Add Domain Modal */}
       {showAdd && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'grid', placeItems: 'center', animation: 'slack-modal-in 200ms var(--slack-ease-bounce) forwards' }} onClick={() => setShowAdd(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--mm-main-bg)', borderRadius: 16, padding: 24, width: 460, boxShadow: 'var(--slack-shadow-modal)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 800 }}>Add Domain</h3>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 800 }}>Claim Domain</h3>
             <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Domain name</label>
             <input value={newDomain} onChange={e => setNewDomain(e.target.value)} placeholder="example.com" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 14, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }} />
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Verification method</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-              {[
-                { id: 'dns_txt' as const, label: 'DNS TXT Record', desc: 'Add a TXT record to your DNS' },
-                { id: 'dns_cname' as const, label: 'DNS CNAME Record', desc: 'Add a CNAME record to your DNS' },
-                { id: 'email' as const, label: 'Email Verification', desc: 'We\'ll send a code to admin@domain' },
-              ].map(m => (
-                <button key={m.id} onClick={() => setVerifyMethod(m.id)} style={{
-                  padding: 12, borderRadius: 8, border: verifyMethod === m.id ? '2px solid #2bac76' : '1px solid var(--mm-border)',
-                  background: verifyMethod === m.id ? '#2bac7608' : 'var(--mm-main-bg)', cursor: 'pointer', textAlign: 'left',
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{m.label}</div>
-                  <div style={{ fontSize: 11, opacity: 0.6 }}>{m.desc}</div>
-                </button>
-              ))}
-            </div>
-            {newDomain && verifyMethod.startsWith('dns') && (
-              <div style={{ padding: 12, borderRadius: 8, background: 'var(--mm-hover-bg)', marginBottom: 16, fontSize: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Add this {verifyMethod === 'dns_txt' ? 'TXT' : 'CNAME'} record:</div>
-                <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{dnsRecord}</code>
-              </div>
-            )}
+            <p style={{ fontSize: 12, opacity: 0.6, marginBottom: 16 }}>After claiming, you will receive a TXT record to publish at the domain root, then verify here.</p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => { setShowAdd(false); setNewDomain('') }} style={{ background: 'var(--mm-hover-bg)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', color: 'var(--mm-text)', fontSize: 13 }}>Cancel</button>
-              <button onClick={() => void addDomain()} style={{ background: '#2bac76', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: newDomain ? 1 : 0.5 }}>Add Domain</button>
+              <button onClick={() => void addDomain()} disabled={!newDomain.trim() || busy === 'add'} style={{ background: '#2bac76', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: newDomain.trim() && busy !== 'add' ? 1 : 0.5 }}>{busy === 'add' ? 'Claiming…' : 'Claim Domain'}</button>
             </div>
           </div>
         </div>
