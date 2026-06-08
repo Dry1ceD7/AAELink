@@ -41,6 +41,42 @@ interface Props {
   onJumpToMessage?: (channelId: string, messageId: string) => void
 }
 
+// Recent searches are persisted per-workspace in localStorage so they survive a
+// reload. We keep only the trimmed query text (filters are embedded in it), cap
+// the list, and dedupe most-recent-first. Reads/writes are guarded so SSR and
+// privacy-mode (where localStorage throws) degrade to an empty list silently.
+const RECENT_KEY_PREFIX = 'aaelink:recent-searches:'
+const RECENT_MAX = 8
+
+function recentKey(workspaceId: string) {
+  return `${RECENT_KEY_PREFIX}${workspaceId || 'default'}`
+}
+
+function loadRecent(workspaceId: string): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(recentKey(workspaceId))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string').slice(0, RECENT_MAX) : []
+  } catch { return [] }
+}
+
+function pushRecent(workspaceId: string, q: string): string[] {
+  const trimmed = q.trim()
+  const next = [trimmed, ...loadRecent(workspaceId).filter(v => v !== trimmed)].slice(0, RECENT_MAX)
+  if (typeof window !== 'undefined') {
+    try { window.localStorage.setItem(recentKey(workspaceId), JSON.stringify(next)) } catch { /* quota or privacy mode */ }
+  }
+  return next
+}
+
+function clearRecent(workspaceId: string) {
+  if (typeof window !== 'undefined') {
+    try { window.localStorage.removeItem(recentKey(workspaceId)) } catch { /* privacy mode */ }
+  }
+}
+
 export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
@@ -50,7 +86,9 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
   const [searched, setSearched] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState(-1)
   const [sort, setSort] = useState<'relevance' | 'recent'>('relevance')
+  const [recent, setRecent] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   const filters = useMemo(() => parseSearchFilters(query), [query])
   const activeFilterKeys = useMemo(() => {
@@ -74,9 +112,10 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
       setSearched(false)
       setSelectedIdx(-1)
       setSort('relevance')
+      setRecent(loadRecent(workspaceId))
       setTimeout(() => inputRef.current?.focus(), 50)
     }
-  }, [open])
+  }, [open, workspaceId])
 
   const doSearch = useCallback(async (q: string) => {
     const parsed = parseSearchFilters(q)
@@ -106,6 +145,10 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
       const data = (await res.json()) as { results: SearchResult[]; total: number }
       setResults(data.results)
       setTotal(data.total)
+      // Record the issued query so the user can re-run it later. We persist the
+      // full raw query (text + filters) rather than just parsed.text so a saved
+      // recent re-applies the exact filter set the user typed.
+      if (data.results.length > 0) setRecent(pushRecent(workspaceId, q))
     }
   }, [workspaceId, sort])
 
@@ -114,6 +157,15 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
     debounceRef.current = setTimeout(() => void doSearch(query), 350)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, doSearch])
+
+  // Keep the keyboard-selected result visible while arrowing through a long
+  // list. We address the row by its index data attribute rather than holding a
+  // ref per row, so this stays O(1) and never grows with result count.
+  useEffect(() => {
+    if (selectedIdx < 0 || !resultsRef.current) return
+    const el = resultsRef.current.querySelector<HTMLElement>(`[data-result-idx="${selectedIdx}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx])
 
   const removeFilter = useCallback((key: string) => {
     setQuery(prev => {
@@ -291,6 +343,55 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
           </div>
         )}
 
+        {/* Recent searches (only before an active search, when there's history) */}
+        {!searched && query.length < 2 && recent.length > 0 && (
+          <div className="search-recent" aria-label="Recent searches"
+            style={{ padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="search-recent-head"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="search-recent-label"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mm-muted)' }}>
+                <Clock size={12} aria-hidden="true" /> Recent
+              </span>
+              <button
+                type="button"
+                className="search-recent-clear"
+                onClick={() => { clearRecent(workspaceId); setRecent([]) }}
+                aria-label="Clear recent searches"
+                style={{ fontSize: 11, color: 'var(--mm-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Clear
+              </button>
+            </div>
+            <div className="search-recent-list" role="list"
+              style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {recent.map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  className="search-recent-item"
+                  role="listitem"
+                  title={r}
+                  onClick={() => {
+                    setQuery(r)
+                    setTimeout(() => inputRef.current?.focus(), 10)
+                  }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    maxWidth: 220, padding: '3px 8px', borderRadius: 12,
+                    border: '1px solid var(--mm-border)', background: 'var(--mm-bg-elev, transparent)',
+                    fontSize: 12, color: 'var(--mm-text)', cursor: 'pointer',
+                  }}
+                >
+                  <Clock size={11} aria-hidden="true" />
+                  <span className="search-recent-item-text"
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Saved searches */}
         <SavedSearches
           workspaceId={workspaceId}
@@ -301,7 +402,7 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
         />
 
         {/* Results */}
-        <div className="global-search-results">
+        <div className="global-search-results" ref={resultsRef}>
           {loading && (
             <div className="global-search-status">
               <Loader2 size={20} className="spin" /> Searching…
@@ -354,6 +455,7 @@ export function GlobalSearchModal({ open, onClose, workspaceId, onJumpToMessage 
                 <button
                   key={r.message_id}
                   type="button"
+                  data-result-idx={idx}
                   className={`global-search-result${idx === selectedIdx ? ' global-search-result--active' : ''}`}
                   onClick={() => {
                     onJumpToMessage?.(r.channel_id, r.message_id)

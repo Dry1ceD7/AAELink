@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Bookmark, ExternalLink, Plus, Trash2, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface BookmarkItem {
   id: string
@@ -31,10 +32,17 @@ export function BookmarkBar({ channelId, channelType }: Props) {
 
   const load = useCallback(async () => {
     if (!channelId) return
-    const res = await apiFetch(`/api/bookmarks?channel_id=${encodeURIComponent(channelId)}`)
-    if (res.ok) {
-      const data = (await res.json()) as { bookmarks: BookmarkItem[] }
-      setBookmarks(data.bookmarks || [])
+    try {
+      const res = await apiFetch(`/api/bookmarks?channel_id=${encodeURIComponent(channelId)}`)
+      if (res.ok) {
+        const data = (await res.json()) as { bookmarks: BookmarkItem[] }
+        setBookmarks(data.bookmarks || [])
+      } else if (res.status !== 403) {
+        // 403 just means no access to this channel's bookmarks — stay quiet.
+        toast.error('Could not load bookmarks.')
+      }
+    } catch {
+      toast.error('Could not load bookmarks.')
     }
   }, [channelId])
 
@@ -69,11 +77,16 @@ export function BookmarkBar({ channelId, channelType }: Props) {
     setUrl('')
     setEmoji('⚓')
     setShowForm(false)
+    toast.success('Bookmark added.')
     void load()
   }
 
   async function removeBookmark(id: string) {
-    await apiFetch(`/api/bookmarks?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const res = await apiFetch(`/api/bookmarks?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) {
+      toast.error('Could not remove bookmark.')
+      return
+    }
     void load()
   }
 

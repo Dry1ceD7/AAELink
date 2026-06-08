@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Bookmark, RefreshCw, Trash2, Search, ArrowUpDown, CheckSquare, Square, XCircle } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface SavedItem {
   message_id: string
@@ -64,6 +65,7 @@ export function SavedItemsPanel({
       setSelected(new Set())
     } catch {
       setError('Could not load saved items.')
+      toast.error('Could not load saved items.')
     } finally {
       setLoading(false)
     }
@@ -80,6 +82,8 @@ export function SavedItemsPanel({
     if (res.ok) {
       setItems(prev => prev.filter(i => i.message_id !== messageId))
       setSelected(prev => { const n = new Set(prev); n.delete(messageId); return n })
+    } else {
+      toast.error('Could not remove saved item.')
     }
   }, [])
 
@@ -87,17 +91,22 @@ export function SavedItemsPanel({
     if (selected.size === 0) return
     setBulkBusy(true)
     try {
-      await Promise.all(
-        Array.from(selected).map(id =>
-          apiFetch('/api/saved', {
+      const ids = Array.from(selected)
+      const results = await Promise.all(
+        ids.map(async id => {
+          const res = await apiFetch('/api/saved', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message_id: id })
-          })
-        )
+          }).catch(() => null)
+          return { id, ok: !!res && res.ok }
+        })
       )
-      setItems(prev => prev.filter(i => !selected.has(i.message_id)))
-      setSelected(new Set())
+      const removed = new Set(results.filter(r => r.ok).map(r => r.id))
+      const failed = results.length - removed.size
+      setItems(prev => prev.filter(i => !removed.has(i.message_id)))
+      setSelected(prev => { const n = new Set(prev); for (const id of removed) n.delete(id); return n })
+      if (failed > 0) toast.error(`Could not remove ${failed} of ${ids.length} item${failed === 1 ? '' : 's'}.`)
     } finally {
       setBulkBusy(false)
     }

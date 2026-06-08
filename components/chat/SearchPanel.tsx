@@ -54,18 +54,31 @@ const DEBOUNCE_MS = 350
 
 export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [selectedIdx, setSelectedIdx] = useState(-1)
   const abortRef = useRef<AbortController | null>(null)
 
   // Focus input when opened
   useEffect(() => {
-    if (!open) { setQuery(''); setHits([]); setSearched(false); return }
+    if (!open) { setQuery(''); setHits([]); setSearched(false); setSelectedIdx(-1); return }
     const t = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(t)
   }, [open])
+
+  // Reset the keyboard selection whenever the result set changes so a stale
+  // index can never point past the end of the new list.
+  useEffect(() => { setSelectedIdx(-1) }, [hits])
+
+  // Keep the keyboard-selected hit scrolled into view while arrowing.
+  useEffect(() => {
+    if (selectedIdx < 0 || !resultsRef.current) return
+    const el = resultsRef.current.querySelector<HTMLElement>(`[data-hit-idx="${selectedIdx}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx])
 
   // Escape to close
   useEffect(() => {
@@ -129,6 +142,22 @@ export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelP
             placeholder="Search messages…"
             value={query}
             onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setSelectedIdx(i => Math.min(i + 1, hits.length - 1))
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setSelectedIdx(i => Math.max(i - 1, -1))
+                return
+              }
+              if (e.key === 'Enter' && selectedIdx >= 0 && hits[selectedIdx]) {
+                e.preventDefault()
+                handlePick(hits[selectedIdx])
+              }
+            }}
             autoComplete="off"
             spellCheck={false}
           />
@@ -137,13 +166,22 @@ export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelP
           </button>
         </div>
 
-        <div className="mm-search-results">
+        <div className="mm-search-results" ref={resultsRef}>
           {loading && <p className="mm-search-status">Searching…</p>}
           {!loading && searched && hits.length === 0 && (
             <p className="mm-search-status">No messages found for &ldquo;{query.trim()}&rdquo;</p>
           )}
-          {hits.map(hit => (
-            <button key={hit.id} type="button" className="mm-search-hit" onClick={() => handlePick(hit)}>
+          {hits.map((hit, idx) => (
+            <button
+              key={hit.id}
+              type="button"
+              data-hit-idx={idx}
+              className="mm-search-hit"
+              aria-selected={idx === selectedIdx}
+              onMouseEnter={() => setSelectedIdx(idx)}
+              onClick={() => handlePick(hit)}
+              style={idx === selectedIdx ? { background: 'var(--mm-hover, rgba(127,127,127,0.12))' } : undefined}
+            >
               <span className="mm-search-hit-channel">
                 {hit.channel_type === 'D' ? <MessageCircle size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : '#'} {hit.channel_display || hit.channel_name}
               </span>
