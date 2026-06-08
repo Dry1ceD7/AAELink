@@ -8,12 +8,14 @@
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { randomUUID } from 'crypto'
-import { createTestContext, asRequest, TestContext } from '../helpers'
+import { createTestContext, createTestUser, asRequest, TestContext } from '../helpers'
 import { signInteractivity, __resetInteractivityNoncesForTests } from '@/lib/integrations/interactivity'
 import { POST as interactivity } from '@/app/api/integrations/interactivity/route'
+import { POST as views } from '@/app/api/views/route'
 
 let ctx: TestContext
 const subIds: string[] = []
+const userIds: string[] = []
 
 async function registerSubscription(opts: { events: string[]; secret: string }): Promise<string> {
   const id = randomUUID()
@@ -55,6 +57,11 @@ afterAll(async () => {
   await ctx.pool.query(`DELETE FROM aaelink.jobs WHERE type = 'event_deliver'`)
   await ctx.pool.query(`DELETE FROM aaelink.event_deliveries WHERE subscription_id = ANY($1)`, [subIds]).catch(() => {})
   await ctx.pool.query(`DELETE FROM aaelink.event_subscriptions WHERE id = ANY($1)`, [subIds])
+  if (userIds.length) {
+    await ctx.pool.query(`DELETE FROM aaelink.sessions WHERE user_id = ANY($1)`, [userIds])
+    await ctx.pool.query(`DELETE FROM aaelink.workspace_members WHERE user_id = ANY($1)`, [userIds])
+    await ctx.pool.query(`DELETE FROM aaelink.users WHERE id = ANY($1)`, [userIds])
+  }
 })
 
 describe('POST /api/integrations/interactivity', () => {
@@ -126,5 +133,61 @@ describe('POST /api/integrations/interactivity', () => {
     const res = await interactivity(signedRequest(secret, { type: 'block_actions' }) as never)
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe('unknown_app')
+  })
+
+  it('mints a trigger_id on dispatch that the open path accepts end-to-end', async () => {
+    // Register a subscription with a known bot registered in bot_users
+    const secret = `whsec_${randomUUID().replace(/-/g, '')}`
+    // create a user to act as the interacting user
+    const user = await createTestUser(ctx.pool, { role: 'employee' })
+    userIds.push(user.id)
+
+    // create a bot owned by this user
+    const botId = `B${randomUUID().replace(/-/g, '')}`
+    await ctx.pool.query(
+      `INSERT INTO aaelink.bot_users (id, name, created_by, created_at) VALUES ($1, 'TriggerBot', $2, $3)`,
+      [botId, user.id, Date.now()]
+    )
+
+    const subId = await registerSubscription({ events: ['interaction'], secret })
+    // patch the subscription to carry our bot_id so the trigger is bot-scoped
+    await ctx.pool.query(
+      `UPDATE aaelink.event_subscriptions SET bot_id = $1 WHERE id = $2`,
+      [botId, subId]
+    )
+
+    // dispatch an interaction payload that includes user_id — the ingress mints
+    // a trigger_id bound to that user
+    const payload = { type: 'block_actions', user_id: user.id, actions: [{ action_id: 'click' }] }
+    const dispatchRes = await interactivity(signedRequest(secret, payload) as never)
+    expect(dispatchRes.status).toBe(200)
+    const dispatchBody = await dispatchRes.json() as { ok: boolean; trigger_id: string | null }
+    expect(dispatchBody.ok).toBe(true)
+    expect(typeof dispatchBody.trigger_id).toBe('string')
+    expect(dispatchBody.trigger_id).toMatch(/^Vt/)
+
+    const trigger_id = dispatchBody.trigger_id as string
+
+    // now use that trigger_id to open a modal — proves the minted trigger is valid
+    const openRes = await views(asRequest('POST', '/api/views', {
+      cookie: user.sessionCookie,
+      body: {
+        action: 'open',
+        bot_id: botId,
+        trigger_id,
+        view: {
+          type: 'modal',
+          title: { type: 'plain_text', text: 'From trigger' },
+          blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'it works' } }],
+        },
+      },
+    }))
+    expect(openRes.status).toBe(200)
+    const openBody = await openRes.json() as { ok: boolean; view: { id: string; type: string } }
+    expect(openBody.ok).toBe(true)
+    expect(openBody.view.type).toBe('modal')
+
+    // cleanup bot
+    await ctx.pool.query(`DELETE FROM aaelink.bot_users WHERE id = $1`, [botId])
   })
 })

@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { getRateLimiter } from '@/lib/api/rateLimiter'
 import { emitWebhookEvent } from '@/lib/webhooks/webhookEmitter'
+import { mintViewTrigger } from '@/lib/apps/viewTriggers'
 import {
   loadActiveSubscriptions,
   verifyInteractivity,
@@ -114,6 +115,29 @@ async function _POST(req: NextRequest) {
       ? (payload as { channel_id: string }).channel_id
       : undefined
 
+  // Mint a single-use trigger_id bound to the acting user (app-supplied, unverified
+  // for the purposes of which user the trigger belongs to) so the app can open/push
+  // a modal in response. Slack mints one per interaction; we follow suit. The user_id
+  // is taken from the payload claim — no stronger binding is possible at the HMAC
+  // layer since there is no session. If absent we skip minting (no interactive modals
+  // without a known user). Best-effort: a trigger failure never drops the interaction.
+  const claimedUserId =
+    typeof (payload as { user_id?: unknown }).user_id === 'string'
+      ? (payload as { user_id: string }).user_id
+      : undefined
+
+  let trigger_id: string | undefined
+  if (claimedUserId) {
+    try {
+      trigger_id = await mintViewTrigger(pool, {
+        botId: outcome.botId,
+        userId: claimedUserId,
+        channelId: claimedChannelId ?? null,
+        workspaceId: outcome.workspaceId,
+      })
+    } catch { /* best-effort; interaction still dispatched */ }
+  }
+
   const result = await emitWebhookEvent(
     pool,
     'interaction',
@@ -124,6 +148,8 @@ async function _POST(req: NextRequest) {
       workspace_id: outcome.workspaceId,
       // App-claimed, NOT verified against the signing app's channel access.
       claimed_channel_id: claimedChannelId ?? null,
+      // Include the minted trigger_id so the app's backend can open/push a modal.
+      trigger_id: trigger_id ?? null,
       payload,
     },
     outcome.botId || outcome.subscriptionId,
@@ -136,7 +162,11 @@ async function _POST(req: NextRequest) {
 
   // Slack returns 200 with an empty/ack body for interactivity. Mirror that:
   // acknowledge receipt immediately; delivery to subscribers is async via jobs.
-  return NextResponse.json({ ok: true, dispatched: result.event_subscriptions }, { status: 200 })
+  // Include trigger_id in the response so SDKs that read the ack body can use it.
+  return NextResponse.json(
+    { ok: true, dispatched: result.event_subscriptions, trigger_id: trigger_id ?? null },
+    { status: 200 }
+  )
 }
 
 // ── Traced export ───────────────────────────────────────────────────
