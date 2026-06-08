@@ -98,8 +98,9 @@ describe('fetchSignals routing', () => {
     const room = await mkRoom(a.id)
     await addParticipant(room, a.id)
     await addParticipant(room, b.id)
-    await postSignal(ctx.pool, room, a.id, b.id, 'offer', {})
-    await postSignal(ctx.pool, room, a.id, b.id, 'ice', {})
+    const s1 = await postSignal(ctx.pool, room, a.id, b.id, 'offer', {})
+    const s2 = await postSignal(ctx.pool, room, a.id, b.id, 'ice', {})
+    if (!s1.ok || !s2.ok) throw new Error('postSignal failed')
 
     const first = await fetchSignals(ctx.pool, room, b.id, 0)
     if (!first.ok) throw new Error('fetch failed')
