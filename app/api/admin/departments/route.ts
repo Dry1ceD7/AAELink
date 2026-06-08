@@ -4,6 +4,7 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** GET /api/admin/departments — list all departments. */
@@ -36,6 +37,10 @@ async function _POST(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -61,10 +66,11 @@ async function _POST(req: NextRequest) {
   const wsId = body.workspace_id || 'aaelink-ws-global'
 
   const id = `dep-${code}-${wsId}`
+  const createdAt = Date.now()
   try {
     await pool.query(
       `INSERT INTO aaelink.departments (id, workspace_id, code, name, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [id, wsId, code, name, Date.now()]
+      [id, wsId, code, name, createdAt]
     )
 
     const ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
@@ -84,7 +90,9 @@ async function _POST(req: NextRequest) {
     throw e
   }
 
-  return NextResponse.json({ department: { id, code, name, workspace_id: wsId } }, { status: 201 })
+  return NextResponse.json({
+    department: { id, workspace_id: wsId, code, name, created_at: createdAt, member_count: 0 },
+  }, { status: 201 })
 }
 
 /** DELETE /api/admin/departments?id=... — delete a department. Platform admin only. */
@@ -92,6 +100,10 @@ async function _DELETE(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -132,6 +144,10 @@ async function _PATCH(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
@@ -162,6 +178,15 @@ async function _PATCH(req: NextRequest) {
     [name, depId]
   )
 
+  // Re-read the full row so the response satisfies the client Department shape.
+  const { rows: updatedRows } = await pool.query(
+    `SELECT d.id, d.workspace_id, d.code, d.name, d.created_at,
+            (SELECT COUNT(*) FROM aaelink.workspace_members wm WHERE wm.department_id = d.id) AS member_count
+     FROM aaelink.departments d
+     WHERE d.id = $1`,
+    [depId]
+  )
+
   // Audit log
   const ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
   const userAgent = req.headers.get('user-agent') || ''
@@ -173,7 +198,7 @@ async function _PATCH(req: NextRequest) {
     ipAddress, userAgent, JSON.stringify({ old_name: oldName, new_name: name }), Date.now()
   ])
 
-  return NextResponse.json({ ok: true, department: { id: depId, name } })
+  return NextResponse.json({ ok: true, department: updatedRows[0] ?? { id: depId, name } })
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

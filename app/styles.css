@@ -7070,6 +7070,7 @@ button.mm-user-pill {
 .channel-info-panel {
   width: 320px;
   min-width: 280px;
+  max-width: 360px;
   border-left: 1px solid var(--mm-header-border);
   background: var(--mm-main-bg);
   display: flex;

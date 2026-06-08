@@ -53,8 +53,12 @@ function detectEmbed(rawUrl: string): MediaEmbed | null {
     const m = path.match(/^\/(track|album|playlist|episode|show)\/(\w+)/)
     if (m) return { kind: 'audio', src: `https://open.spotify.com/embed/${m[1]}/${m[2]}` }
   }
-  if (host === 'soundcloud.com' && path.length > 1) {
-    return { kind: 'audio', src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(rawUrl)}&visual=false` }
+  if (host === 'soundcloud.com' && /^\/[\w-]+(?:\/[\w-]+)*\/?$/.test(path) && path.length > 1) {
+    // Never forward the raw user URL (it may carry an attacker-controlled host,
+    // query, or fragment). Rebuild a canonical track URL from the validated host
+    // + path only, then hand that to the SoundCloud player.
+    const canonical = `https://soundcloud.com${path}`
+    return { kind: 'audio', src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(canonical)}&visual=false` }
   }
   return null
 }
@@ -85,6 +89,7 @@ function ActivePlayer({ embed, title }: { embed: MediaEmbed; title?: string }) {
         <iframe
           src={embed.src}
           title={title || 'Embedded video'}
+          sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           loading="lazy"
@@ -97,6 +102,7 @@ function ActivePlayer({ embed, title }: { embed: MediaEmbed; title?: string }) {
     <iframe
       src={embed.src}
       title={title || 'Embedded audio'}
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
       allow="autoplay; clipboard-write; encrypted-media"
       loading="lazy"
       style={audioFrame}

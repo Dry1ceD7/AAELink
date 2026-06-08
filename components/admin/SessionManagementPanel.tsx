@@ -171,9 +171,11 @@ export default function SessionManagementPanel({ onClose }: { onClose: () => voi
         toast.error(map[data.error || ''] || 'Could not update user.')
         return
       }
+      // Refresh server state first, then reflect the confirmed change locally so
+      // the UI mirrors server truth rather than an optimistic guess.
+      await load()
       setDeactivated(prev => ({ ...prev, [user.id]: !active }))
       toast.success(active ? `${fullName} reactivated.` : `${fullName} deactivated.`)
-      void load()
     } catch {
       toast.error('Could not update user.')
     } finally {

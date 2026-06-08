@@ -1271,7 +1271,7 @@ function HomeChat() {
   }, [])
 
   return (
-    <main className={`app-shell${channelsOpen ? ' app-shell--channels-open' : ''}${threadRoot ? ' app-shell--thread-open' : ''}`}>
+    <main className={`app-shell${channelsOpen ? ' app-shell--channels-open' : ''}`}>
       {/* ── Toast notifications (mounted once at app root, Slice 1/4) ── */}
       <ToastProvider />
       {/* ── Workspace rail ──────────────────────────────────────── */}
@@ -1703,6 +1703,14 @@ function HomeChat() {
           onRecordVideo={() => setClipRecorder({ mode: 'video' })} />
       </section>
 
+      {/* ── Thread pane ─────────────────────────────────────────── */}
+      {threadRoot && (
+        <ThreadPanel rootPost={threadRoot} channelTitle={channelTitle}
+          channelType={channel?.type} me={me} userMap={userMap}
+          teamMembers={teamMembers} onClose={() => setThreadRoot(null)}
+          onResolveUsers={resolveUsers} />
+      )}
+
       {/* ── Member list panel (right sidebar) ─────────────────── */}
       <MemberListPanel
         open={memberListOpen}
@@ -1730,14 +1738,6 @@ function HomeChat() {
         />
       )}
       </>
-      )}
-
-      {/* ── Thread pane ─────────────────────────────────────────── */}
-      {threadRoot && (
-        <ThreadPanel rootPost={threadRoot} channelTitle={channelTitle}
-          channelType={channel?.type} me={me} userMap={userMap}
-          teamMembers={teamMembers} onClose={() => setThreadRoot(null)}
-          onResolveUsers={resolveUsers} />
       )}
 
       {/* ── Message search ───────────────────────────────────────── */}
