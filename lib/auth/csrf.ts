@@ -129,6 +129,15 @@ export async function verifyCsrf(req: Request): Promise<NextResponse | null> {
   // Skip CSRF for API-key authenticated requests (webhooks, service-to-service)
   if (req.headers.get('authorization')?.startsWith('Bearer ')) return null
 
+  // Skip CSRF for browser-generated CSP violation reports. They are sent as
+  // same-origin beacons with a fixed content-type and no CSRF token, and the
+  // sink mutates nothing — without this skip the report endpoint 403s on every
+  // violation and floods the console.
+  const contentType = req.headers.get('content-type') || ''
+  if (contentType.includes('application/csp-report') || contentType.includes('application/reports+json')) {
+    return null
+  }
+
   // `next/headers` `cookies()` throws when called outside a request scope
   // (e.g. unit tests that exercise route handlers directly). The double-submit
   // pattern is moot in that case, so we silently skip — analogous to "no cookie
