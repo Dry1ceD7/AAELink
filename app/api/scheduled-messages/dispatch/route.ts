@@ -5,6 +5,7 @@ import { ensureSchema } from '@/lib/infra/migrate'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { isChannelArchived, userCanPostToChannel } from '@/lib/enterprise/collab-access'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { deliverScheduledMessage } from '@/lib/messaging/deliverScheduledMessage'
 
 /**
@@ -32,6 +33,9 @@ async function _POST(req: NextRequest) {
     await ensureSchema()
     const uid = await readSessionUserId()
     if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    // Session-cookie callers (not the DISPATCH_SECRET worker path) must pass CSRF.
+    const csrf = await verifyCsrf(req)
+    if (csrf) return csrf
     const pool = getPool()
     if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
     const { rows } = await pool.query<{ platform_role: string }>(

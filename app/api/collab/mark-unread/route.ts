@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
@@ -18,6 +19,8 @@ async function _POST(req: Request) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
 
   const { channel_id, from_create_at } = (await req.json()) as {

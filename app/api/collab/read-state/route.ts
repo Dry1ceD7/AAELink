@@ -3,6 +3,7 @@ import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** Advance read cursor for a channel (root messages only; uses max with server value). */
@@ -11,6 +12,8 @@ async function _POST(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   let body: { channel_id?: unknown; last_read_at?: unknown; mode?: unknown }
   try {
     body = (await req.json()) as { channel_id?: unknown; last_read_at?: unknown; mode?: unknown }
