@@ -3,8 +3,9 @@
 import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, X, MessageCircle } from 'lucide-react'
+import { Search, X, MessageCircle, SearchX } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { EmptyState } from '@/components/primitives/EmptyState'
 
 interface SearchHit {
   id: string
@@ -167,9 +168,17 @@ export function SearchPanel({ open, onClose, workspaceId, onPick }: SearchPanelP
         </div>
 
         <div className="mm-search-results" ref={resultsRef}>
-          {loading && <p className="mm-search-status">Searching…</p>}
+          {loading && (
+            <p className="mm-search-status">
+              <span className="spinner" aria-hidden="true" /> Searching…
+            </p>
+          )}
           {!loading && searched && hits.length === 0 && (
-            <p className="mm-search-status">No messages found for &ldquo;{query.trim()}&rdquo;</p>
+            <EmptyState
+              icon={<SearchX size={40} />}
+              title="No messages found"
+              description={`Nothing matched “${query.trim()}”. Try a different search.`}
+            />
           )}
           {hits.map((hit, idx) => (
             <button

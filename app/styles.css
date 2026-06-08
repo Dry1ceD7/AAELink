@@ -18791,3 +18791,49 @@ a, button, input, select, textarea, [role="button"] {
   padding-top: 8px;
   padding-bottom: 8px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Wave Slice 6 — Visual + a11y polish
+   A small, shared set of utilities so panels can drop ad-hoc loader markup
+   and gain consistent keyboard-focus affordances + invalid-field styling.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The canonical rotating loader. Reuses the existing mm-spin keyframe so it
+   matches every other spinner in the app. Honors prefers-reduced-motion. */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--mm-border-color, rgba(127, 127, 127, 0.3));
+  border-top-color: var(--aae-link, #1264a3);
+  border-radius: 50%;
+  animation: mm-spin 0.9s linear infinite;
+  vertical-align: middle;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* Keyboard focus affordance for interactive list / row / kanban / approval
+   rows. Mouse users see nothing (:focus-visible only fires for keyboard /
+   programmatic focus); keyboard users get a clear, theme-aware outline. */
+.aae-list-row:focus-visible,
+.aae-kanban-card:focus-visible,
+.aae-approval-row:focus-visible,
+.mm-search-hit:focus-visible {
+  outline: 2px solid var(--aae-link, #1264a3);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* Invalid form field. Pair with aria-invalid on the input where possible. */
+.input--error,
+.slack-input.input--error {
+  border-color: #D24B4E;
+}
+.input--error:focus-visible,
+.slack-input.input--error:focus-visible {
+  outline-color: #D24B4E;
+}

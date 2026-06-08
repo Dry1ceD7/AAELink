@@ -4,9 +4,10 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { useConfirm } from '@/components/a11y'
 import { toast } from '@/lib/ui/toast'
+import { EmptyState } from '@/components/primitives/EmptyState'
 import {
   Check, X, Clock, FileText, CheckCircle2, XCircle, Plus,
-  ChevronDown, ChevronRight, Ban, MessageSquare, ArrowRight, Loader2
+  ChevronDown, ChevronRight, Ban, MessageSquare, ArrowRight
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
 
   if (loading && !data) {
     return <div style={{ padding: 24, color: 'var(--mm-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-      <Loader2 size={16} className="spin" /> Loading approvals…
+      <span className="spinner" aria-hidden="true" /> Loading approvals…
     </div>
   }
 
@@ -274,14 +275,18 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
             </label>
             <label style={{ fontSize: 13, fontWeight: 600 }}>
               Title
-              <input className="slack-input" value={reqTitle}
+              <input className={`slack-input${createMsg && !reqTitle.trim() ? ' input--error' : ''}`}
+                value={reqTitle}
+                aria-invalid={createMsg ? !reqTitle.trim() : undefined}
                 onChange={e => setReqTitle(e.target.value)} required
                 placeholder="e.g. VPN Access for Project Alpha"
                 style={{ marginTop: 4, display: 'block', width: '100%' }} />
             </label>
             <label style={{ fontSize: 13, fontWeight: 600 }}>
               Description
-              <textarea className="slack-input" value={reqDesc}
+              <textarea className={`slack-input${createMsg && !reqDesc.trim() ? ' input--error' : ''}`}
+                value={reqDesc}
+                aria-invalid={createMsg ? !reqDesc.trim() : undefined}
                 onChange={e => setReqDesc(e.target.value)} required rows={4}
                 placeholder="Explain what you need and why…"
                 style={{ marginTop: 4, display: 'block', width: '100%', resize: 'vertical' }} />
@@ -301,11 +306,11 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
       {activeTab === 'pending' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {pending_approvals.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--mm-muted)' }}>
-              <CheckCircle2 size={40} strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: 12 }} />
-              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>All caught up!</p>
-              <p style={{ fontSize: 13 }}>No approvals are waiting for your review.</p>
-            </div>
+            <EmptyState
+              icon={<CheckCircle2 size={40} strokeWidth={1.5} />}
+              title="All caught up!"
+              description="No approvals are waiting for your review."
+            />
           ) : (
             pending_approvals.map(req => (
               <RequestCard key={req.id} req={req} mode="review"
@@ -326,11 +331,11 @@ export function ApprovalsPanel({ workspaceId }: { workspaceId: string }) {
       {activeTab === 'mine' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {my_requests.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--mm-muted)' }}>
-              <FileText size={40} strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: 12 }} />
-              <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>No requests yet</p>
-              <p style={{ fontSize: 13 }}>Click &quot;New Request&quot; to submit your first approval.</p>
-            </div>
+            <EmptyState
+              icon={<FileText size={40} strokeWidth={1.5} />}
+              title="No requests yet"
+              description="Click &quot;New Request&quot; to submit your first approval."
+            />
           ) : (
             my_requests.map(req => (
               <RequestCard key={req.id} req={req} mode="mine"
@@ -445,7 +450,7 @@ function RequestCard({ req, mode, onApprove, onReject, onCancel, busy,
       </div>
 
       {/* Expand Toggle */}
-      <button type="button" onClick={onToggleDetail} style={{
+      <button type="button" className="aae-approval-row" onClick={onToggleDetail} style={{
         width: '100%', padding: '8px 16px', border: 'none', borderTop: '1px solid var(--mm-border-subtle)',
         background: expanded ? 'rgba(128,128,128,0.04)' : 'transparent', cursor: 'pointer',
         display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--mm-link)',
@@ -460,7 +465,7 @@ function RequestCard({ req, mode, onApprove, onReject, onCancel, busy,
         <div style={{ padding: '12px 16px 16px', borderTop: '1px solid var(--mm-border-subtle)', background: 'rgba(128,128,128,0.02)' }}>
           {detailLoading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--mm-muted)', fontSize: 13 }}>
-              <Loader2 size={14} className="spin" /> Loading…
+              <span className="spinner" aria-hidden="true" /> Loading…
             </div>
           ) : (
             <>

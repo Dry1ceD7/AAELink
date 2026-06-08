@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { apiFetch } from '@/lib/api/apiClient'
-import { Calendar, Clock, UserCheck, Plus, Check, X, Trash2, MapPin } from 'lucide-react'
+import { Calendar, CalendarOff, Clock, UserCheck, Plus, Check, X, Trash2, MapPin, FileQuestion } from 'lucide-react'
 import { useConfirm } from '@/components/a11y'
 import { toast } from '@/lib/ui/toast'
+import { EmptyState } from '@/components/primitives/EmptyState'
 
 type Tab = 'calendar' | 'leave' | 'attendance'
 
@@ -260,7 +261,11 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
 
       <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
         {error && <p className="form-error">{error}</p>}
-        {loading && <p>Loading...</p>}
+        {loading && (
+          <p style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--mm-muted)' }}>
+            <span className="spinner" aria-hidden="true" /> Loading…
+          </p>
+        )}
 
         {/* CALENDAR VIEW */}
         {activeTab === 'calendar' && !loading && (
@@ -295,7 +300,13 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {events.length === 0 ? <p className="muted">No upcoming events.</p> : events.map(e => (
+              {events.length === 0 ? (
+                <EmptyState
+                  icon={<CalendarOff size={40} />}
+                  title="No upcoming events"
+                  description="Create an event to put it on the workspace calendar."
+                />
+              ) : events.map(e => (
                 <div key={e.id} className="admin-table" style={{ padding: 12, borderRadius: 8, borderLeft: '4px solid var(--mm-link-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h4 style={{ margin: '0 0 4px 0' }}>{e.title}</h4>
@@ -361,7 +372,13 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {leaves.length === 0 ? <p className="muted">No leave requests.</p> : leaves.map(l => (
+              {leaves.length === 0 ? (
+                <EmptyState
+                  icon={<UserCheck size={40} />}
+                  title="No leave requests"
+                  description="Submit a request to book time off."
+                />
+              ) : leaves.map(l => (
                 <div key={l.id} className="admin-table" style={{ padding: 12, borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <h4 style={{ margin: '0 0 4px 0', textTransform: 'capitalize' }}>
@@ -438,7 +455,13 @@ export function CalendarPanel({ workspaceId }: { workspaceId: string }) {
                 </thead>
                 <tbody>
                   {filteredAttendance.length === 0 ? (
-                    <tr><td colSpan={5} style={{ padding: 12, textAlign: 'center', color: 'var(--mm-muted)' }}>No records</td></tr>
+                    <tr><td colSpan={5} style={{ padding: 0 }}>
+                      <EmptyState
+                        icon={<FileQuestion size={40} />}
+                        title={todayOnly ? 'No records today' : 'No attendance records'}
+                        description="Clock in to start tracking your timesheet."
+                      />
+                    </td></tr>
                   ) : filteredAttendance.map(a => (
                     <tr key={a.id} style={{ borderBottom: '1px solid var(--mm-border-color)' }}>
                       <td style={{ padding: 12 }}>{a.date_str}</td>
