@@ -32,6 +32,8 @@ import { expandComposerSlash, getClientSlashCommands, type SlashMeUser } from '@
 import { useWorkspaceSlashCommands } from '@/lib/ui/useWorkspaceSlashCommands'
 import { getDraft, saveDraft, clearDraft } from '@/lib/messaging/messageDrafts'
 import { SendLaterMenu, SendLaterTrigger } from './SendLaterMenu'
+import AudioVideoClipRecorder from '@/components/media/AudioVideoClipRecorder'
+import { toast } from '@/lib/ui/toast'
 import {
   Bold, Italic, Strikethrough, Link2, Code, List, ListOrdered, FileCode, Quote, Paperclip, SendHorizontal, X, Smile, Mic, Video, Maximize2, Minimize2
 } from 'lucide-react'
@@ -142,6 +144,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [slashIdx, setSlashIdx] = useState(0)
   const [dragOver, setDragOver] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<{ id: string; name: string; progress: number; error?: string }[]>([])
+  const [clipRecorder, setClipRecorder] = useState<{ mode: 'audio' | 'video' } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   
@@ -410,18 +413,39 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         } catch { /* ignore */ }
       } else {
         setPendingFiles(prev => prev.map(f => f.id === id ? { ...f, error: 'Upload failed' } : f))
+        toast.error('upload_failed')
         return
       }
       setPendingFiles(prev => prev.filter(f => f.id !== id))
     })
     xhr.addEventListener('error', () => {
       setPendingFiles(prev => prev.map(f => f.id === id ? { ...f, error: 'Network error' } : f))
+      toast.error('upload_failed')
     })
     xhr.open('POST', '/api/documents')
     // Include cookies
     xhr.withCredentials = true
     xhr.send(form)
   }, [workspaceId, editor])
+
+  // ── Clip recorder → attach via existing upload path ────────────────────
+  // The recorder hands back the real recorded Blob. Wrap it as a File and push
+  // it through the SAME `uploadFile` path real attachments use (pending-file
+  // strip, progress, /api/documents) so it sends as a media attachment.
+  const handleClipRecorded = useCallback(
+    (clip: { type: 'audio' | 'video'; duration: number; blob: Blob }) => {
+      try {
+        const ext = clip.blob.type.includes('mp4') ? 'mp4' : 'webm'
+        const file = new File([clip.blob], `clip-${clip.type}.${ext}`, { type: clip.blob.type })
+        uploadFile(file)
+      } catch {
+        toast.error('clip_attach_failed')
+      } finally {
+        setClipRecorder(null)
+      }
+    },
+    [uploadFile]
+  )
 
   // ── Drag-and-drop handlers ─────────────────────────────────────────────
   const onDragEnter = useCallback((e: React.DragEvent) => {
@@ -909,18 +933,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
 
-            {/* Group: clip (only when recording handlers are wired) */}
-            {(onRecordAudio || onRecordVideo) && <ToolbarSeparator />}
-            {onRecordAudio && (
-              <button type="button" title="Record audio clip" onClick={onRecordAudio}>
-                <Mic size={16} />
-              </button>
-            )}
-            {onRecordVideo && (
-              <button type="button" title="Record video clip" onClick={onRecordVideo}>
-                <Video size={16} />
-              </button>
-            )}
+            {/* Group: clip recorder (opens in-composer; attaches via upload path) */}
+            <ToolbarSeparator />
+            <button
+              type="button"
+              title="Record audio clip"
+              onClick={() => { onRecordAudio?.(); setClipRecorder({ mode: 'audio' }) }}
+            >
+              <Mic size={16} />
+            </button>
+            <button
+              type="button"
+              title="Record video clip"
+              onClick={() => { onRecordVideo?.(); setClipRecorder({ mode: 'video' }) }}
+            >
+              <Video size={16} />
+            </button>
           </div>
           <div className="toolbar-spacer" />
           {(() => {
@@ -1020,6 +1048,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </>
           )}
         </div>
+
+      {/* ── Audio/Video clip recorder overlay ───────────────────── */}
+      {clipRecorder ? (
+        <div
+          role="presentation"
+          onClick={() => setClipRecorder(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100,
+            display: 'grid', placeItems: 'center',
+            background: 'rgba(0,0,0,0.45)'
+          }}
+        >
+          <div onClick={e => e.stopPropagation()}>
+            <AudioVideoClipRecorder
+              mode={clipRecorder.mode}
+              onClose={() => setClipRecorder(null)}
+              onSend={handleClipRecorded}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {/* ── Link insert modal ───────────────────────────────────── */}
       {linkModalOpen ? (

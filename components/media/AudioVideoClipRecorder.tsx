@@ -1,20 +1,20 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Video, Mic, Camera, Play, Pause, Square, X } from 'lucide-react'
+import { Video, Mic, Camera, Play, Square, X } from 'lucide-react'
+import { toast } from '@/lib/ui/toast'
 
 /* ─────────────────────────────────────────────────────────────────────
    AudioVideoClipRecorder — Slack-style async clips
    • Record up to 5 minutes of audio/video directly in chat
    • Real-time waveform visualization
    • Preview before sending
-   • Auto-transcription display
    ───────────────────────────────────────────────────────────────────── */
 
 interface AudioVideoClipRecorderProps {
   mode: 'audio' | 'video'
   onClose: () => void
-  onSend: (clip: { type: 'audio' | 'video'; duration: number; transcript?: string }) => void
+  onSend: (clip: { type: 'audio' | 'video'; duration: number; blob: Blob }) => void
 }
 
 export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioVideoClipRecorderProps) {
@@ -22,46 +22,106 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
   const [isPaused, setIsPaused] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [isReviewing, setIsReviewing] = useState(false)
+  const [permissionDenied, setPermissionDenied] = useState(false)
   const [waveformBars, setWaveformBars] = useState<number[]>(Array(40).fill(3))
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const waveformRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<BlobPart[]>([])
+  const blobRef = useRef<Blob | null>(null)
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const MAX_DURATION = 300 // 5 minutes
 
-  const startRecording = useCallback(() => {
-    setIsRecording(true)
-    setIsPaused(false)
-    setElapsed(0)
-    timerRef.current = setInterval(() => {
-      setElapsed(e => {
-        if (e >= MAX_DURATION) {
-          stopRecording()
-          return MAX_DURATION
-        }
-        return e + 1
-      })
-    }, 1000)
-    waveformRef.current = setInterval(() => {
-      setWaveformBars(prev => prev.map(() => Math.max(3, Math.floor(Math.random() * 32))))
-    }, 100)
+  // Release the active stream's tracks + clear the stream ref. Idempotent.
+  const releaseStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }, [])
+
+  const clearTimers = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    if (waveformRef.current) { clearInterval(waveformRef.current); waveformRef.current = null }
   }, [])
 
   const stopRecording = useCallback(() => {
     setIsRecording(false)
     setIsPaused(false)
     setIsReviewing(true)
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (waveformRef.current) clearInterval(waveformRef.current)
+    clearTimers()
     setWaveformBars(prev => prev.map(() => Math.max(3, Math.floor(Math.random() * 20))))
-  }, [])
+    // Stopping the recorder fires ondataavailable + onstop, which builds the blob
+    // and releases the capture stream.
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop()
+    } else {
+      releaseStream()
+    }
+  }, [clearTimers, releaseStream])
+
+  const startRecording = useCallback(async () => {
+    setPermissionDenied(false)
+    blobRef.current = null
+    chunksRef.current = []
+    try {
+      const constraints: MediaStreamConstraints = mode === 'video'
+        ? { audio: true, video: true }
+        : { audio: true }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      streamRef.current = stream
+
+      if (mode === 'video' && videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream
+      }
+
+      const recorder = new MediaRecorder(stream)
+      recorderRef.current = recorder
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      recorder.onstop = () => {
+        const type = recorder.mimeType || (mode === 'video' ? 'video/webm' : 'audio/webm')
+        blobRef.current = new Blob(chunksRef.current, { type })
+        releaseStream()
+        if (videoPreviewRef.current) videoPreviewRef.current.srcObject = null
+      }
+      recorder.start()
+
+      setIsRecording(true)
+      setIsPaused(false)
+      setElapsed(0)
+      timerRef.current = setInterval(() => {
+        setElapsed(e => {
+          if (e >= MAX_DURATION) {
+            stopRecording()
+            return MAX_DURATION
+          }
+          return e + 1
+        })
+      }, 1000)
+      waveformRef.current = setInterval(() => {
+        setWaveformBars(prev => prev.map(() => Math.max(3, Math.floor(Math.random() * 32))))
+      }, 100)
+    } catch {
+      setPermissionDenied(true)
+      releaseStream()
+      toast.error('media_permission_denied')
+    }
+  }, [mode, releaseStream, stopRecording])
 
   const pauseRecording = useCallback(() => {
     setIsPaused(true)
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (waveformRef.current) clearInterval(waveformRef.current)
-  }, [])
+    if (recorderRef.current && recorderRef.current.state === 'recording') {
+      recorderRef.current.pause()
+    }
+    clearTimers()
+  }, [clearTimers])
 
   const resumeRecording = useCallback(() => {
     setIsPaused(false)
+    if (recorderRef.current && recorderRef.current.state === 'paused') {
+      recorderRef.current.resume()
+    }
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
     waveformRef.current = setInterval(() => {
       setWaveformBars(prev => prev.map(() => Math.max(3, Math.floor(Math.random() * 32))))
@@ -73,21 +133,42 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
     setIsReviewing(false)
     setElapsed(0)
     setWaveformBars(Array(40).fill(3))
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (waveformRef.current) clearInterval(waveformRef.current)
-  }, [])
+    blobRef.current = null
+    chunksRef.current = []
+    clearTimers()
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop()
+    }
+    releaseStream()
+  }, [clearTimers, releaseStream])
 
   const sendClip = useCallback(() => {
-    onSend({ type: mode, duration: elapsed, transcript: 'Auto-generated transcript would appear here.' })
+    const blob = blobRef.current
+    if (!blob) return
+    onSend({ type: mode, duration: elapsed, blob })
     onClose()
   }, [mode, elapsed, onSend, onClose])
 
+  const handleClose = useCallback(() => {
+    clearTimers()
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop()
+    }
+    releaseStream()
+    onClose()
+  }, [clearTimers, releaseStream, onClose])
+
+  // Cleanup on unmount: stop the recorder, release the camera/mic, clear timers.
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
-      if (waveformRef.current) clearInterval(waveformRef.current)
+      clearTimers()
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        try { recorderRef.current.stop() } catch { /* already stopped */ }
+      }
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
     }
-  }, [])
+  }, [clearTimers])
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60)
@@ -114,37 +195,51 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
             {isReviewing ? 'Review clip' : isRecording ? 'Recording…' : `Record ${mode} clip`}
           </span>
         </div>
-        <button onClick={onClose} style={{
+        <button onClick={handleClose} style={{
           background: 'none', border: 'none',
           cursor: 'pointer', color: 'var(--mm-muted)',
         }}><X size={18} /></button>
       </div>
 
+      {/* Permission-denied error state */}
+      {permissionDenied && (
+        <div style={{
+          padding: 12, borderRadius: 8, marginBottom: 16,
+          background: '#e01e5a14', border: '1px solid #e01e5a40',
+          color: '#e01e5a', fontSize: 13, lineHeight: 1.5,
+        }}>
+          {mode === 'video' ? 'Camera and microphone' : 'Microphone'} access was denied.
+          Enable permissions in your browser, then try again.
+        </div>
+      )}
+
       {/* Video preview area */}
       {mode === 'video' && (
         <div style={{
           width: '100%', height: 200, borderRadius: 12,
-          background: '#1a1d21', marginBottom: 16,
-          display: 'grid', placeItems: 'center',
+          background: '#1a1d21', marginBottom: 16, overflow: 'hidden',
+          display: 'grid', placeItems: 'center', position: 'relative',
           border: '1px solid var(--mm-border-subtle)',
         }}>
-          {isRecording ? (
-            <div style={{ textAlign: 'center', color: '#fff' }}>
-              <div style={{
-                width: 60, height: 60, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #4361EE, #4CC9F0)',
-                display: 'grid', placeItems: 'center', margin: '0 auto 8px',
-                fontSize: 24,
-              }}><Video size={24} color="#fff" /></div>
-              <span style={{ fontSize: 13, opacity: 0.7 }}>Camera preview</span>
-            </div>
-          ) : isReviewing ? (
-            <div style={{ textAlign: 'center', color: '#fff' }}>
-              <Play size={32} color="#fff" />
-              <div style={{ fontSize: 13, opacity: 0.7, marginTop: 8 }}>Play to review</div>
-            </div>
-          ) : (
-            <Camera size={40} style={{ opacity: 0.3 }} />
+          <video
+            ref={videoPreviewRef}
+            muted
+            autoPlay
+            playsInline
+            style={{
+              width: '100%', height: '100%', objectFit: 'cover',
+              display: isRecording ? 'block' : 'none',
+            }}
+          />
+          {!isRecording && (
+            isReviewing ? (
+              <div style={{ textAlign: 'center', color: '#fff' }}>
+                <Play size={32} color="#fff" />
+                <div style={{ fontSize: 13, opacity: 0.7, marginTop: 8 }}>Clip ready to send</div>
+              </div>
+            ) : (
+              <Camera size={40} style={{ opacity: 0.3, color: '#fff' }} />
+            )
           )}
         </div>
       )}
@@ -195,7 +290,7 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
         display: 'flex', justifyContent: 'center', gap: 12,
       }}>
         {!isRecording && !isReviewing && (
-          <button onClick={startRecording} style={{
+          <button onClick={() => void startRecording()} style={{
             width: 56, height: 56, borderRadius: '50%',
             background: '#e01e5a', border: 'none',
             cursor: 'pointer', display: 'grid', placeItems: 'center',
@@ -223,7 +318,7 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
               cursor: 'pointer', display: 'grid', placeItems: 'center',
               color: '#fff', fontSize: 14,
             }}>
-              ⏹
+              <Square size={16} color="#fff" />
             </button>
           </>
         )}
@@ -235,7 +330,7 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
               background: 'none', padding: '0 20px', cursor: 'pointer',
               color: 'var(--mm-muted)', fontSize: 13,
             }}>Discard</button>
-            <button onClick={startRecording} style={{
+            <button onClick={() => void startRecording()} style={{
               height: 40, borderRadius: 8, border: '1px solid var(--mm-border)',
               background: 'none', padding: '0 20px', cursor: 'pointer',
               color: 'var(--mm-text)', fontSize: 13,
@@ -254,7 +349,7 @@ export default function AudioVideoClipRecorder({ mode, onClose, onSend }: AudioV
         textAlign: 'center', marginTop: 12,
         fontSize: 11, opacity: 0.4,
       }}>
-        {isRecording ? 'Recording will auto-stop at 5 minutes' : isReviewing ? 'Clip will be auto-transcribed after sending' : `Click to start recording a ${mode} clip`}
+        {isRecording ? 'Recording will auto-stop at 5 minutes' : isReviewing ? 'Send to attach this clip to your message' : `Click to start recording a ${mode} clip`}
       </div>
     </div>
   )
