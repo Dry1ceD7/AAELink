@@ -1283,8 +1283,19 @@ select.slack-input {
 .app-shell > .member-list-panel,
 .app-shell > .channel-info-panel,
 .app-shell > .pinned-panel,
-.app-shell > .user-profile-panel {
+.app-shell > .user-profile-panel,
+.app-shell > .file-browser-pane {
   grid-column: pane-b;
+}
+
+.file-browser-pane {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  height: 100%;
+  border-left: 1px solid var(--mm-border, rgba(0, 0, 0, 0.1));
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .app-shell > aside,
