@@ -9,10 +9,12 @@ import type { ChatPost } from '@/lib/realtime/realtime'
 import { EmojiPicker } from './EmojiPicker'
 import { FileAttachmentCards } from './FileAttachmentCards'
 import { LinkPreview, extractPreviewUrl } from './LinkPreview'
+import { ReactionUsers } from './ReactionUsers'
 import { formatUserTime } from '@/lib/ui/userPreferences'
 import { useMenuNav } from '@/lib/ui/useMenuNav'
 import { EditHistoryModal } from './EditHistoryModal'
 import { type Presence, presenceColor } from '@/lib/types/presence'
+import { toast } from '@/lib/ui/toast'
 
 // ── Reaction icons (Lucide-mapped, no heavy emoji deps) ────────────────────
 const REACTION_ICON: Record<string, string> = {
@@ -100,34 +102,64 @@ const MessageBody = memo(function MessageBody({ message }: { message: string }) 
 })
 
 function MessageReactions({
+  messageId,
   reactions,
   reactBusy,
   toggleReaction,
   onOpenPicker,
 }: {
+  messageId: string,
   reactions?: ReactionSummary[],
   reactBusy: boolean,
   toggleReaction: (k: string) => void,
   onOpenPicker?: () => void,
 }) {
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current) }, [])
+
+  const openHover = (key: string) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = setTimeout(() => setHoverKey(key), 350)
+  }
+  const closeHover = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    setHoverKey(null)
+  }
+
   if (!reactions || reactions.length === 0) return null
   return (
     <div className="reaction-row">
-      {reactions.map(r => (
-        <button
+      {reactions.map(r => {
+        const readable = r.key.replace(/_/g, ' ')
+        return (
+        <span
           key={r.key}
-          type="button"
-          className={`reaction-chip${r.me ? ' reaction-chip--mine' : ''}`}
-          title={r.key.replace(/_/g, ' ')}
-          aria-pressed={r.me}
-          aria-label={`${r.key.replace(/_/g, ' ')} — ${r.count} reaction${r.count !== 1 ? 's' : ''}${r.me ? ', you reacted' : ''}`}
-          onClick={() => void toggleReaction(r.key)}
-          disabled={reactBusy}
+          style={{ position: 'relative', display: 'inline-flex' }}
+          onMouseEnter={() => openHover(r.key)}
+          onMouseLeave={closeHover}
         >
-          <span className="reaction-emoji" aria-hidden="true">{REACTION_ICON[r.key] || r.key}</span>
-          <span className="reaction-count">{r.count}</span>
-        </button>
-      ))}
+          <button
+            type="button"
+            className={`reaction-chip${r.me ? ' reaction-chip--mine' : ''}`}
+            title={readable}
+            aria-pressed={r.me}
+            aria-label={`${readable} — ${r.count} reaction${r.count !== 1 ? 's' : ''}${r.me ? ', you reacted' : ''}`}
+            onClick={() => void toggleReaction(r.key)}
+            onFocus={() => setHoverKey(r.key)}
+            onBlur={closeHover}
+            disabled={reactBusy}
+          >
+            <span className="reaction-emoji" aria-hidden="true">{REACTION_ICON[r.key] || r.key}</span>
+            <span className="reaction-count">{r.count}</span>
+          </button>
+          {hoverKey === r.key ? (
+            <ReactionUsers messageId={messageId} emoji={r.key} label={readable} />
+          ) : null}
+        </span>
+        )
+      })}
       {onOpenPicker && (
         <button
           type="button"
@@ -244,9 +276,17 @@ function MessageActions({
                 <Copy size={14} /> Copy text
               </button>
               <button type="button" role="menuitem" onClick={() => {
-                const base = `${window.location.origin}${window.location.pathname}`
-                const sep = window.location.search ? '&' : '?'
-                void navigator.clipboard.writeText(`${base}${window.location.search}${sep}focus_msg=${post.id}`)
+                void (async () => {
+                  try {
+                    const res = await apiFetch(`/api/messages/permalink?message_id=${encodeURIComponent(post.id)}`)
+                    if (!res.ok) { toast.error('Could not copy link'); return }
+                    const data = (await res.json()) as { permalink: string }
+                    await navigator.clipboard.writeText(data.permalink)
+                    toast.success('Link copied')
+                  } catch {
+                    toast.error('Could not copy link')
+                  }
+                })()
                 setMoreOpen(false)
               }}>
                 <Link2 size={14} /> Copy link
@@ -554,7 +594,7 @@ export const ChatMessage = memo(function ChatMessage({
         {post.file_attachments && post.file_attachments.length > 0 && (
           <FileAttachmentCards attachments={post.file_attachments} />
         )}
-        <MessageReactions reactions={post.reactions} reactBusy={reactBusy} toggleReaction={toggleReaction} onOpenPicker={() => setReactionPickerOpen(true)} />
+        <MessageReactions messageId={post.id} reactions={post.reactions} reactBusy={reactBusy} toggleReaction={toggleReaction} onOpenPicker={() => setReactionPickerOpen(true)} />
 
         {/* ── Thread tease ─────────────────────────────────────── */}
         {!post.root_id && post.reply_count && post.reply_count > 0 ? (
