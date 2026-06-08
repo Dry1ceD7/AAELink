@@ -59,6 +59,8 @@ export default function AuditLogPanel({ onClose }: { onClose?: () => void }) {
   const [filterCategory, setFilterCategory] = useState('all')
   const [search, setSearch] = useState('')
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null)
+  const [tsFrom, setTsFrom] = useState('')
+  const [tsTo, setTsTo] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -66,6 +68,11 @@ export default function AuditLogPanel({ onClose }: { onClose?: () => void }) {
       const params = new URLSearchParams({ limit: '100' })
       if (filterCategory !== 'all') params.set('category', filterCategory)
       if (search) params.set('search', search)
+      // Route accepts epoch-ms `from`/`to`; convert the date inputs.
+      const fromMs = tsFrom ? Date.parse(tsFrom) : 0
+      const toMs = tsTo ? Date.parse(`${tsTo}T23:59:59`) : 0
+      if (fromMs) params.set('from', String(fromMs))
+      if (toMs) params.set('to', String(toMs))
       const res = await apiFetch(`/api/admin/audit-log?${params}`)
       if (res.ok) {
         const data = (await res.json()) as { events?: AuditEvent[]; entries?: AuditEvent[] }
@@ -74,20 +81,50 @@ export default function AuditLogPanel({ onClose }: { onClose?: () => void }) {
     } finally {
       setLoading(false)
     }
-  }, [filterCategory, search])
+  }, [filterCategory, search, tsFrom, tsTo])
 
   useEffect(() => { void load() }, [load])
 
-  async function exportCSV() {
-    const res = await apiFetch('/api/admin/audit-log/export?format=csv')
-    if (!res.ok) return
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
+  function downloadBlob(content: BlobPart, type: string) {
+    const url = URL.createObjectURL(new Blob([content], { type }))
     const a = document.createElement('a')
     a.href = url
     a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function clientSideCSV() {
+    const headers = ['id', 'created_at', 'actor', 'action', 'category', 'target', 'ip_address', 'location']
+    const lines = [headers.join(',')]
+    for (const e of events) {
+      const row = headers.map(h => {
+        const v = String((e as unknown as Record<string, unknown>)[h] ?? '')
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+      })
+      lines.push(row.join(','))
+    }
+    downloadBlob(lines.join('\n'), 'text/csv;charset=utf-8')
+  }
+
+  async function exportCSV() {
+    const fromMs = tsFrom ? Date.parse(tsFrom) : 0
+    const toMs = tsTo ? Date.parse(`${tsTo}T23:59:59`) : Date.now()
+    try {
+      const res = await apiFetch('/api/admin/audit-log/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: fromMs, to: toMs, format: 'csv' }),
+      })
+      if (res.ok) {
+        downloadBlob(await res.blob(), 'text/csv;charset=utf-8')
+        return
+      }
+    } catch {
+      // fall through to client-side export below
+    }
+    // Fallback: export currently-loaded rows.
+    clientSideCSV()
   }
 
   const filtered = events.filter(e => {
@@ -108,12 +145,20 @@ export default function AuditLogPanel({ onClose }: { onClose?: () => void }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => void exportCSV()} style={{ background: 'var(--mm-hover-bg)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--mm-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><Download size={13} /> Export CSV</button>
+            <button onClick={() => void exportCSV()} style={{ background: 'var(--mm-hover-bg)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--mm-text)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><Download size={13} /> Download</button>
             <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mm-muted)' }}><X size={18} /></button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actors, actions, targets…" style={{ flex: 1, padding: '9px 14px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13, outline: 'none' }} />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actors, actions, targets…" style={{ flex: 1, minWidth: 180, padding: '9px 14px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13, outline: 'none' }} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mm-muted)' }}>
+            From
+            <input type="date" value={tsFrom} onChange={e => setTsFrom(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13, outline: 'none' }} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mm-muted)' }}>
+            To
+            <input type="date" value={tsTo} onChange={e => setTsTo(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13, outline: 'none' }} />
+          </label>
         </div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {CATEGORIES.map(c => (
