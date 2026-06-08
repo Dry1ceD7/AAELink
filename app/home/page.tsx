@@ -1032,6 +1032,22 @@ function HomeChat() {
   const activeTeam = useMemo(() => teams.find(t => t.id === activeTeamId), [teams, activeTeamId])
   const dmPreview = useMemo(() => teamMembers.filter(u => u.id !== me?.id).slice(0, 8), [teamMembers, me])
 
+  // ── Per-workspace unread/mention rollups for the rail badges (Wave2 Slice3) ──
+  // Channels for the active workspace live in `channels`; cross-workspace
+  // totals are only available for the active team, so badges show on the
+  // active icon when its channels carry unread/mention counts.
+  const workspaceBadges = useMemo(() => {
+    const map = new Map<string, { unread: number; mention: number }>()
+    for (const c of channels) {
+      if (!c.team_id) continue
+      const cur = map.get(c.team_id) || { unread: 0, mention: 0 }
+      cur.unread += c.unread_count ?? 0
+      cur.mention += c.mention_count ?? 0
+      map.set(c.team_id, cur)
+    }
+    return map
+  }, [channels])
+
   // ── Quick switcher actions (formerly the CommandPalette items) ────────
   const quickActions: QuickSwitchAction[] = useMemo(() => {
     const list: QuickSwitchAction[] = [
@@ -1215,12 +1231,42 @@ function HomeChat() {
         <aside className="workspace-rail" aria-label="Workspaces">
           {teams.map((t, idx) => {
             const cmdHint = idx < 9 ? `  ⌘${idx + 1}` : ''
+            const badge = workspaceBadges.get(t.id)
+            const mentionTotal = badge?.mention ?? 0
+            const unreadTotal = badge?.unread ?? 0
+            const showBadge = mentionTotal > 0 || unreadTotal > 0
             return (
               <Link key={t.id} href={`/home?team=${encodeURIComponent(t.id)}`}
                 className={`workspace-icon${t.id === activeTeamId ? ' active' : ''}`}
                 title={`${t.display_name}${cmdHint}`}
                 onClick={() => sessionStorage.setItem(TEAM_KEY, t.id)}>
                 {(t.display_name || t.name).slice(0, 1).toUpperCase()}
+                {showBadge && (
+                  mentionTotal > 0 ? (
+                    <span
+                      aria-label={`${mentionTotal} mentions`}
+                      style={{
+                        position: 'absolute', top: -3, right: -3,
+                        minWidth: 16, height: 16, padding: '0 4px',
+                        borderRadius: 9, background: '#1264a3', color: '#fff',
+                        fontSize: 10, fontWeight: 700, lineHeight: '16px',
+                        textAlign: 'center', boxShadow: '0 0 0 2px rgba(0,0,0,0.45)',
+                        pointerEvents: 'none',
+                      }}>
+                      {mentionTotal > 99 ? '99+' : mentionTotal}
+                    </span>
+                  ) : (
+                    <span
+                      aria-label={`${unreadTotal} unread`}
+                      style={{
+                        position: 'absolute', top: 0, right: 0,
+                        width: 10, height: 10, borderRadius: '50%',
+                        background: '#fff', boxShadow: '0 0 0 2px rgba(0,0,0,0.45)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  )
+                )}
               </Link>
             )
           })}
@@ -1753,6 +1799,7 @@ function HomeChat() {
         teamMembers={teamMembers}
         actions={quickActions}
         workspaceId={activeTeamId}
+        currentChannelId={channel?.id}
         onSelectChannel={ch => { setChannel(ch); setChannelsOpen(false) }}
         onSelectDm={uid => void openDm(uid)}
       />

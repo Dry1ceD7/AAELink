@@ -53,6 +53,8 @@ interface Props {
   onSelectDm: (userId: string) => void
   /** Current workspace ID — used for message search. */
   workspaceId: string
+  /** Id of the currently-active channel, highlighted in the result list. */
+  currentChannelId?: string
 }
 
 interface SearchResult {
@@ -104,7 +106,7 @@ function actionMatches(query: string, a: QuickSwitchAction): boolean {
  */
 export function QuickSwitcher({
   open, onClose, channels, teamMembers,
-  actions, onSelectChannel, onSelectDm, workspaceId
+  actions, onSelectChannel, onSelectDm, workspaceId, currentChannelId
 }: Props) {
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
@@ -266,18 +268,21 @@ export function QuickSwitcher({
             const isActive = i === selectedIdx
             if (item.kind === 'channel') {
               const c = item.data
+              const isCurrent = !!currentChannelId && c.id === currentChannelId
               const icon = c.type === 'D'
                 ? <MessageSquare size={14} className="qs-item-icon" />
                 : <Hash size={14} className="qs-item-icon" />
               return (
                 <button key={`ch-${c.id}`} type="button" role="option"
                   aria-selected={isActive}
-                  className={`qs-item${isActive ? ' qs-item--active' : ''}`}
+                  className={`qs-item${isActive ? ' qs-item--active' : ''}${isCurrent ? ' qs-item--current-channel' : ''}`}
                   onMouseEnter={() => setSelectedIdx(i)}
                   onClick={() => { onSelectChannel(c); onClose() }}>
                   {icon}
                   <span className="qs-item-label">{channelLabel(c)}</span>
-                  <ArrowRight size={12} className="qs-item-go" />
+                  {isCurrent
+                    ? <span className="qs-item-meta">current</span>
+                    : <ArrowRight size={12} className="qs-item-go" />}
                 </button>
               )
             }

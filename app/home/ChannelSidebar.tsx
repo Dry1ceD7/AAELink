@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { ChevronDown, Plus, Hash, Lock, Star, Search, PenLine, BellOff } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { ChevronDown, Plus, Hash, Lock, Star, Search, PenLine, BellOff, X } from 'lucide-react'
 import { displayName, type AppUser } from '@/components/chat/ChatMessage'
+import { readUiDensity } from '@/lib/ui/uiDensity'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { TOP_NAV_ITEMS, MORE_NAV_ITEMS, MORE_MODULE_KEYS, ENTERPRISE_NAV_ITEMS, ADMIN_NAV_ITEMS, MORE_ICON } from './sidebarNav'
 import { ChannelContextMenu, type ChannelContextMenuTarget } from './ChannelContextMenu'
@@ -35,6 +36,35 @@ interface Channel {
   dm_peer_display?: string
   purpose?: string
   header?: string
+}
+
+/* Sidebar drag-resize bounds + persistence key (Slack-style resizable rail). */
+const SIDEBAR_WIDTH_KEY = 'sidebar_width'
+const SIDEBAR_MIN_WIDTH = 180
+const SIDEBAR_MAX_WIDTH = 420
+/* Below this viewport width the rail becomes a fixed overlay; resizing is disabled. */
+const SIDEBAR_RESIZE_BREAKPOINT = 920
+
+function clampSidebarWidth(px: number): number {
+  if (!Number.isFinite(px)) return SIDEBAR_MIN_WIDTH
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(px)))
+}
+
+function readSidebarWidth(): number | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
+    if (!raw) return null
+    const px = Number.parseInt(raw, 10)
+    return Number.isFinite(px) ? clampSidebarWidth(px) : null
+  } catch {
+    return null
+  }
+}
+
+/* The visible label used for client-side quick filtering. */
+function channelFilterLabel(c: Channel): string {
+  return (c.dm_peer_display || c.display_name || c.name || '').toLowerCase()
 }
 
 /* ── Collapsible sidebar section (Slack-style <details>) ──────── */
@@ -158,9 +188,75 @@ export function ChannelSidebar({
   const [draggedSlot, setDraggedSlot] = useState<SidebarSlotId | null>(null)
   const [dragOverSlot, setDragOverSlot] = useState<SidebarSlotId | null>(null)
 
+  // Quick filter (Slack-style): filters visible channels/DMs by name client-side.
+  const [quickFilter, setQuickFilter] = useState('')
+  const filterQuery = quickFilter.trim().toLowerCase()
+
+  // Density (read from the app-wide uiDensity localStorage key) applied to the
+  // sidebar root via data-density so compact tightens row padding/font.
+  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable')
+
+  // Resizable rail — element ref points at the <nav>; its parent is the
+  // owning .channel-list <aside> (rendered by page.tsx, which we do not own).
+  const rootRef = useRef<HTMLElement | null>(null)
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
   // Load saved slot order on mount.
   useEffect(() => {
     setSlotOrder(readSidebarOrder())
+  }, [])
+
+  // Read density once on mount (the app sets it elsewhere; we only consume it).
+  useEffect(() => {
+    setDensity(readUiDensity())
+  }, [])
+
+  // Apply density + restored width to the owning .channel-list aside.
+  useEffect(() => {
+    const aside = rootRef.current?.parentElement
+    if (!aside) return
+    aside.setAttribute('data-density', density)
+    const saved = readSidebarWidth()
+    if (saved != null && window.innerWidth > SIDEBAR_RESIZE_BREAKPOINT) {
+      aside.style.setProperty('width', `${saved}px`)
+      aside.style.setProperty('max-width', `${saved}px`)
+    }
+    return () => {
+      aside.removeAttribute('data-density')
+    }
+  }, [density])
+
+  // Drag-resize: pointer-driven width update with clamp + persistence.
+  const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= SIDEBAR_RESIZE_BREAKPOINT) return
+    const aside = rootRef.current?.parentElement
+    if (!aside) return
+    e.preventDefault()
+    const startWidth = aside.getBoundingClientRect().width
+    resizeStateRef.current = { startX: e.clientX, startWidth }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMove = (ev: PointerEvent) => {
+      const state = resizeStateRef.current
+      if (!state) return
+      const next = clampSidebarWidth(state.startWidth + (ev.clientX - state.startX))
+      aside.style.setProperty('width', `${next}px`)
+      aside.style.setProperty('max-width', `${next}px`)
+    }
+    const onUp = () => {
+      resizeStateRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      try {
+        const width = clampSidebarWidth(aside.getBoundingClientRect().width)
+        window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width))
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }, [])
 
   function dragHandlersFor(slot: SidebarSlotId) {
@@ -223,9 +319,20 @@ export function ChannelSidebar({
     return next
   }
 
-  const starredChannels = applyManageFilter(channels.filter(c => starredIds.has(c.id)))
-  const allRegularChannels = applyManageFilter(channels.filter(c => c.type !== 'D' && c.type !== 'G'))
-  const dmChannels = applyManageFilter(channels.filter(c => c.type === 'D' || c.type === 'G'))
+  // Apply the quick-filter (case-insensitive, by visible name) after manage filters.
+  function applyQuickFilter(list: Channel[]): Channel[] {
+    if (!filterQuery) return list
+    return list.filter(c => channelFilterLabel(c).includes(filterQuery))
+  }
+
+  const starredChannels = applyQuickFilter(applyManageFilter(channels.filter(c => starredIds.has(c.id))))
+  const allRegularChannels = applyQuickFilter(applyManageFilter(channels.filter(c => c.type !== 'D' && c.type !== 'G')))
+  const dmChannels = applyQuickFilter(applyManageFilter(channels.filter(c => c.type === 'D' || c.type === 'G')))
+
+  // 'No matches' state: a query is active but nothing in any conversation list matches.
+  const filterHasMatches =
+    starredChannels.length > 0 || allRegularChannels.length > 0 || dmChannels.length > 0
+  const showNoMatches = filterQuery.length > 0 && !filterHasMatches
 
   // Build the section index from server-stored categories.
   const categoryIndex = new Map<string, string>()
@@ -284,7 +391,7 @@ export function ChannelSidebar({
   return (
     <>
       {/* ── Slack-style top nav (Home, Threads, Activity, Later) ── */}
-      <nav className="sidebar-top-nav">
+      <nav className="sidebar-top-nav" ref={rootRef}>
         {TOP_NAV_ITEMS.map(item => {
           const Icon = item.icon
           /* "Home" is active when no module is selected (default chat view) */
@@ -338,10 +445,38 @@ export function ChannelSidebar({
 
       {/* ── Scrollable channel/DM area ── */}
       <div className="sidebar-scrollable">
+        {/* Quick filter — filters visible channels/DMs by name (Esc clears). */}
+        <div className="sidebar-quick-filter">
+          <Search size={14} className="sidebar-quick-filter-icon" aria-hidden="true" />
+          <input
+            type="text"
+            className="sidebar-quick-filter-input"
+            placeholder="Filter conversations"
+            aria-label="Filter conversations"
+            value={quickFilter}
+            onChange={(e) => setQuickFilter(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setQuickFilter('') } }}
+          />
+          {quickFilter && (
+            <button
+              type="button"
+              className="sidebar-quick-filter-clear"
+              aria-label="Clear filter"
+              onClick={() => setQuickFilter('')}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
         {/* Manage sidebar (filter / sort / hide muted — Slack §1.4) */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 12px 0' }}>
           <ManageSidebarMenu onChange={setManageSidebarPrefs} />
         </div>
+
+        {showNoMatches && (
+          <p className="sidebar-quick-filter-empty">No matches</p>
+        )}
 
         {/* ── Conversation slots in user-saved order (Slack §1.4) ── */}
         {slotOrder.map(slot => {
@@ -626,6 +761,22 @@ export function ChannelSidebar({
           </SidebarSection>
         )}
       </div>
+
+      {/* Drag handle on the rail's right edge — resize 180-420px, persisted. */}
+      <div
+        className="sidebar-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={onResizePointerDown}
+        onDoubleClick={() => {
+          const aside = rootRef.current?.parentElement
+          if (!aside) return
+          aside.style.removeProperty('width')
+          aside.style.removeProperty('max-width')
+          try { window.localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
+        }}
+      />
     </>
   )
 }
