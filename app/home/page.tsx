@@ -8,9 +8,10 @@ import { apiFetch } from '@/lib/api/apiClient'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { notifyDesktopChatMessage } from '@/lib/notifications/desktopNotify'
 import { playNotificationSound } from '@/lib/notifications/notificationSound'
-import { connectCollab, type ChatPost, type CollabDeletion } from '@/lib/realtime/realtime'
+import { connectCollab, type ChatPost, type CollabDeletion, type ReadReceipt } from '@/lib/realtime/realtime'
 import { connectWsCollab } from '@/lib/realtime/wsClient'
 import { createRealtimeEventBus } from '@/lib/realtime/realtimeEventBus'
+import { applyReadReceiptEvent, applyReadReceiptMap, routeChannelUpdate } from '@/components/chat/realtimeEventApply'
 import { cachePosts, readCachedPosts, removeCachedPosts, setChannelMeta, pruneChannel } from '@/lib/messaging/messageCache'
 import { ChatMessage, type AppUser, displayName } from '@/components/chat/ChatMessage'
 import { SystemMessage, isSystemPost } from '@/components/chat/SystemMessage'
@@ -733,6 +734,14 @@ function HomeChat() {
       void removeCachedPosts(dels.map(d => d.id))
     }
 
+    // SSE / polling path read-receipt deltas: the server sends the full current
+    // reader stack per touched message, so replace authoritatively. (The WS path
+    // merges single `message_read` events in the `channel_update` case instead.)
+    const onReadReceipts = (map: Record<string, ReadReceipt[]>) => {
+      if (cancelled) return
+      setPosts(cur => applyReadReceiptMap(cur, map))
+    }
+
     const stop = (() => {
       const wsUrl =
         typeof process !== 'undefined' && process.env.NEXT_PUBLIC_WS_GATEWAY_URL
@@ -802,11 +811,20 @@ function HomeChat() {
                 break
               }
               case 'channel_update': {
-                // The shape of the update is opaque (`payload: unknown` on the
-                // PubSubEvent); refetch the channel list to stay authoritative.
-                // This is debounced so a burst of admin edits collapses into
-                // a single refetch.
-                refetchChannelsDebouncedRef.current?.()
+                // `channel_update` is an envelope with an opaque `payload`
+                // (`payload: unknown` on the PubSubEvent). Read-receipt fan-out
+                // (`POST /api/messages/:id/read`) rides inside it — merge the
+                // reader into the matching post's stack so avatars update live.
+                const action = routeChannelUpdate(payload.payload)
+                if (action.kind === 'read_receipt') {
+                  const ev = action.event
+                  setPosts(current => applyReadReceiptEvent(current, ev))
+                } else {
+                  // Genuine channel-metadata change; refetch the channel list to
+                  // stay authoritative. Debounced so a burst of admin edits
+                  // collapses into a single refetch.
+                  refetchChannelsDebouncedRef.current?.()
+                }
                 break
               }
               case 'typing': {
@@ -836,6 +854,13 @@ function HomeChat() {
             }
           },
         })
+        // Presence heartbeats fan out on the workspace presence topic, not the
+        // per-channel topic, so the channel subscribe alone never delivers them.
+        // Subscribe to THIS workspace's presence topic so `case 'presence'` fires
+        // and presence dots go live — without receiving other workspaces' presence.
+        // Mirrors `presenceTopic(workspaceId)` in `lib/realtime/redisPubSub.ts`
+        // (inlined to keep the server-only pub/sub module out of the client bundle).
+        if (activeTeamId) handle.subscribeTopic(`presence:${activeTeamId}`)
         return () => handle.close()
       }
       // SSE / polling fallback.
@@ -845,7 +870,8 @@ function HomeChat() {
         onIncoming,
         undefined,
         onDeletions,
-        up => { if (!cancelled) setStreamUp(up) }
+        up => { if (!cancelled) setStreamUp(up) },
+        onReadReceipts
       )
     })()
 

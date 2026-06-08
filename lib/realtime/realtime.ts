@@ -122,6 +122,8 @@ export type CollabSsePayload = {
   reply_counts?: Record<string, number>
   /** Tombstones for messages removed since the client cursor (main channel collab). */
   deletions?: CollabDeletion[]
+  /** message_id → current reader stack, for messages whose reads advanced since the cursor. */
+  read_receipts?: Record<string, ReadReceipt[]>
 }
 
 /** One reader of a message: who read it and when (ms epoch). */
@@ -156,7 +158,8 @@ export function connectCollab(
   onIncoming: (posts: ChatPost[]) => void,
   onReplyCounts?: (counts: Record<string, number>) => void,
   onDeletions?: (deletions: CollabDeletion[]) => void,
-  onSseConnected?: (connected: boolean) => void
+  onSseConnected?: (connected: boolean) => void,
+  onReadReceipts?: (map: Record<string, ReadReceipt[]>) => void
 ): () => void {
   if (typeof window === 'undefined') return () => { }
 
@@ -235,10 +238,13 @@ export function connectCollab(
           const hasRc = Boolean(rc && Object.keys(rc).length > 0)
           const dels = data.deletions ?? []
           const hasDel = dels.length > 0
-          if (hasPosts || hasRc || hasDel) sseFailures = 0
+          const rr = data.read_receipts
+          const hasRr = Boolean(rr && Object.keys(rr).length > 0)
+          if (hasPosts || hasRc || hasDel || hasRr) sseFailures = 0
           if (hasPosts) onIncoming(data.posts!)
           if (hasRc && onReplyCounts) onReplyCounts(rc!)
           if (hasDel && onDeletions) onDeletions(dels)
+          if (hasRr && onReadReceipts) onReadReceipts(rr!)
         } catch {
           /* ignore malformed */
         }

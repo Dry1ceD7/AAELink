@@ -4846,6 +4846,21 @@ async function migration061ChannelMemberRequests(pool: RunnerPool) {
   `)
 }
 
+/**
+ * Migration 062 — composite index for the read-receipt SSE delta.
+ *
+ * `/api/collab/events` streams new reads each tick by polling
+ * `message_reads WHERE channel_id = $1 AND read_at > $2`; without this index that
+ * per-tick delta would seq-scan the table. Complements the existing
+ * `idx_message_reads_message` (message-keyed) index.
+ */
+async function migration062MessageReadsChannelReadIdx(pool: RunnerPool) {
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_message_reads_channel_read
+      ON aaelink.message_reads(channel_id, read_at);
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4906,4 +4921,5 @@ const MIGRATIONS: Migration[] = [
   { id: '059_user_preferences', up: migration059UserPreferences },
   { id: '060_message_reads', up: migration060MessageReads },
   { id: '061_channel_member_requests', up: migration061ChannelMemberRequests },
+  { id: '062_message_reads_channel_read_idx', up: migration062MessageReadsChannelReadIdx },
 ]

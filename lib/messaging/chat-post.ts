@@ -114,3 +114,44 @@ export async function readReceiptsForMessages(
   }
   return map
 }
+
+/**
+ * Read-receipt deltas for a channel: the current reader stack for every message
+ * whose reads advanced past `sinceReadAt`. Powers the SSE / poll fan-out in
+ * `GET /api/collab/events` so reader avatar stacks update live without a full
+ * message refetch.
+ *
+ * Returns the touched-message stacks (`message_id` → readers, newest first, same
+ * shape as {@link readReceiptsForMessages}) plus `nextWatermark` — the max
+ * `read_at` observed (capped to `limit` messages per call), or `sinceReadAt` when
+ * nothing advanced — to feed back on the next tick.
+ */
+export async function readReceiptDeltaSince(
+  pool: Pool,
+  channelId: string,
+  sinceReadAt: number,
+  limit = 200
+): Promise<{ map: Record<string, ReadReceipt[]>; nextWatermark: number }> {
+  const { rows } = await pool.query<{ message_id: string; mr: string }>(
+    `SELECT message_id, MAX(read_at)::text AS mr FROM aaelink.message_reads
+     WHERE channel_id = $1 AND read_at > $2
+     GROUP BY message_id ORDER BY mr ASC LIMIT $3`,
+    [channelId, sinceReadAt, limit]
+  )
+  if (rows.length === 0) return { map: {}, nextWatermark: sinceReadAt }
+  const ids = rows.map(r => r.message_id)
+  const receipts = await readReceiptsForMessages(pool, ids)
+  const map: Record<string, ReadReceipt[]> = {}
+  for (const id of ids) map[id] = receipts.get(id) ?? []
+  let maxMr = sinceReadAt
+  for (const r of rows) {
+    const n = Number(r.mr)
+    if (Number.isFinite(n) && n > maxMr) maxMr = n
+  }
+  // When the page cap was hit, the tail beyond `limit` — plus any messages tying
+  // the largest returned read_at — would be skipped by the next strict `> cursor`.
+  // Hold the watermark one ms below the max so that tail is re-scanned next tick;
+  // re-delivered stacks are idempotent on the client (authoritative replace).
+  const nextWatermark = rows.length >= limit ? Math.max(sinceReadAt, maxMr - 1) : maxMr
+  return { map, nextWatermark }
+}

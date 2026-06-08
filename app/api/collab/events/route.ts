@@ -1,4 +1,5 @@
-import { reactionSummariesForMessages, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { reactionSummariesForMessages, readReceiptDeltaSince, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import type { ReadReceipt } from '@/lib/realtime/realtime'
 import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
@@ -50,6 +51,25 @@ async function initialThreadReplyWatermark(
   return Number(rows[0]?.m || 0)
 }
 
+/**
+ * Start at the latest existing read so we only stream receipt deltas for reads
+ * that land after the client connects. The initial reader stacks come from the
+ * message load (`GET /api/messages` already attaches `read_receipts`), so the
+ * stream only needs to carry subsequent changes. Independent of `since` (a
+ * message cursor), since `read_at` is its own timeline.
+ */
+async function initialReadWatermark(
+  pool: NonNullable<ReturnType<typeof getPool>>,
+  channelId: string
+): Promise<number> {
+  const { rows } = await pool.query<{ m: string }>(
+    `SELECT COALESCE(MAX(read_at), 0)::text AS m FROM aaelink.message_reads
+     WHERE channel_id = $1`,
+    [channelId]
+  )
+  return Number(rows[0]?.m || 0)
+}
+
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return new Response('database_not_configured', { status: 503 })
@@ -64,6 +84,7 @@ async function _GET(req: Request) {
   }
   let watermarkMs = await initialWatermark(pool, channelId, url.searchParams.get('since'))
   let threadReplyWatermarkMs = await initialThreadReplyWatermark(pool, channelId, url.searchParams.get('since'))
+  let readWatermarkMs = await initialReadWatermark(pool, channelId)
 
   const stream = new ReadableStream({
     start(controller) {
@@ -94,6 +115,7 @@ async function _GET(req: Request) {
             posts?: unknown[]
             reply_counts?: Record<string, number>
             deletions?: { id: string; deleted_at: number; thread_root_id?: string }[]
+            read_receipts?: Record<string, ReadReceipt[]>
           } = {}
           const collabW0 = watermarkMs
 
@@ -210,6 +232,16 @@ async function _GET(req: Request) {
             }
           }
 
+          // Read-receipt deltas: stream the current reader stack for any message
+          // whose reads advanced past the receipt watermark so avatar stacks update
+          // live on the SSE / poll path too. (The WS gateway path merges the same
+          // information from the `message_read` redisPubSub fan-out instead.)
+          const rrDelta = await readReceiptDeltaSince(pool, channelId, readWatermarkMs)
+          if (Object.keys(rrDelta.map).length > 0) {
+            payload.read_receipts = rrDelta.map
+            readWatermarkMs = rrDelta.nextWatermark
+          }
+
           const { rows: twRows } = await pool.query<{ m: string | null }>(
             `SELECT MAX(GREATEST(m.created_at, m.updated_at))::text AS m
              FROM aaelink.messages m
@@ -226,7 +258,8 @@ async function _GET(req: Request) {
           if (
             (payload.posts && payload.posts.length > 0) ||
             (payload.reply_counts && Object.keys(payload.reply_counts).length > 0) ||
-            (payload.deletions && payload.deletions.length > 0)
+            (payload.deletions && payload.deletions.length > 0) ||
+            (payload.read_receipts && Object.keys(payload.read_receipts).length > 0)
           ) {
             controller.enqueue(enc.encode(`data: ${JSON.stringify(payload)}\n\n`))
           }
