@@ -13,15 +13,20 @@ import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 const ALLOWED_ROLES = new Set(['', 'employee', 'it_employee', 'it_admin'])
 
-async function _GET() {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
   const adm = await getAdminSession(pool)
   if (!adm) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const status = new URL(req.url).searchParams.get('status')
+  const where =
+    status === 'active' ? 'WHERE COALESCE(scim_active, true) = true'
+    : status === 'deactivated' ? 'WHERE COALESCE(scim_active, true) = false'
+    : ''
   const { rows } = await pool.query(
-    `SELECT id, username, email, first_name, last_name, platform_role, created_at, avatar_url, job_title, phone, timezone, status_text, status_emoji
-     FROM aaelink.users ORDER BY created_at DESC LIMIT 500`
+    `SELECT id, username, email, first_name, last_name, platform_role, created_at, avatar_url, job_title, phone, timezone, status_text, status_emoji, COALESCE(scim_active, true) AS scim_active
+     FROM aaelink.users ${where} ORDER BY created_at DESC LIMIT 500`
   )
   return NextResponse.json({ users: rows })
 }
