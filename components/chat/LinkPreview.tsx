@@ -25,7 +25,7 @@ export const LinkPreview = memo(function LinkPreview({ url }: { url: string }) {
       try {
         const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`)
         if (!res.ok) throw new Error('fetch failed')
-        const data = (await res.json()) as LinkMeta
+        const data = (await res.json().catch(() => ({}))) as LinkMeta
         if (!cancelled && (data.title || data.description)) setMeta(data)
         else if (!cancelled) setFailed(true)
       } catch {
@@ -36,7 +36,20 @@ export const LinkPreview = memo(function LinkPreview({ url }: { url: string }) {
     return () => { cancelled = true }
   }, [url])
 
-  if (failed || !meta) return null
+  if (failed) {
+    return (
+      <div className="link-preview-card link-preview-card--unavailable">
+        <div className="link-preview-body">
+          <div className="link-preview-domain">
+            <ExternalLink size={12} />
+            <span>Link preview unavailable</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!meta) return null
 
   return (
     <a

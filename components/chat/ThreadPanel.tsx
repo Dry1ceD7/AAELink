@@ -8,7 +8,9 @@ import { Composer, type ComposerHandle } from '@/components/chat/Composer'
 import { TypingIndicator, useTypingEmitter } from '@/components/chat/TypingIndicator'
 import type { ReactionSummary } from '@/lib/messaging/reactions'
 import type { SlashMeUser } from '@/lib/messaging/composerSlash'
-import { Bell, BellRing, Hash } from 'lucide-react'
+import { BroadcastToggle } from '@/components/chat/BroadcastToggle'
+import { toast } from '@/lib/ui/toast'
+import { Bell, BellRing } from 'lucide-react'
 
 interface ThreadPanelProps {
   rootPost: ChatPost
@@ -70,7 +72,7 @@ export function ThreadPanel({
       })
       const res = await apiFetch(`/api/messages?${q}`, { method: 'GET' })
       if (res.ok && !cancelled) {
-        const data = (await res.json()) as { posts?: ChatPost[] }
+        const data = (await res.json().catch(() => ({}))) as { posts?: ChatPost[] }
         const list = data.posts ?? []
         setReplies(list)
         bumpSince(list)
@@ -148,7 +150,12 @@ export function ThreadPanel({
         })
       })
       if (res.ok) {
-        const saved = (await res.json()) as ChatPost
+        const saved = (await res.json().catch(() => ({}))) as ChatPost
+        if (!saved || !saved.id) {
+          setReplies(cur => cur.filter(p => p.id !== pending.id))
+          toast.error('Reply failed to send')
+          return
+        }
         bumpSince([saved])
         setReplies(cur => {
           const without = cur.filter(p => p.id !== pending.id)
@@ -158,9 +165,10 @@ export function ThreadPanel({
         })
       } else {
         setReplies(cur => cur.filter(p => p.id !== pending.id))
+        toast.error('Reply failed to send')
       }
     },
-    [me, rootPost, bumpSince, scrollToBottom]
+    [me, rootPost, broadcastToChannel, bumpSince, scrollToBottom]
   )
 
   // ── Reactions handler ──────────────────────────────────────────────────
@@ -190,10 +198,14 @@ export function ThreadPanel({
         body: JSON.stringify({ message: newText })
       })
       if (res.ok) {
-        const updated = (await res.json()) as ChatPost
-        setReplies(cur =>
-          cur.map(p => (p.id === updated.id ? { ...updated, pending: false } : p))
-        )
+        const updated = (await res.json().catch(() => ({}))) as ChatPost
+        if (updated && updated.id) {
+          setReplies(cur =>
+            cur.map(p => (p.id === updated.id ? { ...updated, pending: false } : p))
+          )
+        }
+      } else {
+        toast.error('Failed to save edit')
       }
       setEditingId(null)
     },
@@ -213,9 +225,11 @@ export function ThreadPanel({
     setPendingDeleteMsg(null)
     const res = await apiFetch(`/api/messages/${post.id}`, { method: 'DELETE' })
     if (res.ok) {
-      const data = (await res.json()) as { deleted_ids?: string[] }
+      const data = (await res.json().catch(() => ({}))) as { deleted_ids?: string[] }
       const gone = new Set(data.deleted_ids ?? [post.id])
       setReplies(cur => cur.filter(p => !gone.has(p.id)))
+    } else {
+      toast.error('Failed to delete reply')
     }
   }, [pendingDeleteMsg])
 
@@ -364,20 +378,13 @@ export function ThreadPanel({
       />
 
       {/* ── "Also send to #channel" toggle (Slack parity) ───── */}
-      <label style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '4px 16px 8px', fontSize: 12,
-        color: 'var(--mm-muted)', cursor: 'pointer', userSelect: 'none',
-      }}>
-        <input
-          type="checkbox"
+      <div style={{ padding: '4px 16px 8px' }}>
+        <BroadcastToggle
           checked={broadcastToChannel}
-          onChange={e => setBroadcastToChannel(e.target.checked)}
-          style={{ accentColor: 'var(--mm-link)', width: 14, height: 14 }}
+          onChange={setBroadcastToChannel}
+          channelName={channelTitle}
         />
-        <Hash size={11} style={{ opacity: 0.5 }} />
-        Also send to #{channelTitle}
-      </label>
+      </div>
 
       {/* ── Delete confirmation modal ───────────────────── */}
       {pendingDeleteMsg && (

@@ -90,6 +90,10 @@ export function useMessageKeyNav(
       const len = postsRef.current.length
       if (len === 0) return
 
+      // Don't hijack modified j/k (Cmd+J, Ctrl+K, Alt+J, …) — those belong to the
+      // browser / OS / app command palette, not message navigation.
+      if ((key === 'j' || key === 'k') && (e.metaKey || e.ctrlKey || e.altKey)) return
+
       // J / ArrowDown — next message
       if (key === 'j' || (key === 'arrowdown' && !e.metaKey && !e.ctrlKey)) {
         e.preventDefault()

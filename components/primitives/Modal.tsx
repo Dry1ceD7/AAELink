@@ -3,6 +3,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { useFocusTrap } from '../a11y/useFocusTrap'
 
 /**
  * `<Modal>` — centered backdrop + scale-and-fade entry. Click outside or Esc
@@ -12,7 +13,8 @@ import type { ReactNode } from 'react'
  * Replaces ad-hoc `position: fixed; inset: 0; …` JSX patterns littered across
  * the codebase. Locks body scroll on open so background doesn't shift.
  *
- * Future: add focus-trap. The simple version keeps the surface area tiny.
+ * Focus is trapped within the dialog while open (via `useFocusTrap`) and
+ * restored to the previously-focused element on close.
  */
 export interface ModalProps {
   open: boolean
@@ -61,6 +63,9 @@ export function Modal({
     return () => { document.body.style.overflow = prev }
   }, [open])
 
+  // Trap keyboard focus inside the dialog while open; restore on close.
+  useFocusTrap(dialogRef, open)
+
   if (!open) return null
 
   const handleBackdrop = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -77,6 +82,7 @@ export function Modal({
         className={`ds-modal${sizeClass} ${className}`}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         aria-label={ariaLabel}
         aria-labelledby={title ? 'ds-modal-title' : undefined}
       >

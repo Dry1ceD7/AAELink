@@ -74,6 +74,8 @@ import { ChatHeader } from './ChatHeader'
 import { MessageTimeline } from './MessageTimeline'
 import { ChannelSidebar } from './ChannelSidebar'
 import { useMessageKeyNav } from '@/components/chat/useMessageKeyNav'
+import { ToastProvider } from '@/components/shared/ToastProvider'
+import { MessageContextMenu, type MessageContextMenuState } from '@/components/chat/MessageContextMenu'
 
 interface Channel {
   id: string
@@ -144,6 +146,7 @@ function HomeChat() {
   const [customStatusOpen, setCustomStatusOpen] = useState(false)
   const [channelNotifPrefsOpen, setChannelNotifPrefsOpen] = useState(false)
   const [pinnedPanelOpen, setPinnedPanelOpen] = useState(false)
+  const [msgContextMenu, setMsgContextMenu] = useState<MessageContextMenuState | null>(null)
 
   /**
    * Right-rail mutual-exclusion helper. Only one of channelInfo / thread /
@@ -873,6 +876,44 @@ function HomeChat() {
     })
   }, [channel])
 
+  // ── Message right-click context menu (Slice 4) ──────────────────────────
+  // Stable handler exposed to the message rows. Positions a portal menu at the
+  // cursor; action callbacks reuse the existing message handlers above.
+  const handleMessageContextMenu = useCallback((e: React.MouseEvent, postId: string) => {
+    e.preventDefault()
+    setMsgContextMenu({ x: e.clientX, y: e.clientY, postId })
+  }, [])
+
+  const ctxCopyText = useCallback((postId: string) => {
+    const post = posts.find(p => p.id === postId)
+    if (!post) return
+    const plain = post.message.replace(/<[^>]+>/g, '')
+    navigator.clipboard.writeText(plain).catch(() => {})
+  }, [posts])
+
+  const ctxAddReaction = useCallback((postId: string) => {
+    const row = document.querySelector(`[data-message-id="${CSS.escape(postId)}"]`)
+    // Prefer the stable test id; fall back to the aria-label for resilience.
+    const btn = row?.querySelector('[data-testid="message-reaction-button"]')
+      || row?.querySelector('[aria-label="Add reaction"]')
+    if (btn instanceof HTMLElement) btn.click()
+  }, [])
+
+  const ctxReplyInThread = useCallback((postId: string) => {
+    const post = posts.find(p => p.id === postId)
+    if (post) setThreadRoot(post)
+  }, [posts])
+
+  const ctxPin = useCallback((postId: string) => {
+    const post = posts.find(p => p.id === postId)
+    if (post) void handlePinMessage(post)
+  }, [posts, handlePinMessage])
+
+  const ctxDelete = useCallback((postId: string) => {
+    const post = posts.find(p => p.id === postId)
+    if (post) void handleDeleteMessage(post)
+  }, [posts, handleDeleteMessage])
+
   // ── Forward message ─────────────────────────────────────────────────────
   const handleForwardMessage = useCallback((post: ChatPost) => {
     setForwardMsg(post)
@@ -1167,6 +1208,8 @@ function HomeChat() {
 
   return (
     <main className={`app-shell${channelsOpen ? ' app-shell--channels-open' : ''}${threadRoot ? ' app-shell--thread-open' : ''}`}>
+      {/* ── Toast notifications (mounted once at app root, Slice 1/4) ── */}
+      <ToastProvider />
       {/* ── Workspace rail ──────────────────────────────────────── */}
       {teams.length > 1 && (
         <aside className="workspace-rail" aria-label="Workspaces">
@@ -1454,7 +1497,8 @@ function HomeChat() {
             const showDateDivider = postDate !== prevDate
 
             return (
-              <div key={post.id} className="message-group-wrapper">
+              <div key={post.id} className="message-group-wrapper"
+                onContextMenu={(e) => { if (!isSystemPost(post)) handleMessageContextMenu(e, post.id) }}>
                 {unreadSepId === post.id && (
                   <div className="unread-separator" onClick={() => setUnreadSepId(null)} role="button" tabIndex={0} aria-label="Clear new messages marker">
                     <span className="unread-separator-text">New messages</span>
@@ -1795,6 +1839,17 @@ function HomeChat() {
           </div>
         </div>
       )}
+
+      {/* ── Message right-click context menu (Slice 4) ──────────── */}
+      <MessageContextMenu
+        menu={msgContextMenu}
+        onClose={() => setMsgContextMenu(null)}
+        onCopyText={ctxCopyText}
+        onAddReaction={ctxAddReaction}
+        onReplyInThread={ctxReplyInThread}
+        onPin={ctxPin}
+        onDelete={ctxDelete}
+      />
     </main>
   )
 }

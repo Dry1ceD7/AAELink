@@ -50,7 +50,7 @@ export function TypingIndicator({ channelId, userMap, myId, bus }: Props) {
     try {
       const res = await apiFetch(`/api/typing?channel_id=${encodeURIComponent(channelId)}`)
       if (res.ok) {
-        const data = (await res.json()) as { typing: string[] }
+        const data = (await res.json().catch(() => ({}))) as { typing?: string[] }
         setTypingNames(namesFromIds(data.typing || []))
       }
     } catch {
@@ -143,6 +143,8 @@ export function useTypingEmitter(channelId: string, _threadRootId?: string) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ channel_id: channelId })
+    }).catch(() => {
+      // Typing emit is best-effort — ignore network errors.
     })
   }, [channelId])
 

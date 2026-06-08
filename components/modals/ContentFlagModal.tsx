@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Ban, AlertOctagon, Lock, Mail, ShieldAlert, Copyright, ClipboardList, HelpCircle, Flag, CheckCircle, X } from 'lucide-react'
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -39,6 +39,15 @@ export default function ContentFlagModal({ messageId, messagePreview, senderName
   const [description, setDescription] = useState('')
   const [isSubmitted, setIsSubmitted] = useState(false)
 
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   const handleSubmit = () => {
     if (!selectedCategory) return
     onSubmit({ category: selectedCategory, description })
@@ -47,12 +56,12 @@ export default function ContentFlagModal({ messageId, messagePreview, senderName
 
   if (isSubmitted) {
     return (
-      <div className="slack-modal-overlay" onClick={onClose}>
-        <div className="slack-modal-content" onClick={e => e.stopPropagation()} style={{
+      <div className="slack-modal-overlay" onClick={onClose} role="presentation">
+        <div className="slack-modal-content" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="content-flag-modal-success-title" style={{
           padding: 32, textAlign: 'center', maxWidth: 420,
         }}>
           <span style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}><CheckCircle size={48} color="#2bac76" /></span>
-          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Report submitted</h3>
+          <h3 id="content-flag-modal-success-title" style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Report submitted</h3>
           <p style={{ fontSize: 14, opacity: 0.7, lineHeight: 1.6, marginBottom: 20 }}>
             Your report has been sent to the workspace administrators for review.
             You'll be notified once a decision has been made.
@@ -68,8 +77,8 @@ export default function ContentFlagModal({ messageId, messagePreview, senderName
   }
 
   return (
-    <div className="slack-modal-overlay" onClick={onClose}>
-      <div className="slack-modal-content" onClick={e => e.stopPropagation()} style={{ padding: 0, maxWidth: 520 }}>
+    <div className="slack-modal-overlay" onClick={onClose} role="presentation">
+      <div className="slack-modal-content" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="content-flag-modal-title" style={{ padding: 0, maxWidth: 520 }}>
         {/* Header */}
         <div style={{
           padding: '16px 20px', borderBottom: '1px solid var(--mm-border)',
@@ -77,7 +86,7 @@ export default function ContentFlagModal({ messageId, messagePreview, senderName
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Flag size={18} />
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Report this message</h3>
+            <h3 id="content-flag-modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Report this message</h3>
           </div>
           <button onClick={onClose} style={{
             background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mm-muted)',

@@ -11,6 +11,8 @@ import { FileAttachmentCards } from './FileAttachmentCards'
 import { LinkPreview, extractPreviewUrl } from './LinkPreview'
 import { formatUserTime } from '@/lib/ui/userPreferences'
 import { useMenuNav } from '@/lib/ui/useMenuNav'
+import { EditHistoryModal } from './EditHistoryModal'
+import { type Presence, presenceColor } from '@/lib/types/presence'
 
 // ── Reaction icons (Lucide-mapped, no heavy emoji deps) ────────────────────
 const REACTION_ICON: Record<string, string> = {
@@ -34,6 +36,8 @@ export interface AppUser {
   timezone?: string
   status_text?: string
   status_emoji?: string
+  /** Live presence for the avatar dot overlay (optional; dot hidden if absent). */
+  presence?: Presence
 }
 
 export function displayName(u: AppUser): string {
@@ -59,7 +63,7 @@ interface ChatMessageProps {
   compact?: boolean
 }
 
-function MessageHeader({ label, time, fullDate, edited, onAuthorClick }: { label: string, time: string, fullDate?: string, edited?: boolean, onAuthorClick?: () => void }) {
+function MessageHeader({ label, time, fullDate, edited, onAuthorClick, onEditedClick }: { label: string, time: string, fullDate?: string, edited?: boolean, onAuthorClick?: () => void, onEditedClick?: () => void }) {
   return (
     <div className="message-meta">
       {onAuthorClick ? (
@@ -70,7 +74,17 @@ function MessageHeader({ label, time, fullDate, edited, onAuthorClick }: { label
         <strong>{label}</strong>
       )}
       <span title={fullDate || time} className="message-time">{time}</span>
-      {edited ? <span className="message-edited" title="This message has been edited">(edited)</span> : null}
+      {edited ? (
+        <button
+          type="button"
+          className="message-edited message-edited-btn"
+          title="View edit history"
+          aria-label="View edit history"
+          onClick={onEditedClick}
+        >
+          (edited)
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -166,6 +180,7 @@ function MessageActions({
         type="button"
         title="Add reaction"
         aria-label="Add reaction"
+        data-testid="message-reaction-button"
         onClick={() => setReactionPickerOpen(o => !o)}
       >
         <Smile size={16} aria-hidden="true" />
@@ -404,6 +419,7 @@ export const ChatMessage = memo(function ChatMessage({
   const [actionsOpen, setActionsOpen] = useState(false)
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
   const [reactBusy, setReactBusy] = useState(false)
+  const [editHistoryOpen, setEditHistoryOpen] = useState(false)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Clean up hover timer on unmount
@@ -417,6 +433,9 @@ export const ChatMessage = memo(function ChatMessage({
   const u = userMap[post.user_id]
   const label = isSelf || post.pending ? 'You' : u ? displayName(u) : post.user_id.slice(0, 8)
   const initial = (u?.username || label).slice(0, 1).toUpperCase()
+  const presence: Presence | undefined = u?.presence
+  // `last_reply_at` may not be present on every poll shape; read defensively.
+  const lastReplyAt = (post as { last_reply_at?: number }).last_reply_at
   const time = post.pending
     ? 'Sending…'
     : formatUserTime(new Date(post.create_at))
@@ -513,6 +532,12 @@ export const ChatMessage = memo(function ChatMessage({
           }}
           onClick={() => onAvatarClick?.(post.user_id)}>
           {initial}
+          {presence ? (
+            <span
+              className={`avatar-presence-dot avatar-presence-dot--${presence}`}
+              style={{ background: presenceColor(presence) }}
+            />
+          ) : null}
         </div>
       )}
       <div className="message-body-wrap" onClick={(e) => {
@@ -523,7 +548,7 @@ export const ChatMessage = memo(function ChatMessage({
           onMentionClick(target.dataset.mentionUsername!)
         }
       }}>
-        {!compact && <MessageHeader label={label} time={time} fullDate={fullDate} edited={Boolean(post.edited_at)} onAuthorClick={onAvatarClick ? () => onAvatarClick(post.user_id) : undefined} />}
+        {!compact && <MessageHeader label={label} time={time} fullDate={fullDate} edited={Boolean(post.edited_at)} onAuthorClick={onAvatarClick ? () => onAvatarClick(post.user_id) : undefined} onEditedClick={() => setEditHistoryOpen(true)} />}
         <MessageBody message={post.message} />
         {post.file_attachments && post.file_attachments.length > 0 && (
           <FileAttachmentCards attachments={post.file_attachments} />
@@ -538,6 +563,7 @@ export const ChatMessage = memo(function ChatMessage({
             onClick={() => onOpenThread(post)}
           >
             {post.reply_count} {post.reply_count === 1 ? 'reply' : 'replies'}
+            {lastReplyAt ? `, last reply ${formatUserTime(new Date(lastReplyAt))}` : ''}
           </button>
         ) : null}
       </div>
@@ -557,6 +583,15 @@ export const ChatMessage = memo(function ChatMessage({
           onPinMessage={onPinMessage}
           onConvertToTicket={onConvertToTicket}
           toggleReaction={toggleReaction}
+        />
+      ) : null}
+
+      {/* ── Edit history modal ────────────────────────────────── */}
+      {editHistoryOpen ? (
+        <EditHistoryModal
+          messageId={post.id}
+          open={editHistoryOpen}
+          onClose={() => setEditHistoryOpen(false)}
         />
       ) : null}
     </article>

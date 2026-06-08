@@ -129,6 +129,7 @@ export function ChannelSidebar({
   starredIds,
   draftIds,
   me,
+  teamMembers,
   dmPreview,
   getStatus,
   onSelectChannel,
@@ -238,6 +239,14 @@ export function ChannelSidebar({
   const regularChannels = grouped.ungrouped.filter(c => !starredIds.has(c.id))
   const MoreIcon = MORE_ICON
   const isAdmin = me && isPlatformAdmin(me.platform_role)
+
+  // Custom-status emoji lookup for DM peers (Slack shows the peer's status
+  // emoji next to the presence dot). Sourced from the user lists already
+  // passed to the sidebar — no new fetch, no breaking existing props.
+  const customStatusEmoji = new Map<string, string>()
+  for (const u of [...teamMembers, ...dmPreview]) {
+    if (u?.id && u.status_emoji) customStatusEmoji.set(u.id, u.status_emoji)
+  }
 
   // Sync muted channels from the server when the workspace changes.
   useEffect(() => {
@@ -427,7 +436,11 @@ export function ChannelSidebar({
                       ) : unread > 0 ? (
                         <span className="channel-unread">{unread}</span>
                       ) : draftIds.has(item.id) ? (
-                        <PenLine size={12} className="channel-draft-icon" />
+                        <PenLine
+                          size={12}
+                          className="channel-draft-icon"
+                          style={{ opacity: 1, marginLeft: 'auto', color: 'var(--mm-sidebar-text-hover)' }}
+                        />
                       ) : null}
                     </button>
                   )
@@ -469,6 +482,7 @@ export function ChannelSidebar({
                   }
                   const peerId = item.name.split('__').find(id => id !== me?.id) || ''
                   const status = getStatus(peerId)
+                  const peerEmoji = customStatusEmoji.get(peerId)
                   return (
                     <button type="button"
                       className={`channel${channel?.id === item.id && !activeModule ? ' active' : ''}${(item.unread_count ?? 0) > 0 ? ' channel--unread' : ''}`}
@@ -477,6 +491,9 @@ export function ChannelSidebar({
                       onClick={() => onSelectChannel(item)}>
                       <span className={`presence presence--${status}`} aria-hidden="true" />
                       <span className="channel-name">{item.dm_peer_display || item.display_name || item.name}</span>
+                      {peerEmoji ? (
+                        <span className="channel-status-emoji" aria-hidden="true">{peerEmoji}</span>
+                      ) : null}
                       {(item.unread_count ?? 0) > 0 ? (
                         <span className="channel-unread">{item.unread_count}</span>
                       ) : null}

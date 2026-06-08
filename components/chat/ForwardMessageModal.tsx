@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Hash, Lock, MessageSquare, Search, Send, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface ForwardChannel {
   id: string
@@ -45,8 +46,8 @@ export function ForwardMessageModal({ open, messageBody, originalAuthor, onClose
     if (!currentWorkspaceId) return
     const res = await apiFetch(`/api/channels?team_id=${encodeURIComponent(currentWorkspaceId)}`)
     if (res.ok) {
-      const data = await res.json()
-      setChannels((data.channels || []) as ForwardChannel[])
+      const data = (await res.json().catch(() => ({}))) as { channels?: ForwardChannel[] }
+      setChannels(data.channels || [])
     }
   }, [currentWorkspaceId])
 
@@ -54,8 +55,8 @@ export function ForwardMessageModal({ open, messageBody, originalAuthor, onClose
     if (!currentWorkspaceId) return
     const res = await apiFetch(`/api/users?workspace_id=${encodeURIComponent(currentWorkspaceId)}`)
     if (res.ok) {
-      const data = await res.json()
-      setUsers((data.members || data.users || []) as ForwardUser[])
+      const data = (await res.json().catch(() => ({}))) as { members?: ForwardUser[]; users?: ForwardUser[] }
+      setUsers(data.members || data.users || [])
     }
   }, [currentWorkspaceId])
 
@@ -98,12 +99,15 @@ export function ForwardMessageModal({ open, messageBody, originalAuthor, onClose
       ? `${comment.trim()}\n\n${forwardedBody}`
       : forwardedBody
 
+    let ok = false
+
     if (selected.kind === 'channel') {
-      await apiFetch('/api/messages', {
+      const res = await apiFetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel_id: selected.channel.id, body: fullBody })
       })
+      ok = res.ok
     } else {
       // Create or get DM channel, then send
       const dmRes = await apiFetch('/api/channels/dm', {
@@ -112,15 +116,22 @@ export function ForwardMessageModal({ open, messageBody, originalAuthor, onClose
         body: JSON.stringify({ workspace_id: currentWorkspaceId, user_id: selected.user.id })
       })
       if (dmRes.ok) {
-        const dmData = await dmRes.json() as { channel_id?: string }
+        const dmData = (await dmRes.json().catch(() => ({}))) as { channel_id?: string }
         if (dmData.channel_id) {
-          await apiFetch('/api/messages', {
+          const res = await apiFetch('/api/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ channel_id: dmData.channel_id, body: fullBody })
           })
+          ok = res.ok
         }
       }
+    }
+
+    if (!ok) {
+      setSending(false)
+      toast.error('Failed to forward message')
+      return
     }
 
     setSending(false)

@@ -108,7 +108,7 @@
   --mm-team-hover: #003d6e;
   --mm-sidebar-bg: #002b4f;
   --mm-sidebar-border: rgba(255, 255, 255, 0.10);
-  --mm-sidebar-text: rgba(255, 255, 255, 0.75);
+  --mm-sidebar-text: rgba(255, 255, 255, 0.85);
   --mm-sidebar-text-hover: #ffffff;
   --mm-sidebar-heading: rgba(255, 255, 255, 0.50);
   --mm-sidebar-active-bg: rgba(255, 255, 255, 0.15);
@@ -276,8 +276,8 @@ body {
 
 /* ── Compass Focus Ring (enterprise accessibility) ─────────────── */
 :focus-visible {
-  outline: 2px solid var(--mm-border-focus, #1C58D9);
-  outline-offset: -1px;
+  outline: 2px solid #1264a3;
+  outline-offset: 2px;
   border-radius: var(--mm-radius-ui);
 }
 
@@ -1781,8 +1781,8 @@ select.slack-input {
 
 /* Bold unread channel names */
 .app-shell .channel.channel--unread {
-  color: var(--mm-sidebar-text-hover);
-  font-weight: 600;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 /* Draft icon in sidebar */
@@ -10842,6 +10842,14 @@ button.mm-user-pill {
 .channel-header-dropdown-item:hover {
   background: var(--mm-hover);
 }
+.channel-header-dropdown-item:focus-visible {
+  outline: 2px solid #1264a3;
+  outline-offset: -2px;
+}
+[data-theme="dark"] .channel-header-dropdown-item:focus-visible {
+  outline: 2px solid #4393e6;
+  outline-offset: -2px;
+}
 .channel-header-dropdown-item--danger {
   color: #d24b4e;
 }
@@ -12415,8 +12423,20 @@ button.mm-user-pill {
 }
 
 /* ── High contrast ─────────────────────────────────────────────────── */
-.high-contrast { --fg: #000 !important; --bg: #fff !important; }
-.high-contrast [data-theme="dark"] { --fg: #fff !important; --bg: #000 !important; }
+.high-contrast {
+  --fg: #000 !important;
+  --bg: #fff !important;
+  --mm-text: #000000 !important;
+  --mm-main-bg: #ffffff !important;
+  --mm-border: #000000 !important;
+}
+.high-contrast [data-theme="dark"] {
+  --fg: #fff !important;
+  --bg: #000 !important;
+  --mm-text: #ffffff !important;
+  --mm-main-bg: #000000 !important;
+  --mm-border: #ffffff !important;
+}
 
 /* ── Responsive ────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -17366,7 +17386,7 @@ a, button, input, select, textarea, [role="button"] {
   min-width: 18px;
   padding: 1px 7px;
   border-radius: 10px;
-  background: #cd2b31;
+  background: #1264a3;
   color: #ffffff;
   font-size: 11px;
   font-weight: 700;
@@ -17378,7 +17398,7 @@ a, button, input, select, textarea, [role="button"] {
   font-weight: 700;
 }
 [data-theme="dark"] .app-shell .channel-mention-pill {
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
 
@@ -18292,7 +18312,7 @@ a, button, input, select, textarea, [role="button"] {
 
 /* ── Global focus ring (accessibility) ──────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--mm-link, #1264a3);
+  outline: 2px solid #1264a3;
   outline-offset: 2px;
   border-radius: 2px;
 }
