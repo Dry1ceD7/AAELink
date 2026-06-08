@@ -31,6 +31,62 @@ import { MemoryReplayStore, type ReplayStore } from '@/lib/realtime/wsGateway/re
 import { RedisStreamsReplayStore } from '@/lib/realtime/wsGateway/redisStreamsReplay'
 import { wrapIoredisStream } from '@/lib/realtime/redisClientFactory'
 import { readSessionUserIdFromCookieHeader } from '@/lib/auth/session'
+import { getPool } from '@/lib/infra/db'
+import {
+  resolveSocketTicket,
+  closeSocketConnection,
+  createSocketModeConnection,
+} from '@/lib/apps/socketMode'
+import type { PubSubAdapter } from '@/lib/realtime/redisPubSub'
+
+/**
+ * Handle a socket-mode upgrade: validate the `ticket` query param against
+ * socket_connections, then bind the socket to the app's `app:<botId>` event
+ * stream. Invalid/expired/closed tickets are rejected pre-upgrade with an HTTP
+ * status (no WS frames exchanged yet); on disconnect the ticket is released.
+ * Factored out so the upgrade handler stays small.
+ */
+async function handleSocketModeUpgrade(
+  wss: WsLikeServer,
+  req: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+  ticket: string,
+  pubsub: PubSubAdapter
+): Promise<void> {
+  const pool = getPool()
+  if (!pool) {
+    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n')
+    socket.destroy()
+    return
+  }
+  const resolved = await resolveSocketTicket(pool, ticket)
+  if (!resolved.ok) {
+    // Reject pre-upgrade: no WS frames are exchanged, so respond with HTTP.
+    const status = resolved.code === 'ticket_expired' ? 408 : resolved.code === 'closed' ? 409 : 401
+    socket.write(`HTTP/1.1 ${status} ${resolved.code}\r\n\r\n`)
+    socket.destroy()
+    return
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws: WsLikeWebSocket) => {
+    const conn = createSocketModeConnection({
+      pubsub,
+      socket: {
+        send: (msg) => ws.send(msg),
+        close: (code, reason) => ws.close(code, reason),
+      },
+      botId: resolved.botId,
+      connectionId: resolved.connectionId,
+    })
+    const teardown = () => {
+      conn.close()
+      void closeSocketConnection(pool, ticket).catch(() => {})
+    }
+    ws.on('close', teardown)
+    ws.on('error', teardown)
+  })
+}
 
 interface WsLikeServer {
   handleUpgrade(
@@ -113,6 +169,23 @@ async function main(): Promise<void> {
   httpServer.on('upgrade', (req, socket, head) => {
     void (async () => {
       const url = parseUrl(req.url || '', true)
+
+      // Socket-mode (app-to-server): the open step hands out
+      // `${wssBase}/apps/socket?ticket=...` (app/api/apps/connections/open).
+      // These connections authenticate by ticket, not by session cookie, and
+      // stream an app's event subscription rather than channel/user topics.
+      if (url.pathname === '/apps/socket') {
+        const ticketRaw = url.query.ticket
+        const ticket = typeof ticketRaw === 'string' ? ticketRaw : ''
+        if (!ticket) {
+          socket.write('HTTP/1.1 401 ticket_required\r\n\r\n')
+          socket.destroy()
+          return
+        }
+        await handleSocketModeUpgrade(wss, req, socket, head, ticket, pubsub)
+        return
+      }
+
       if (url.pathname !== '/ws') {
         socket.write('HTTP/1.1 404 Not Found\r\n\r\n')
         socket.destroy()

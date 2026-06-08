@@ -11,6 +11,7 @@
  */
 import type { Pool } from 'pg'
 import { randomUUID } from 'crypto'
+import type { PubSubAdapter, PubSubEvent } from '@/lib/realtime/redisPubSub'
 
 /** Ticket lifetime — short, like Slack's socket-mode WSS URLs. */
 export const SOCKET_TICKET_TTL_MS = 180_000
@@ -78,4 +79,85 @@ export async function closeSocketConnection(pool: Pool, ticket: string): Promise
     [String(ticket || '').trim()]
   )
   return (rowCount ?? 0) > 0
+}
+
+// ── Socket-mode event streaming ──────────────────────────────────────
+//
+// Socket mode is an alternative to a public request URL: instead of POSTing
+// event_deliver jobs to an external endpoint (see lib/webhooks/webhookEmitter.ts
+// fanOutEventSubscriptions), an app holds a live WS connection and events are
+// streamed to it over the realtime bus. Each app/bot owns one pub/sub topic;
+// the gateway subscribes a validated socket to that topic and forwards events.
+//
+// Topic naming mirrors the channel:/user:/workspace: convention in
+// lib/realtime/redisPubSub.ts — `app:<botId>` is the per-app event stream.
+
+/** Pub/sub topic carrying an app/bot's socket-mode event stream. */
+export function appEventTopic(botId: string): string {
+  return `app:${String(botId || '').trim()}`
+}
+
+/**
+ * Publish an event onto an app/bot's socket-mode stream. Callers that already
+ * fan an event out to event_subscriptions (HTTP) can additionally call this so
+ * apps connected via socket mode receive the same envelope over the realtime
+ * bus. Best-effort: realtime delivery must never block the request path.
+ */
+export async function publishAppEvent(
+  pubsub: Pick<PubSubAdapter, 'publish'>,
+  botId: string,
+  event: PubSubEvent
+): Promise<void> {
+  await pubsub.publish(appEventTopic(botId), event)
+}
+
+/** Minimal outbound transport the gateway injects (mirrors wsGateway router). */
+export interface SocketModeOutbound {
+  send(message: string): void
+  close(code?: number, reason?: string): void
+}
+
+export interface SocketModeConnection {
+  /** Tear down the pub/sub subscription. Idempotent. */
+  close(): void
+}
+
+/**
+ * Bind a validated socket-mode socket to an app/bot's event stream.
+ *
+ * Subscribes to `app:<botId>` and forwards every event published there to the
+ * socket as a JSON envelope. Because the subscription is keyed by the bot's own
+ * topic, events for a DIFFERENT app (a different `app:<otherBot>` topic) are
+ * never delivered here — isolation is by topic, so one app cannot observe
+ * another app's events. Returns a handle whose `close()` releases the
+ * subscription (call it on disconnect, alongside closeSocketConnection).
+ *
+ * Pure + transport-agnostic so it is unit-testable with MemoryPubSub and a
+ * capturing fake socket — no live `ws` server required.
+ */
+export function createSocketModeConnection(opts: {
+  pubsub: Pick<PubSubAdapter, 'subscribe'>
+  socket: SocketModeOutbound
+  botId: string
+  connectionId: string
+}): SocketModeConnection {
+  const { pubsub, socket, botId, connectionId } = opts
+  const topic = appEventTopic(botId)
+  let closed = false
+
+  // Acknowledge a successful handshake so the client knows streaming has begun.
+  socket.send(JSON.stringify({ type: 'hello', bot_id: botId, connection_id: connectionId }))
+
+  const unsubscribe = pubsub.subscribe(topic, (event: PubSubEvent) => {
+    if (closed) return
+    socket.send(JSON.stringify({ type: 'event', topic, payload: event }))
+  })
+
+  return {
+    close(): void {
+      if (closed) return
+      closed = true
+      unsubscribe()
+    },
+  }
 }
