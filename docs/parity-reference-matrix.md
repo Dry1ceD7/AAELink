@@ -336,10 +336,10 @@ IP allowlist app-page gap (31), HIPAA/WORM (34).
 | # | Behavior | Slack ref | Status | Note |
 |---|---|---|---|---|
 | 1 | Incoming webhook — create/manage | Yes | ✅ Full | webhooks/route.ts: POST verifyCsrf:75 + owner/admin workspace RBAC:103 + audit 'incoming_webhook.create':122; GET workspace-membership gate:52; [id]/route.ts DELETE verifyCsrf:11 + owner/admin/platform_admin gate:40-52 + audit 'incoming_webhook.delete':63 |
-| 2 | Incoming webhook — public receiver (post to channel) | Yes | 🟡 Partial | app/api/webhooks/[token]/route.ts:66-78 still emits realtime via raw notifications INSERT (not lib/realtime/redisPubSub); reads incoming_webhooks only; no inbound signature verification |
-| 3 | Incoming webhook — Slack-compatible payload (text/attachments/username/icon) | Yes | 🟡 Partial | app/api/webhooks/[token]/route.ts:32 accepts text/username/icon_url only; attachments/blocks still ignored; bot identity in message metadata not a real bot user |
+| 2 | Incoming webhook — public receiver (post to channel) | Yes | ✅ Full | app/api/webhooks/[token]/route.ts:104-117 now fans out via canonical getPubSub().publish(channelTopic) (Hard Rule #6), not a raw notifications INSERT; inbound HMAC-SHA256 verify (lib/webhooks/inboundVerify.ts via webhookSigning) gates webhooks with a signing_secret → 401 on forged/absent sig (route:67-70), open back-compat when no secret; audit 'incoming_webhook.receive':128; test __tests__/api/webhook-receiver.test.ts + tests/inboundWebhook.test.ts |
+| 3 | Incoming webhook — Slack-compatible payload (text/attachments/username/icon) | Yes | ✅ Full | lib/webhooks/inboundPayload.ts parseInboundPayload accepts text+attachments+blocks; Block Kit structurally validated (validateBlocks) → 400 on malformed (route:84-89); bot identity (username/icon_url) persisted in messages.metadata (is_bot/bot_name/bot_icon), attachments/blocks carried in metadata; requires ≥1 renderable part; tests/inboundWebhook.test.ts |
 | 4 | Outgoing webhook — subscription CRUD | Yes | 🟡 Partial | app/api/webhooks/v2/route.ts full CRUD + secret-once + event filter; RBAC creator-or-platform-admin (route:114-115), not workspace-scoped |
-| 5 | Outgoing webhook — fire on real events | Yes | 🟡 Partial | emitWebhookEvent now WIRED on production paths: messages/route.ts:510,613 (create/broadcast), messages/[id]:270 (delete), reactions:95 (add/remove), interactivity:117; but channel.created/archived, file.uploaded, user.*, compliance.dlp_violation, call.* write paths still emit nothing |
+| 5 | Outgoing webhook — fire on real events | Yes | 🟡 Partial | emit WIRED: message.created (route.ts:569,688; deliverScheduled:77), message.deleted ([id]:270), reaction.added/removed (reactions:95), channel.created (channels:337), channel.archived (channels:470,603), file.uploaded (files/upload:111; uploadSessions:604), user.created (admin/users:100; register:73; scim/v2/Users:313; ssoProvision:75), user.updated (profile:145,189), user.deactivated (admin/users/deactivate:82), compliance.dlp_violation (dlpInterceptor:196), call.started (calls/rooms:156), call.ended (calls/rooms:285); test __tests__/api/webhook-emit-entity-events.test.ts. STILL silent: message.updated, file.deleted, channel.member_joined/left, compliance.legal_hold_created (4 of 18 types unwired) |
 | 6 | Outgoing webhook — HMAC-SHA256 signing | Yes | ✅ Full | webhookEmitter.ts:45-47 signs sha256=…; worker sets X-AAELink-Signature-256 (worker.ts event_deliver/webhook_deliver); verify route present |
 | 7 | Outgoing webhook — retry w/ backoff + timeout | Yes | ✅ Full | worker.ts webhook_deliver:217 + webhook_retry:93 with 10s AbortController timeout, throws to retry; now exercised by real message/reaction events via emitter wiring |
 | 8 | Outgoing webhook — dead letter queue | Yes | ✅ Full | app/api/admin/webhook-dlq/route.ts + lib/webhooks/webhookDlq.ts + tests present and coherent |
@@ -348,34 +348,34 @@ IP allowlist app-page gap (31), HIPAA/WORM (34).
 | 11 | Slash command — registry (custom commands) | Yes | 🟡 Partial | app/api/slash-commands/route.ts action:'register' (route:106) admin-only into slash_commands w/ callback_url+signing_secret+SSRF guard at register (route:134); built-in conflict list route:34-40 |
 | 12 | Slash command — built-in commands | Yes | ✅ Full | app/api/slash-commands/route.ts switch executes /shrug /dnd /status /topic etc server-side; lib/comms/slashCommands.ts; well tested |
 | 13 | Slash command — dispatch to external callback_url | Yes | ✅ Full | slash-commands/route.ts default case:288 → dispatchCustomCommand:331 POSTs Slack-shaped HMAC-signed payload to callback_url with SSRF+DNS-rebind guards (347-360), 10s timeout, audit |
-| 14 | Slash command — response_url / delayed responses | Yes | 🔴 Missing | dispatchCustomCommand payload still sets response_url:null (route:371); responses remain synchronous JSON only |
+| 14 | Slash command — response_url / delayed responses | Yes | ✅ Full | dispatchCustomCommand now mints a signed channel-scoped response_url (slash-commands/route.ts:370-392 → mintResponseToken) instead of null; lib/comms/slashResponseToken.ts: HMAC over immutable binding, persisted in slash_command_response_tokens, ≤5 uses + 30min TTL, constant-time verify + atomic conditional-UPDATE consume (replay/race-safe); receiver app/api/slash-commands/response/route.ts validateAndConsume → in_channel posts via shared deliverScheduledMessage (realtime+fan-out), ephemeral pushes via redisPubSub; migration 052; test slash-commands-response.test.ts |
 | 15 | Bot users — manage / tokens | Yes | ✅ Full | app/api/integrations/bots/route.ts platform-admin CRUD of bot_users; bot tokens (xbot-*) now authenticate inbound API calls via lib/api/oauthScopes.ts resolveBotToken:139 invoked by enforceScope:204 |
-| 16 | Bots — bots.info parity | Yes | 🟡 Partial | app/api/bots/info/route.ts:27,49 still reads users WHERE platform_role='bot' — disconnected from bot_users model (#15); two bot notions unbridged |
+| 16 | Bots — bots.info parity | Yes | ✅ Full | app/api/bots/info/route.ts:55-69 now reads aaelink.bot_users WHERE kind='bot' — the canonical bot model (#15) used by oauthScopes.resolveBotToken; single + list both map onto the Slack bots.info shape ({id,deleted,name,app_id,icons,updated}); two bot notions bridged; test __tests__/api/bots-info.test.ts |
 | 17 | OAuth — app registration | Yes | 🟡 Partial | OAuth apps in oauth_apps (migrate.ts:2136/3259) via integrations/bots + apps/manifest; authorize/access read oauth_apps with client_id/redirect_uris/scopes; still no dedicated app console |
 | 18 | OAuth — authorization code → token exchange | Yes | ✅ Full | app/api/oauth/authorize/route.ts issues single-use 10min code bound to user/client/redirect_uri/scope (CSRF+audit); access/route.ts:87-185 verifies hashed client_secret (constant-time), atomic code consume w/ full binding, no dev backdoor |
 | 19 | OAuth — token introspection / info | Yes | ✅ Full | app/api/oauth/introspect/route.ts resolves grant via oauthScopes, returns active/scope/exp/token_type; access GET lists authorized apps; expiry enforced |
 | 20 | OAuth — token revoke / rotate | Yes | ✅ Full | oauth/access action:'revoke' DELETEs token; app/api/oauth/rotate/route.ts:37 rotateToken (owner-or-admin) mints new token from real grant lifecycle |
 | 21 | OAuth scopes — defined catalog + enforcement | Yes | 🟡 Partial | lib/api/oauthScopes.ts enforceScope:189 now genuinely gates bearer routes (messages chat:read/write:63,453; files; channels; users/directory) resolving bot+oauth tokens; enforcement real but only a subset of privileged routes wired |
 | 22 | Events API — subscription management | Yes | 🟡 Partial | app/api/integrations/events/route.ts platform-admin CRUD (route:129/170/273) of event_subscriptions w/ HTTPS endpoint+signing_secret+filter; registry real |
-| 23 | Events API — actually deliver events on activity | Yes | 🟡 Partial | webhookEmitter.ts fanOutEventSubscriptions:193 now fans real message/reaction/interaction emits to active+verified subs → 'event_deliver' jobs; worker.ts:257 delivers signed w/ retry; url_verification handshake present (events/route.ts:75-111); BUT channel/file/user/DLP/call paths still never emit |
+| 23 | Events API — actually deliver events on activity | Yes | 🟡 Partial | webhookEmitter.ts fanOutEventSubscriptions:195 fans all emitWebhookEvent calls to active+verified event_subscriptions → 'event_deliver' jobs (workspace-scoped + at-most-once dedup via claimEventDelivery); worker.ts delivers signed w/ retry; url_verification handshake present; same emit coverage as Int 5 — message.*/reaction.*/channel.created/archived, file.uploaded, user.created/updated/deactivated, compliance.dlp_violation, call.started/ended all reach subscriptions. STILL silent: message.updated, file.deleted, channel.member_joined/left, compliance.legal_hold_created (same 4 unwired types as Int 5) |
 | 24 | Socket mode — open connection (ticket + WSS URL) | Yes | 🟡 Partial | app/api/apps/connections/open/route.ts:32 openSocketConnection mints ticket+WSS URL from bot_users token into socket_connections; clean open step |
-| 25 | Socket mode — gateway validates ticket + streams events | Yes | 🟠 Stub | resolveSocketTicket/closeSocketConnection in lib/apps/socketMode.ts still have ZERO callers in app/ or lib/ — WS gateway never validates a ticket or streams app events |
+| 25 | Socket mode — gateway validates ticket + streams events | Yes | ✅ Full | CONSUME: scripts/wsGateway.ts handleSocketModeUpgrade:49 handles /apps/socket upgrade → resolveSocketTicket (lib/apps/socketMode.ts:63, pre-upgrade HTTP 401/408/409 on bad ticket), binds via createSocketModeConnection (socketMode.ts:138) to app:<botId> pub/sub topic, closeSocketConnection on disconnect; tests/socketMode.test.ts. PRODUCE: fanOutEventSubscriptions (webhookEmitter.ts:293-310) calls publishAppEvent (socketMode.ts:106) for every matched subscription's bot_id — webhookEmitter.ts:304 `await publishAppEvent(pubsub, botId, envelope)` — so every event that fires a subscription also streams to any live socket-mode connection for that bot. End-to-end wired. |
 | 26 | App manifest — create app/bot from manifest | Yes | ✅ Full | app/api/apps/manifest/route.ts CSRF+owner/admin+audit, validates + atomically creates apps + optional bot_users; end-to-end provisioning |
 | 27 | Interactive components — Block Kit validation | Yes | ✅ Full | app/api/blockkit/validate/route.ts + lib/blockkit/validate.ts validate block arrays; dev tool, no side effects |
-| 28 | Interactive components — views/modals (open/push/update/publish) | Yes | 🟠 Stub | app/api/views/route.ts still echo-only — fabricates view object, no persistence, no trigger_id validation, no realtime push (comment route:55 'in production this would be pushed via SSE/WebSocket') |
+| 28 | Interactive components — views/modals (open/push/update/publish) | Yes | ✅ Full | migration 053 view_triggers+app_views (migrate.ts:4604-4672); all four actions persist and push realtime. open/push: trigger_id minted by interactivity ingress (app/api/integrations/interactivity/route.ts:132 mintViewTrigger), consumed single-use via consumeViewTrigger (app/api/views/route.ts:103). push root lookup RBAC: lib/apps/views.ts:100-101 WHERE bot_id IS NOT DISTINCT FROM $2 AND user_id = $3. update view_id branch RBAC: views.ts:130-134 WHERE bot_id IS NOT DISTINCT FROM $5 AND user_id = $6. All four actions emit view over redisPubSub userTopic (app/api/views/route.ts:64-70 emitView). Audit logged (route.ts:73-80). Bot ownership enforced via resolveActor (route.ts:41-51 bot_users.created_by = uid). test __tests__/api/views.test.ts. |
 | 29 | Interactive components — block_actions / view_submission ingress + message shortcuts | Yes | ✅ Full | NEW app/api/integrations/interactivity/route.ts:43 — HMAC-verified ingress (sig over ts.rawBody), anti-replay nonce, rate-limit, SSRF/channel-forgery guard; dispatches 'interaction' event through event_subscriptions pipeline (emitWebhookEvent:117) |
-| 30 | Workflow Builder — define multi-step workflows (triggers/steps/functions) | Yes | 🟠 Stub | workflows/functions/workflow_executions tables now in migrate.ts:506/2059/2027, but app/api/workflows/route.ts execute:173 still only inserts status 'running'; step_completed/step_failed:176,184 require an external caller — no engine runs steps/triggers |
+| 30 | Workflow Builder — define multi-step workflows (triggers/steps/functions) | Yes | ✅ Full | Real engine: lib/workflows/engine.ts runWorkflowExecution drives ordered workflow_steps from a persisted step_cursor (post_message/call_webhook/delay-suspend-resume/conditional-halt), records workflow_step_executions per step, finalizes status, MAX_WORKFLOW_STEPS guard; route execute:137 → dispatchWorkflowExecution (creator-or-platform-admin RBAC + audit, lib/workflows/dispatch.ts) enqueues a 'workflow_run' job; worker.ts:350 workflow_run handler runs the engine and self-reschedules delay continuations (legacy workflow_execute aliased:590); tests workflows-execute.test.ts + tests/workflowEngine.test.ts |
 | 31 | Workflow — approval flows | n/a | ✅ Full | app/api/approvals/requests/route.ts + workflows/workflow_steps/approval_requests/approval_reviews in migrate.ts; review transitions tested; the one working workflow surface |
 | 32 | App/plugin marketplace — publish + install | Apps dir | 🟡 Partial | app/api/marketplace/plugins + install/installed + integrations/plugins registry CRUD against marketplace_plugins/installed_plugins/plugins; install bumps download count |
 | 33 | Plugin runtime — sandboxed execution / extension points | No/Yes-MM | 🟠 Stub | app/api/integrations/plugins/route.ts still only stores capabilities[] JSON + status (route:108-127); docstring claims sandbox/interceptors but plugins are never loaded/executed — no runtime |
 | 34 | Email-to-channel ingestion | n/a | 🟡 Partial | app/api/integrations/email-ingestion/route.ts email_routes registry present; not verified end-to-end (no inbound mail-to-message pipeline confirmed) |
 
-**Integrations & extensibility tally:** 34 behaviors — ✅ 16 · 🟡 13 · 🟠 4 · 🔴 1 · ⛔ 0
+**Integrations & extensibility tally:** 34 behaviors — ✅ 23 · 🟡 10 · 🟠 1 · 🔴 0 · ⛔ 0
 
-Open: [token] realtime path (2), response_url delayed responses (14), bots.info
-disconnected model (16), OAuth scope partial coverage (21), events API channel/file/user
-paths missing (23), socket-mode gateway (25), views persistence (28), workflow engine (30),
-plugin runtime (33).
+Open: outgoing-webhook/Events-API emit coverage still missing message.updated, file.deleted,
+channel.member_joined/left, compliance.legal_hold_created (4 of 18 types; 5/23 remain Partial),
+OAuth scope partial coverage (21), app marketplace not workspace-scoped (32), plugin runtime
+sandbox deferred — stub (33), email-to-channel not verified end-to-end (34).
 
 ---
 
@@ -432,20 +432,20 @@ Counts are the row-by-row tallies from the per-area sections above, which are au
 | Knowledge | 23 | 16 | 6 | 0 | 1 | 0 |
 | Notifications & presence | 30 | 21 | 7 | 1 | 0 | 1 |
 | Admin & compliance | 35 | 20 | 11 | 2 | 2 | 0 |
-| Integrations & extensibility | 34 | 16 | 13 | 4 | 1 | 0 |
+| Integrations & extensibility | 34 | 23 | 10 | 1 | 0 | 0 |
 | Identity | 28 | 24 | 2 | 1 | 1 | 0 |
-| **TOTAL** | **263** | **182** | **60** | **9** | **7** | **5** |
+| **TOTAL** | **263** | **189** | **57** | **6** | **6** | **5** |
 
 **Coverage (263 total behaviors; 258 non-excluded):**
 
-- **Full parity: 69.2%** — 182 / 263 rows (70.5% of non-excluded: 182 / 258).
-- **Full-or-Partial: 92.4%** — (182 + 60) / 263 = 242 / 263 (93.8% of non-excluded: 242 / 258).
-- Stub 3.4% (9/263) · Missing 2.7% (7/263) · Excluded 1.9% (5/263).
+- **Full parity: 71.9%** — 189 / 263 rows (73.3% of non-excluded: 189 / 258).
+- **Full-or-Partial: 93.5%** — (189 + 57) / 263 = 246 / 263 (95.3% of non-excluded: 246 / 258).
+- Stub 2.3% (6/263) · Missing 2.3% (6/263) · Excluded 1.9% (5/263).
 
 This refutes the retired README "100% / 55/55 method groups" claim, which counted
 routes + DDL rather than working capability. Strongest areas by Full %: Identity (86%),
 Messaging (79%), Search (77%), Files & Previews (73%). Weakest by Full %: Admin (57%),
-Integrations (47%), Calls (80% of non-excluded).
+Integrations (62%), Calls (80% of non-excluded).
 
 ---
 
@@ -460,11 +460,9 @@ Integrations (47%), Calls (80% of non-excluded).
 - Custom role ReBAC enforcement (Admin 5/6).
 - IP allowlist app-page (non-API) route gap — edge middleware cannot read DB-backed config (Admin 31).
 - HIPAA/FINRA compliance mode / WORM (Admin 34).
-- Slash command response_url / delayed responses (Integrations 14).
-- Socket-mode WS gateway (Integrations 25).
-- Views/modal persistence and realtime push (Integrations 28).
-- Workflow execution engine (Integrations 30).
-- Plugin runtime sandbox (Integrations 33).
+- Outgoing-webhook / Events-API emit coverage missing message.updated, file.deleted,
+  channel.member_joined/left, compliance.legal_hold_created (4 of 18 types; Integrations 5/23).
+- Plugin runtime sandbox — deferred this slice (Integrations 33).
 - Canvas version history (Knowledge 14).
 - Email digest realtime/push-on-event mode (Notifications 27).
 
