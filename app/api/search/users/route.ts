@@ -5,12 +5,56 @@ import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { filterSearchBlocked } from '@/lib/enterprise/barrierGuard'
 
+/** Raw row shape selected from aaelink.users (+ presence). */
+interface UserSearchRow {
+  id: string
+  username: string
+  first_name: string | null
+  last_name: string | null
+  email: string
+  avatar_url: string | null
+  job_title: string | null
+  phone: string | null
+  timezone: string | null
+  status_text: string | null
+  status_emoji: string | null
+  department: string | null
+  platform_role: string | null
+  pronouns: string | null
+  presence_status: string | null
+}
+
+/**
+ * Project a raw row to the directory-facing user object. timezone + pronouns
+ * are guaranteed present (empty string, never null) so the People directory can
+ * filter on them without null guards.
+ */
+function serializeUser(r: UserSearchRow) {
+  return {
+    id: r.id,
+    username: r.username,
+    first_name: r.first_name || '',
+    last_name: r.last_name || '',
+    email: r.email,
+    avatar_url: r.avatar_url || '',
+    job_title: r.job_title || '',
+    phone: r.phone || '',
+    timezone: r.timezone || '',
+    pronouns: r.pronouns || '',
+    status_text: r.status_text || '',
+    status_emoji: r.status_emoji || '',
+    department: r.department || '',
+    platform_role: r.platform_role || '',
+    presence_status: r.presence_status || 'offline',
+  }
+}
+
 /**
  * GET /api/search/users?q=...&workspace_id=...&limit=...
  *
  * Search users by username, name, email, department, or job title.
  * Optional workspace_id scopes results to workspace members only.
- * Returns enriched user objects including presence and role info.
+ * Returns enriched user objects including presence, timezone, and pronouns.
  */
 async function _GET(req: NextRequest) {
   await ensureSchema()
@@ -72,10 +116,15 @@ async function _GET(req: NextRequest) {
     `
   }
 
-  const { rows } = await pool.query(query, params)
+  const { rows } = await pool.query<UserSearchRow>(query, params)
 
   const blocked = await filterSearchBlocked(pool, uid, rows.map((r: { id: string }) => r.id))
-  const users = rows.filter((r: { id: string }) => !blocked.has(r.id))
+  const users = rows
+    .filter((r: { id: string }) => !blocked.has(r.id))
+    // Normalize the response so timezone + pronouns (and the other
+    // directory-facing fields) are always present strings, never null —
+    // PeopleDirectoryPanel filters on timezone/pronouns directly.
+    .map(serializeUser)
 
   return NextResponse.json({
     users,

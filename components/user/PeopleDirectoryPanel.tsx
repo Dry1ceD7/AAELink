@@ -39,6 +39,8 @@ export default function PeopleDirectoryPanel({ onClose, onStartDM }: {
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [filterDept, setFilterDept] = useState('all')
+  const [filterTimezone, setFilterTimezone] = useState('all')
+  const [filterPronouns, setFilterPronouns] = useState<string | null>(null)
   const [people, setPeople] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null)
@@ -71,9 +73,15 @@ export default function PeopleDirectoryPanel({ onClose, onStartDM }: {
   }, [search, loadPeople])
 
   const departments = [...new Set(people.filter(e => e.department).map(e => e.department!))]
+  // Timezone + pronouns options are derived from the loaded set (which now comes
+  // from /api/search/users with timezone + pronouns guaranteed present).
+  const timezones = [...new Set(people.filter(e => e.timezone).map(e => e.timezone!))].sort()
+  const pronounOptions = [...new Set(people.filter(e => e.pronouns).map(e => e.pronouns!))].sort()
 
   const filtered = people.filter(e => {
     if (filterDept !== 'all' && e.department !== filterDept) return false
+    if (filterTimezone !== 'all' && e.timezone !== filterTimezone) return false
+    if (filterPronouns && e.pronouns !== filterPronouns) return false
     return true
   })
 
@@ -286,7 +294,60 @@ export default function PeopleDirectoryPanel({ onClose, onStartDM }: {
             <option value="all">All departments</option>
             {departments.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
+          <select
+            value={filterTimezone}
+            onChange={e => setFilterTimezone(e.target.value)}
+            aria-label="Filter by timezone"
+            style={{
+              border: '1px solid var(--mm-border)', borderRadius: 8,
+              padding: '0 10px', fontSize: 12, background: 'var(--mm-main-bg)',
+              color: 'var(--mm-text)', cursor: 'pointer',
+            }}
+          >
+            <option value="all">All timezones</option>
+            {timezones.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+          </select>
         </div>
+
+        {/* Pronouns filter chips — only shown when the loaded set has any. */}
+        {pronounOptions.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            {pronounOptions.map(p => {
+              const active = filterPronouns === p
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setFilterPronouns(active ? null : p)}
+                  aria-pressed={active}
+                  style={{
+                    border: '1px solid var(--mm-border)', borderRadius: 999,
+                    padding: '3px 12px', fontSize: 12, cursor: 'pointer',
+                    background: active ? 'var(--mm-link)' : 'var(--mm-main-bg)',
+                    color: active ? '#fff' : 'var(--mm-text)',
+                  }}
+                >
+                  {p}
+                </button>
+              )
+            })}
+            {filterPronouns && (
+              <button
+                type="button"
+                onClick={() => setFilterPronouns(null)}
+                aria-label="Clear pronouns filter"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  border: '1px solid var(--mm-border)', borderRadius: 999,
+                  padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+                  background: 'var(--mm-main-bg)', color: 'var(--mm-muted)',
+                }}
+              >
+                <X size={12} /> Clear
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>

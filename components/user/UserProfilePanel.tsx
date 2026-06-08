@@ -3,11 +3,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   X, Mail, MessageSquare, Phone, Building2, Clock, Shield, Headphones,
-  Loader2, AlertCircle, RefreshCw, Copy, Check, Calendar, Smile,
+  Loader2, AlertCircle, RefreshCw, Copy, Check, Calendar, Smile, Pencil,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
 import { AvatarLightbox } from '@/components/media/AvatarLightbox'
 import { CustomStatusPopup } from '@/app/home/CustomStatusPopup'
+import { ProfileEditModal } from '@/components/user/ProfileEditModal'
 
 /* ─────────────────────────────────────────────────────────────────────
    UserProfilePanel — right-rail profile pane (Slack §9.2 parity).
@@ -103,6 +104,7 @@ export const UserProfilePanel = memo(function UserProfilePanel({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [statusPopupOpen, setStatusPopupOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   // True only when the viewer is looking at their OWN profile. Drives the
@@ -273,6 +275,15 @@ export const UserProfilePanel = memo(function UserProfilePanel({
                 <Smile size={14} /> Set status
               </button>
             )}
+            {isOwnProfile && (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil size={14} /> Edit profile
+              </button>
+            )}
             <button
               type="button"
               className="slack-button"
@@ -403,6 +414,16 @@ export const UserProfilePanel = memo(function UserProfilePanel({
         <CustomStatusPopup
           open={statusPopupOpen}
           onClose={() => { setStatusPopupOpen(false); void load() }}
+        />
+      )}
+
+      {/* Edit-profile modal — self-only. Refetch the pane on a successful save
+          so it reflects the just-persisted edits; the modal closes itself. */}
+      {isOwnProfile && (
+        <ProfileEditModal
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => void load()}
         />
       )}
     </aside>
