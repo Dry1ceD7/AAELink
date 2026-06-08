@@ -3,7 +3,8 @@ import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
 import { tracedRoute } from '@/lib/api/tracedRoute'
-import { getPubSub, presenceTopic, type PubSubEvent } from '@/lib/realtime/redisPubSub'
+import { type PubSubEvent } from '@/lib/realtime/redisPubSub'
+import { publishPresenceToUserWorkspaces } from '@/lib/realtime/presenceFanout'
 import type { Pool } from 'pg'
 import type { Presence, PresencePayload } from '@/lib/types/presence'
 import { log } from '@/lib/infra/log'
@@ -127,7 +128,8 @@ async function emitPresence(userId: string): Promise<void> {
       custom_text: payload.custom_text,
       expires_at: payload.expires_at,
     }
-    await getPubSub().publish(presenceTopic(), event)
+    // Fan out only to the user's own workspaces (no global cross-tenant broadcast).
+    await publishPresenceToUserWorkspaces(pool, userId, event)
   } catch (err) {
     log.warn('collab.presence.emit_failed', {
       error: err instanceof Error ? err.message : String(err),

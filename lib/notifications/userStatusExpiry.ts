@@ -26,7 +26,8 @@
  */
 
 import type { Pool } from 'pg'
-import { getPubSub, presenceTopic, type PubSubEvent } from '@/lib/realtime/redisPubSub'
+import { type PubSubEvent } from '@/lib/realtime/redisPubSub'
+import { publishPresenceToUserWorkspaces } from '@/lib/realtime/presenceFanout'
 import { log } from '@/lib/infra/log'
 
 /**
@@ -76,7 +77,8 @@ export async function clearExpiredStatuses(pool: Pool, nowMs: number): Promise<s
       last_seen: nowMs,
     }
     try {
-      await getPubSub().publish(presenceTopic(), event)
+      // Fan out only to the user's own workspaces (no global cross-tenant broadcast).
+      await publishPresenceToUserWorkspaces(pool, userId, event)
     } catch (err) {
       log.warn('userStatusExpiry.emit_failed', {
         user_id: userId,

@@ -81,6 +81,7 @@ export const DEFAULT_TOPIC_ALLOWLIST: ReadonlyArray<RegExp> = Object.freeze([
   /^channel:[A-Za-z0-9_-]+$/,
   /^user:[A-Za-z0-9_-]+$/,
   /^workspace:[A-Za-z0-9_-]+$/,
+  /^presence:[A-Za-z0-9_-]+$/,
   /^global:presence$/,
 ])
 

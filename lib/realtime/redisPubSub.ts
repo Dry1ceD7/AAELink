@@ -58,8 +58,15 @@ export function userTopic(userId: string): string {
   return `user:${userId}`
 }
 
-export function presenceTopic(): string {
-  return 'global:presence'
+/**
+ * Presence fan-out topic. Scoped to a workspace (`presence:<workspaceId>`) so a
+ * subscriber only receives presence for its own workspace — no cross-tenant
+ * leakage and no global O(users×clients) fan-out. The no-arg form returns the
+ * legacy `global:presence` topic, kept only for back-compat / a future opt-in
+ * platform-admin view; production presence is always workspace-scoped.
+ */
+export function presenceTopic(workspaceId?: string): string {
+  return workspaceId ? `presence:${workspaceId}` : 'global:presence'
 }
 
 export function workspaceTopic(workspaceId: string): string {

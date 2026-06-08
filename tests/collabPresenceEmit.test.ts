@@ -40,7 +40,7 @@ vi.mock('@/lib/api/tracedRoute', () => ({
 import { POST } from '@/app/api/collab/presence/route'
 import { presenceTopic } from '@/lib/realtime/redisPubSub'
 
-describe('POST /api/collab/presence — emits on global:presence', () => {
+describe('POST /api/collab/presence — emits on the workspace presence topic', () => {
   beforeEach(() => {
     m.mockQuery.mockReset()
     m.mockPublish.mockReset()
@@ -48,7 +48,13 @@ describe('POST /api/collab/presence — emits on global:presence', () => {
     m.mockEnsureSchema.mockReset()
     m.mockReadSessionUserId.mockResolvedValue('u-1')
     m.mockEnsureSchema.mockResolvedValue(undefined)
-    m.mockQuery.mockResolvedValue({ rows: [] })
+    // workspace_members lookup drives the presence fan-out targets; everything
+    // else (last_seen update, presence-payload resolve) returns no rows.
+    m.mockQuery.mockImplementation(async (sql: string) =>
+      typeof sql === 'string' && sql.includes('workspace_members')
+        ? { rows: [{ workspace_id: 'ws-1' }] }
+        : { rows: [] }
+    )
   })
 
   function callPost(): Promise<Response> {
@@ -56,12 +62,12 @@ describe('POST /api/collab/presence — emits on global:presence', () => {
     return fn()
   }
 
-  it('emits a presence event on the global:presence topic', async () => {
+  it('emits a presence event on the workspace presence topic', async () => {
     const res = await callPost()
     expect(res.status).toBe(200)
     expect(m.mockPublish).toHaveBeenCalledOnce()
     const [topic, event] = m.mockPublish.mock.calls[0]
-    expect(topic).toBe(presenceTopic())
+    expect(topic).toBe(presenceTopic('ws-1'))
     expect(event).toMatchObject({
       type: 'presence',
       user_id: 'u-1',
