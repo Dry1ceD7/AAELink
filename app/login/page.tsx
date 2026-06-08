@@ -246,7 +246,7 @@ export default function LoginPage() {
               Secure enterprise collaboration for your entire organization
             </p>
           </div>
-          <p className="mm-login-brand-footer">
+          <p className="mm-login-brand-footer" suppressHydrationWarning>
             © {new Date().getFullYear()} Advanced ID Asia Engineering
           </p>
         </div>
