@@ -1,9 +1,17 @@
 // keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
+//
+// Platform-wide org-level information barriers (Slack Enterprise Grid model):
+// gated on platform super_admin; no workspace dimension by design. The backing
+// store is the existing aaelink.information_barriers table (no compliance_barriers
+// table — migration 056 was dropped). Audit-log rows therefore carry
+// workspace_id = NULL (platform scope) but always include id, created_at,
+// resource_kind = 'information_barrier', and the barrier resource_id.
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 
@@ -53,6 +61,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -113,9 +123,10 @@ async function _POST(req: NextRequest) {
     uid, now
   ])
 
+  // workspace_id NULL: barriers are platform-wide (no workspace dimension).
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
-    VALUES ($1, $2, 'barrier_created', 'information_barrier', $3, $4, $5)
+    INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_kind, resource_id, metadata, created_at)
+    VALUES ($1, NULL, $2, 'barrier_created', 'information_barrier', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({ name, group_a: groupA.length, group_b: groupB.length }), now])
 
   return NextResponse.json({
@@ -123,6 +134,82 @@ async function _POST(req: NextRequest) {
   }, { status: 201 })
 }
 
+/** PATCH /api/compliance/barriers?barrier_id=… — toggle is_active. */
+async function _PATCH(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+  await ensureSchema()
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const { rows: uRows } = await pool.query<{ platform_role: string }>(
+    `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
+  )
+  if (uRows[0]?.platform_role !== 'super_admin') {
+    return NextResponse.json({ error: 'super_admin_only' }, { status: 403 })
+  }
+
+  const barrierId = req.nextUrl.searchParams.get('barrier_id')?.trim() || ''
+  if (!barrierId) return NextResponse.json({ error: 'barrier_id_required' }, { status: 400 })
+
+  const body = (await req.json().catch(() => ({}))) as { is_active?: boolean }
+  if (typeof body.is_active !== 'boolean') {
+    return NextResponse.json({ error: 'is_active_required' }, { status: 400 })
+  }
+
+  const { rowCount } = await pool.query(
+    `UPDATE aaelink.information_barriers SET is_active = $1 WHERE id = $2`,
+    [body.is_active, barrierId]
+  )
+  if (!rowCount) return NextResponse.json({ error: 'barrier_not_found' }, { status: 404 })
+
+  // workspace_id NULL: barriers are platform-wide (no workspace dimension).
+  await pool.query(`
+    INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_kind, resource_id, metadata, created_at)
+    VALUES ($1, NULL, $2, 'barrier_toggled', 'information_barrier', $3, $4, $5)
+  `, [randomUUID(), uid, barrierId, JSON.stringify({ is_active: body.is_active }), Date.now()])
+
+  return NextResponse.json({ ok: true, is_active: body.is_active })
+}
+
+/** DELETE /api/compliance/barriers?barrier_id=… — remove a barrier. */
+async function _DELETE(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+  await ensureSchema()
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+
+  const { rows: uRows } = await pool.query<{ platform_role: string }>(
+    `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
+  )
+  if (uRows[0]?.platform_role !== 'super_admin') {
+    return NextResponse.json({ error: 'super_admin_only' }, { status: 403 })
+  }
+
+  const barrierId = req.nextUrl.searchParams.get('barrier_id')?.trim() || ''
+  if (!barrierId) return NextResponse.json({ error: 'barrier_id_required' }, { status: 400 })
+
+  const { rowCount } = await pool.query(
+    `DELETE FROM aaelink.information_barriers WHERE id = $1`, [barrierId]
+  )
+  if (!rowCount) return NextResponse.json({ error: 'barrier_not_found' }, { status: 404 })
+
+  // workspace_id NULL: barriers are platform-wide (no workspace dimension).
+  await pool.query(`
+    INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_kind, resource_id, created_at)
+    VALUES ($1, NULL, $2, 'barrier_deleted', 'information_barrier', $3, $4)
+  `, [randomUUID(), uid, barrierId, Date.now()])
+
+  return NextResponse.json({ ok: true, deleted: barrierId })
+}
+
 // ── Traced exports ──────────────────────────────────────────────────
 export const GET    = tracedRoute('GET', '/api/compliance/barriers', _GET)
 export const POST   = tracedRoute('POST', '/api/compliance/barriers', _POST)
+export const PATCH  = tracedRoute('PATCH', '/api/compliance/barriers', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/compliance/barriers', _DELETE)

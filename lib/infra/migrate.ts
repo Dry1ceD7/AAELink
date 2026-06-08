@@ -4749,6 +4749,40 @@ async function migration054WorkflowEngine(pool: RunnerPool) {
   )
 }
 
+/**
+ * Migration 057 — retention policies (Slice 7 admin compliance).
+ *
+ * The engine's `retention_policies` table (migration 020) is a fixed four-row,
+ * one-per-scope table (UNIQUE(scope) + CHECK(scope IN workspace/channel/dm/file))
+ * that the retention worker and /api/admin/retention own. The DataRetentionSettings
+ * admin panel needs the opposite shape: MANY named policies (global / channel /
+ * dm) each with separate message- and file-day windows. Overloading the engine
+ * table would break its UNIQUE(scope) upsert, so the admin-panel CRUD route
+ * (app/api/admin/retention-policies/route.ts) gets its own table here. The
+ * migration id stays the pre-assigned 057_retention_policies; the table is named
+ * retention_policy_rules to avoid colliding with the engine table. Forward-only,
+ * idempotent.
+ */
+async function migration057RetentionPolicies(pool: RunnerPool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS aaelink.retention_policy_rules (
+      id            TEXT PRIMARY KEY,
+      workspace_id  TEXT NOT NULL REFERENCES aaelink.workspaces(id) ON DELETE CASCADE,
+      scope         TEXT NOT NULL DEFAULT 'channel',
+      name          TEXT NOT NULL,
+      message_days  INT,
+      file_days     INT,
+      channel_id    TEXT,
+      enabled       BOOLEAN NOT NULL DEFAULT true,
+      updated_by    TEXT REFERENCES aaelink.users(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_retention_policy_rules_ws
+      ON aaelink.retention_policy_rules(workspace_id, scope);
+  `)
+}
+
 const MIGRATIONS: Migration[] = [
   { id: '001_initial_schema', up: migration001InitialSchema },
   { id: '002_backfill_extended_schema', up: migration002BackfillExtendedSchema },
@@ -4805,4 +4839,5 @@ const MIGRATIONS: Migration[] = [
   { id: '053_app_views', up: migration053AppViews },
   { id: '054_workflow_engine', up: migration054WorkflowEngine },
   { id: '055_incoming_webhook_signing', up: migration055IncomingWebhookSigning },
+  { id: '057_retention_policies', up: migration057RetentionPolicies },
 ]

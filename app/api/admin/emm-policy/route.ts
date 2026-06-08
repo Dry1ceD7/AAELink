@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { getPool } from '@/lib/infra/db'
 import { ensureSchema } from '@/lib/infra/migrate'
 import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
 import { isPlatformAdmin } from '@/lib/comms/platformRole'
 import { tracedRoute } from '@/lib/api/tracedRoute'
 import { getEmmPolicy, updateEmmPolicy, validateEmmPatch, type EmmPolicy } from '@/lib/enterprise/deviceManagement'
@@ -38,6 +39,8 @@ async function _GET() {
 }
 
 async function _PUT(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   const guard = await requireAdmin()
   if (guard instanceof NextResponse) return guard
   const uid = guard
@@ -50,10 +53,13 @@ async function _PUT(req: NextRequest) {
   }
 
   const policy = await updateEmmPolicy(pool, body)
+  // EMM policy is platform-wide (persisted in aaelink.system_config), so there is
+  // no workspace dimension — workspace_id is NULL by design. Column list and
+  // placeholder count must match (8 each) or the INSERT throws at runtime.
   await pool.query(
-    `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, metadata, created_at)
-     VALUES ($1, $2, 'emm_policy_updated', 'system', $3, $4)`,
-    [randomUUID(), uid, JSON.stringify({ changes: body }), Date.now()]
+    `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_kind, resource_id, metadata, created_at)
+     VALUES ($1, $2, $3, 'emm_policy_updated', 'emm_policy', 'global', $4, $5)`,
+    [randomUUID(), null, uid, JSON.stringify({ changes: body }), Date.now()]
   ).catch(() => { /* best-effort */ })
 
   return NextResponse.json({ policy })
@@ -61,3 +67,5 @@ async function _PUT(req: NextRequest) {
 
 export const GET = tracedRoute('GET', '/api/admin/emm-policy', _GET)
 export const PUT = tracedRoute('PUT', '/api/admin/emm-policy', _PUT)
+// PATCH is an alias for PUT — the admin panel sends partial policy patches via PATCH.
+export const PATCH = tracedRoute('PATCH', '/api/admin/emm-policy', _PUT)

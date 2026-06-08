@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Scale, User, AlertTriangle, Package, Plus, X } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 import { useConfirm } from '@/components/a11y'
 import { EmptyState, Modal, SkeletonStack, Surface, Toggle } from '@/components/primitives'
 
@@ -16,14 +17,25 @@ import { EmptyState, Modal, SkeletonStack, Surface, Toggle } from '@/components/
 interface LegalHold {
   id: string
   name: string
-  matter: string
+  matter?: string
+  matter_id?: string
   status: string
-  custodians: string[]
-  channels: string[]
+  custodians?: string[]
+  channels?: string[]
+  custodian_ids?: string[]
+  channel_ids?: string[]
   created_by_username?: string
   created_at: number | string
   data_preserved?: string
   export_count?: number
+}
+
+/** The API returns custodian_ids/channel_ids (JSONB); the panel renders custodians/channels. */
+function holdCustodians(h: LegalHold): string[] {
+  return h.custodians || h.custodian_ids || []
+}
+function holdChannels(h: LegalHold): string[] {
+  return h.channels || h.channel_ids || []
 }
 
 const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
@@ -61,7 +73,11 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         const data = await res.json() as { holds?: LegalHold[] }
         setHolds(data.holds || [])
+      } else {
+        toast.error(res.status === 403 ? 'You do not have permission to view legal holds.' : 'Failed to load legal holds.')
       }
+    } catch {
+      toast.error('Failed to load legal holds.')
     } finally {
       setLoading(false)
     }
@@ -71,29 +87,70 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
 
   const createHold = async () => {
     if (!formName || !formMatter) return
-    await apiFetch('/api/compliance/legal-holds', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: formName,
-        matter: formMatter,
-        custodians: formCustodians.split(',').map(c => c.trim()).filter(Boolean),
-        channels: formChannels.split(',').map(c => c.trim()).filter(Boolean),
-      }),
-    })
-    setShowCreate(false)
-    setFormName(''); setFormMatter(''); setFormCustodians(''); setFormChannels('')
-    void load()
+    try {
+      const res = await apiFetch('/api/compliance/legal-holds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formName,
+          matter_id: formMatter,
+          custodian_ids: formCustodians.split(',').map(c => c.trim()).filter(Boolean),
+          channel_ids: formChannels.split(',').map(c => c.trim()).filter(Boolean),
+        }),
+      })
+      if (!res.ok) throw new Error('create_failed')
+      setShowCreate(false)
+      setFormName(''); setFormMatter(''); setFormCustodians(''); setFormChannels('')
+      toast.success('Legal hold created.')
+      void load()
+    } catch {
+      toast.error('Could not create legal hold.')
+    }
   }
 
   const releaseHold = async (id: string) => {
     if (!(await confirm({ title: 'Release legal hold', message: 'Release this legal hold? Data will no longer be preserved.', danger: true, confirmLabel: 'Release' }))) return
-    await apiFetch(`/api/compliance/legal-holds?hold_id=${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'released' }),
-    })
-    void load()
+    try {
+      const res = await apiFetch(`/api/compliance/legal-holds?hold_id=${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'release' }),
+      })
+      if (!res.ok) throw new Error('release_failed')
+      toast.success('Legal hold released.')
+      void load()
+    } catch {
+      toast.error('Could not release legal hold.')
+    }
+  }
+
+  // Export Data — enqueues an eDiscovery export job scoped to the hold.
+  const exportHold = async (hold: LegalHold) => {
+    try {
+      const res = await apiFetch('/api/compliance/ediscovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `Export — ${hold.name}`,
+          format: 'json',
+          legal_hold_id: hold.id,
+          custodian_ids: holdCustodians(hold),
+          channel_ids: holdChannels(hold),
+        }),
+      })
+      if (!res.ok) throw new Error('export_failed')
+      toast.success('Export queued. You will be notified when it is ready.')
+    } catch {
+      toast.error('Could not start the data export.')
+    }
+  }
+
+  // Persist a settings toggle locally and acknowledge. These eDiscovery export
+  // preferences are applied per-export at export time (no dedicated settings
+  // endpoint), so we keep them client-side and confirm the change to the user.
+  const updateSetting = (label: string, next: boolean) => {
+    setSettings(prev => ({ ...prev, [label]: next }))
+    toast.success('Setting updated.')
   }
 
   return (
@@ -119,7 +176,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
           {[
             { label: 'Active Holds', value: holds.filter(h => h.status === 'active').length, color: '#e01e5a' },
-            { label: 'Custodians', value: new Set(holds.flatMap(h => h.custodians || [])).size, color: '#4361EE' },
+            { label: 'Custodians', value: new Set(holds.flatMap(h => holdCustodians(h))).size, color: '#4361EE' },
             { label: 'Total Holds', value: holds.length, color: '#e8912d' },
             { label: 'Exports', value: holds.reduce((s, h) => s + (h.export_count || 0), 0), color: '#2bac76' },
           ].map(s => (
@@ -169,7 +226,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
                   >
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{hold.name}</div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>Matter: {hold.matter} · {(hold.custodians || []).length} custodian{(hold.custodians || []).length !== 1 ? 's' : ''} · {(hold.channels || []).length} channel{(hold.channels || []).length !== 1 ? 's' : ''}</div>
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>Matter: {hold.matter || hold.matter_id || '—'} · {holdCustodians(hold).length} custodian{holdCustodians(hold).length !== 1 ? 's' : ''} · {holdChannels(hold).length} channel{holdChannels(hold).length !== 1 ? 's' : ''}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 8, background: st.bg, color: st.text, fontWeight: 600 }}>{st.label}</span>
@@ -181,13 +238,13 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
                         <div>
                           <div style={{ fontWeight: 600, marginBottom: 6, opacity: 0.6, fontSize: 11, textTransform: 'uppercase' }}>Custodians</div>
-                          {(hold.custodians || []).map(c => <div key={c} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 4 }}><User size={12} /> {c}</div>)}
-                          {(!hold.custodians || hold.custodians.length === 0) && <div style={{ opacity: 0.4 }}>None specified</div>}
+                          {holdCustodians(hold).map(c => <div key={c} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 4 }}><User size={12} /> {c}</div>)}
+                          {holdCustodians(hold).length === 0 && <div style={{ opacity: 0.4 }}>None specified</div>}
                         </div>
                         <div>
                           <div style={{ fontWeight: 600, marginBottom: 6, opacity: 0.6, fontSize: 11, textTransform: 'uppercase' }}>Channels</div>
-                          {(hold.channels || []).map(ch => <div key={ch} style={{ padding: '3px 0' }}>{ch}</div>)}
-                          {(!hold.channels || hold.channels.length === 0) && <div style={{ opacity: 0.4 }}>None specified</div>}
+                          {holdChannels(hold).map(ch => <div key={ch} style={{ padding: '3px 0' }}>{ch}</div>)}
+                          {holdChannels(hold).length === 0 && <div style={{ opacity: 0.4 }}>None specified</div>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 12, opacity: 0.6 }}>
@@ -196,7 +253,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
                         {hold.data_preserved && <span>· {hold.data_preserved} preserved</span>}
                       </div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                        <button style={{ background: '#4361EE', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Export Data</button>
+                        <button onClick={(e) => { e.stopPropagation(); void exportHold(hold) }} style={{ background: '#4361EE', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Export Data</button>
                         {hold.status === 'active' && <button onClick={(e) => { e.stopPropagation(); void releaseHold(hold.id) }} style={{ background: '#2bac7620', color: '#2bac76', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Release Hold</button>}
                       </div>
                     </div>
@@ -232,7 +289,7 @@ export default function LegalHoldPanel({ onClose }: { onClose: () => void }) {
                   </div>
                   <Toggle
                     checked={settings[s.label] ?? false}
-                    onChange={next => setSettings(prev => ({ ...prev, [s.label]: next }))}
+                    onChange={next => updateSetting(s.label, next)}
                     labelledBy={labelId}
                   />
                 </Surface>

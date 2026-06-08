@@ -3,7 +3,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Smartphone, Bot, Laptop, Monitor, X, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 import { useConfirm } from '@/components/a11y'
+
+/** EMM policy shape — mirrors lib/enterprise/deviceManagement.ts EmmPolicy. */
+interface EmmPolicy {
+  screen_lock_required: boolean
+  require_trusted_device: boolean
+  min_app_version: string
+  screen_lock_timeout_minutes: number
+}
+
+const DEFAULT_EMM_POLICY: EmmPolicy = {
+  screen_lock_required: false,
+  require_trusted_device: false,
+  min_app_version: '',
+  screen_lock_timeout_minutes: 0,
+}
 
 /* ─────────────────────────────────────────────────────────────────────
    EMMPanel — Enterprise Mobility Management
@@ -48,6 +64,8 @@ function relativeTime(ts: string | undefined): string {
 export default function EMMPanel({ onClose }: { onClose: () => void }) {
   const { confirm, confirmDialog } = useConfirm()
   const [devices, setDevices] = useState<ManagedDevice[]>([])
+  const [policy, setPolicy] = useState<EmmPolicy>(DEFAULT_EMM_POLICY)
+  const [policySaving, setPolicySaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'devices' | 'policies' | 'apps'>('devices')
   const [expandedDevice, setExpandedDevice] = useState<string | null>(null)
@@ -57,10 +75,17 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiFetch('/api/admin/devices')
-      if (res.ok) {
-        const data = (await res.json()) as { devices?: ManagedDevice[] }
+      const [devRes, polRes] = await Promise.all([
+        apiFetch('/api/admin/devices'),
+        apiFetch('/api/admin/emm-policy'),
+      ])
+      if (devRes.ok) {
+        const data = (await devRes.json()) as { devices?: ManagedDevice[] }
         setDevices(data.devices || [])
+      }
+      if (polRes.ok) {
+        const data = (await polRes.json()) as { policy?: Partial<EmmPolicy> }
+        setPolicy({ ...DEFAULT_EMM_POLICY, ...(data.policy || {}) })
       }
     } finally {
       setLoading(false)
@@ -69,30 +94,68 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { void load() }, [load])
 
+  // Persist a partial EMM-policy patch via PATCH /api/admin/emm-policy.
+  const patchPolicy = async (patch: Partial<EmmPolicy>) => {
+    const prev = policy
+    setPolicy(p => ({ ...p, ...patch }))
+    setPolicySaving(true)
+    try {
+      const res = await apiFetch('/api/admin/emm-policy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error('patch_failed')
+      const data = (await res.json()) as { policy?: Partial<EmmPolicy> }
+      setPolicy({ ...DEFAULT_EMM_POLICY, ...(data.policy || {}) })
+      toast.success('EMM policy updated.')
+    } catch {
+      setPolicy(prev)
+      toast.error('Could not update EMM policy.')
+    } finally {
+      setPolicySaving(false)
+    }
+  }
+
   const filtered = devices.filter(d => {
     if (filterPlatform !== 'all' && d.platform !== filterPlatform) return false
     if (search && !d.device_name?.toLowerCase().includes(search.toLowerCase()) && !d.owner?.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
 
+  // Lock = mark the device blocked via PATCH (the devices route has no dedicated
+  // lock handler; blocking is the real, enforceable equivalent — it invalidates
+  // the device's trust and forces re-auth on next posture check).
   async function lockDevice(id: string) {
     if (!(await confirm({ title: 'Lock device', message: 'Lock this device? The user will be signed out.', confirmLabel: 'Lock' }))) return
-    await apiFetch(`/api/admin/devices`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'lock', device_id: id })
-    })
-    void load()
+    try {
+      const res = await apiFetch(`/api/admin/devices`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: id, trust_status: 'blocked' })
+      })
+      if (!res.ok) throw new Error('lock_failed')
+      toast.success('Device locked.')
+      void load()
+    } catch {
+      toast.error('Could not lock device.')
+    }
   }
 
+  // Remote wipe = DELETE /api/admin/devices?device_id=… (the real wipe handler:
+  // deletes the device row + invalidates its sessions).
   async function wipeDevice(id: string) {
     if (!(await confirm({ title: 'Remote wipe device', message: 'REMOTE WIPE this device? This cannot be undone.', danger: true, confirmLabel: 'Wipe' }))) return
-    await apiFetch(`/api/admin/devices`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'wipe', device_id: id })
-    })
-    void load()
+    try {
+      const res = await apiFetch(`/api/admin/devices?device_id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('wipe_failed')
+      toast.success('Device wiped.')
+      void load()
+    } catch {
+      toast.error('Could not wipe device.')
+    }
   }
 
   return (
@@ -203,34 +266,57 @@ export default function EMMPanel({ onClose }: { onClose: () => void }) {
         )}
 
         {tab === 'policies' && (
-          <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {[
-              { label: 'Require device encryption', desc: 'Block access from unencrypted devices', on: true },
-              { label: 'Require passcode/biometrics', desc: 'Devices must have screen lock enabled', on: true },
-              { label: 'Minimum app version', desc: 'Block devices running outdated AAELink versions', on: false, isSelect: true },
-              { label: 'Jailbreak/root detection', desc: 'Block access from jailbroken or rooted devices', on: true },
-              { label: 'Auto-lock timeout', desc: 'Force app lock after inactivity', on: false, isSelect: true },
-              { label: 'Block screenshots', desc: 'Prevent screenshots on mobile devices', on: false },
-              { label: 'Geofencing', desc: 'Restrict access to approved geographic regions', on: false },
-            ].map(p => (
-              <div key={p.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 10, border: '1px solid var(--mm-border)' }}>
-                <div><div style={{ fontWeight: 600, fontSize: 14 }}>{p.label}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{p.desc}</div></div>
-                {p.isSelect ? (
-                  <select style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13 }}>
-                    <option>v0.0.3</option><option>v0.0.2</option><option>Any</option>
-                  </select>
-                ) : (
-                  <div style={{ width: 44, height: 24, borderRadius: 12, background: p.on ? '#2bac76' : 'var(--mm-hover-bg)', cursor: 'pointer', position: 'relative' }}>
-                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: p.on ? 23 : 3 }} />
-                  </div>
-                )}
-              </div>
-            ))}
+          <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 16, opacity: policySaving ? 0.7 : 1 }}>
+            {([
+              { key: 'screen_lock_required', label: 'Require passcode/biometrics', desc: 'Devices must have screen lock enabled' },
+              { key: 'require_trusted_device', label: 'Require trusted device', desc: 'Only enrolled, trusted devices may hold a session' },
+            ] as const).map(p => {
+              const on = Boolean(policy[p.key])
+              return (
+                <div key={p.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 10, border: '1px solid var(--mm-border)' }}>
+                  <div><div style={{ fontWeight: 600, fontSize: 14 }}>{p.label}</div><div style={{ fontSize: 12, opacity: 0.6 }}>{p.desc}</div></div>
+                  <button
+                    role="switch" aria-checked={on} aria-label={p.label} disabled={policySaving}
+                    onClick={() => void patchPolicy({ [p.key]: !on } as Partial<EmmPolicy>)}
+                    style={{ width: 44, height: 24, borderRadius: 12, background: on ? '#2bac76' : 'var(--mm-hover-bg)', cursor: policySaving ? 'wait' : 'pointer', position: 'relative', border: 'none', padding: 0 }}
+                  >
+                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 23 : 3, display: 'block' }} />
+                  </button>
+                </div>
+              )
+            })}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 10, border: '1px solid var(--mm-border)' }}>
+              <div><div style={{ fontWeight: 600, fontSize: 14 }}>Minimum app version</div><div style={{ fontSize: 12, opacity: 0.6 }}>Block devices running outdated AAELink versions</div></div>
+              <select value={policy.min_app_version || ''} disabled={policySaving}
+                onChange={e => void patchPolicy({ min_app_version: e.target.value })}
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13 }}>
+                <option value="">Any</option>
+                <option value="0.0.2">v0.0.2</option>
+                <option value="0.0.3">v0.0.3</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 10, border: '1px solid var(--mm-border)' }}>
+              <div><div style={{ fontWeight: 600, fontSize: 14 }}>Auto-lock timeout</div><div style={{ fontSize: 12, opacity: 0.6 }}>Force app lock after inactivity (minutes; 0 = client default)</div></div>
+              <select value={String(policy.screen_lock_timeout_minutes || 0)} disabled={policySaving}
+                onChange={e => void patchPolicy({ screen_lock_timeout_minutes: parseInt(e.target.value, 10) })}
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--mm-border)', background: 'var(--mm-input-bg)', color: 'var(--mm-text)', fontSize: 13 }}>
+                <option value="0">Client default</option>
+                <option value="5">5 min</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="60">60 min</option>
+              </select>
+            </div>
           </div>
         )}
 
         {tab === 'apps' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: 'var(--mm-hover-bg)', color: 'var(--mm-muted)' }}>
+              Preview — not yet wired
+            </div>
             {[
               { name: 'AAELink Mobile', version: '0.0.3-alpha', platforms: ['iOS', 'Android'], installs: devices.filter(d => ['ios', 'android'].includes(d.platform)).length, status: 'Published' },
               { name: 'AAELink Desktop', version: '0.0.3-alpha', platforms: ['macOS', 'Windows'], installs: devices.filter(d => ['macos', 'windows'].includes(d.platform)).length, status: 'Published' },
