@@ -67,7 +67,9 @@ describe('readReceiptDeltaSince', () => {
     const t = Date.now() + 1000
     await seedRead(reader.id, msg, channel.id, t)
 
-    const out = await readReceiptDeltaSince(ctx.pool, channel.id, t - 1)
+    // nowMs is forced above the (future-dated, for test isolation) read so the
+    // same-ms straddle guard does not clamp this assertion.
+    const out = await readReceiptDeltaSince(ctx.pool, channel.id, t - 1, 200, t + 1000)
     expect(out.map[msg]).toEqual([{ user_id: reader.id, read_at: t }])
     expect(out.nextWatermark).toBe(t)
 
@@ -75,6 +77,27 @@ describe('readReceiptDeltaSince', () => {
     const again = await readReceiptDeltaSince(ctx.pool, channel.id, out.nextWatermark)
     expect(again.map[msg]).toBeUndefined()
     expect(again.nextWatermark).toBe(out.nextWatermark)
+  })
+
+  it('does not advance the watermark up to the current millisecond (same-ms straddle guard)', async () => {
+    const reader = await createTestUser(ctx.pool, { role: 'member' })
+    createdIds.push(reader.id)
+    const msg = await createTestMessage(ctx.pool, channel.id, author.id, 'straddle')
+    const t = Date.now() + 30_000
+    await seedRead(reader.id, msg, channel.id, t)
+
+    // Query "as of" the same millisecond as the read: the read is delivered, but
+    // the cursor must stay strictly below t so a concurrent same-ms read on another
+    // message (not yet visible in this snapshot) is not skipped by the next tick.
+    const atSameMs = await readReceiptDeltaSince(ctx.pool, channel.id, t - 1, 200, t)
+    expect(atSameMs.map[msg]).toEqual([{ user_id: reader.id, read_at: t }])
+    expect(atSameMs.nextWatermark).toBe(t - 1) // NOT t
+
+    // Once the clock has moved past t, the cursor advances normally to t.
+    const later = await readReceiptDeltaSince(ctx.pool, channel.id, t - 1, 200, t + 5)
+    expect(later.nextWatermark).toBe(t)
+
+    await ctx.pool.query(`DELETE FROM aaelink.message_reads WHERE user_id = $1`, [reader.id])
   })
 
   it('orders multiple readers newest-first', async () => {
@@ -86,7 +109,7 @@ describe('readReceiptDeltaSince', () => {
     await seedRead(r1.id, msg, channel.id, base)        // older
     await seedRead(r2.id, msg, channel.id, base + 100)  // newer
 
-    const out = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1)
+    const out = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1, 200, base + 1000)
     expect(out.map[msg].map(r => r.user_id)).toEqual([r2.id, r1.id])
     expect(out.nextWatermark).toBe(base + 100)
   })
@@ -105,7 +128,7 @@ describe('readReceiptDeltaSince', () => {
     // First poll with a small cap returns exactly `limit` messages, oldest-first.
     // Because the cap was hit, the watermark is held one ms below the max returned
     // read_at so the truncated tail is re-scanned next tick (nothing is skipped).
-    const first = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1, 3)
+    const first = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1, 3, base + 1000)
     expect(Object.keys(first.map)).toHaveLength(3)
     expect(first.nextWatermark).toBe(base + 1) // maxMr (base+2) - 1
 
@@ -115,7 +138,7 @@ describe('readReceiptDeltaSince', () => {
     const seen = new Set<string>(Object.keys(first.map))
     let wm = first.nextWatermark
     for (let guard = 0; guard < 10; guard++) {
-      const next = await readReceiptDeltaSince(ctx.pool, channel.id, wm, 3)
+      const next = await readReceiptDeltaSince(ctx.pool, channel.id, wm, 3, base + 1000)
       if (Object.keys(next.map).length === 0) break
       Object.keys(next.map).forEach(id => seen.add(id))
       if (next.nextWatermark === wm) break // no-progress safety
@@ -138,7 +161,7 @@ describe('readReceiptDeltaSince', () => {
       readers.push(u.id)
       await seedRead(u.id, msg, channel.id, base + i)
     }
-    const out = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1)
+    const out = await readReceiptDeltaSince(ctx.pool, channel.id, base - 1, 200, base + 1000)
     expect(out.map[msg]).toHaveLength(5)
     // Newest 5 (highest read_at) survive, newest-first.
     expect(out.map[msg][0].user_id).toBe(readers[6])

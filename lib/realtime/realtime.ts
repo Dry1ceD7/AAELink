@@ -124,6 +124,8 @@ export type CollabSsePayload = {
   deletions?: CollabDeletion[]
   /** message_id → current reader stack, for messages whose reads advanced since the cursor. */
   read_receipts?: Record<string, ReadReceipt[]>
+  /** Server's advanced read watermark; echoed back as `read_since` to resume on reconnect. */
+  read_cursor?: number
 }
 
 /** One reader of a message: who read it and when (ms epoch). */
@@ -169,6 +171,8 @@ export function connectCollab(
   let es: EventSource | null = null
   /** Consecutive failed connection attempts (reset after a delivered event or successful open). */
   let sseFailures = 0
+  /** Last read watermark the server confirmed; resumes the receipt stream on reconnect. */
+  let lastReadCursor: number | null = null
   let removeResume: (() => void) | null = null
 
   const clearReconnect = () => {
@@ -222,6 +226,9 @@ export function connectCollab(
       const u = new URL('/api/collab/events', window.location.origin)
       u.searchParams.set('channel_id', channelId)
       u.searchParams.set('since', String(getSinceMs()))
+      // Resume the read-receipt stream from the last confirmed cursor so reads
+      // during a disconnect gap are re-delivered rather than skipped.
+      if (lastReadCursor !== null) u.searchParams.set('read_since', String(lastReadCursor))
       const source = new EventSource(u.toString())
       es = source
 
@@ -245,6 +252,9 @@ export function connectCollab(
           if (hasRc && onReplyCounts) onReplyCounts(rc!)
           if (hasDel && onDeletions) onDeletions(dels)
           if (hasRr && onReadReceipts) onReadReceipts(rr!)
+          if (typeof data.read_cursor === 'number' && Number.isFinite(data.read_cursor)) {
+            lastReadCursor = data.read_cursor
+          }
         } catch {
           /* ignore malformed */
         }

@@ -122,15 +122,22 @@ export async function readReceiptsForMessages(
  * message refetch.
  *
  * Returns the touched-message stacks (`message_id` → readers, newest first, same
- * shape as {@link readReceiptsForMessages}) plus `nextWatermark` — the max
- * `read_at` observed (capped to `limit` messages per call), or `sinceReadAt` when
- * nothing advanced — to feed back on the next tick.
+ * shape as {@link readReceiptsForMessages}) plus `nextWatermark` — the cursor to
+ * feed back on the next tick, or `sinceReadAt` when nothing advanced.
+ *
+ * `nowMs` (defaults to the wall clock) is the cursor ceiling: a read whose
+ * `read_at` equals the current millisecond may still be committing after this
+ * query's MVCC snapshot, so the watermark is never advanced up to `nowMs`. On a
+ * quiet channel the max read is already in the settled past, so this is a no-op
+ * (no perpetual re-delivery); only same-millisecond-as-now reads get one extra,
+ * idempotent re-scan on the following tick.
  */
 export async function readReceiptDeltaSince(
   pool: Pool,
   channelId: string,
   sinceReadAt: number,
-  limit = 200
+  limit = 200,
+  nowMs: number = Date.now()
 ): Promise<{ map: Record<string, ReadReceipt[]>; nextWatermark: number }> {
   const { rows } = await pool.query<{ message_id: string; mr: string }>(
     `SELECT message_id, MAX(read_at)::text AS mr FROM aaelink.message_reads
@@ -150,8 +157,13 @@ export async function readReceiptDeltaSince(
   }
   // When the page cap was hit, the tail beyond `limit` — plus any messages tying
   // the largest returned read_at — would be skipped by the next strict `> cursor`.
-  // Hold the watermark one ms below the max so that tail is re-scanned next tick;
-  // re-delivered stacks are idempotent on the client (authoritative replace).
-  const nextWatermark = rows.length >= limit ? Math.max(sinceReadAt, maxMr - 1) : maxMr
+  // Hold the watermark one ms below the max so that tail is re-scanned next tick.
+  let nextWatermark = rows.length >= limit ? maxMr - 1 : maxMr
+  // Same-millisecond straddle guard: keep the cursor strictly in the settled past
+  // so a concurrent read at the current ms (not yet visible in this snapshot) is
+  // not skipped by the next tick's strict `> cursor`.
+  nextWatermark = Math.min(nextWatermark, nowMs - 1)
+  // Never regress below the incoming cursor (re-delivered stacks are idempotent).
+  nextWatermark = Math.max(nextWatermark, sinceReadAt)
   return { map, nextWatermark }
 }

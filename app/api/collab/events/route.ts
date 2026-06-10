@@ -52,16 +52,23 @@ async function initialThreadReplyWatermark(
 }
 
 /**
- * Start at the latest existing read so we only stream receipt deltas for reads
- * that land after the client connects. The initial reader stacks come from the
- * message load (`GET /api/messages` already attaches `read_receipts`), so the
- * stream only needs to carry subsequent changes. Independent of `since` (a
- * message cursor), since `read_at` is its own timeline.
+ * Seed the read-receipt watermark. On reconnect the client passes back the last
+ * `read_cursor` it received (`read_since`) so reads that landed during the
+ * disconnect gap are re-streamed instead of skipped. On a true first connect
+ * (no cursor) start at the latest existing read — the initial reader stacks come
+ * from the message load (`GET /api/messages` already attaches `read_receipts`),
+ * so the stream only needs to carry subsequent changes. Independent of `since`
+ * (a message cursor), since `read_at` is its own timeline.
  */
 async function initialReadWatermark(
   pool: NonNullable<ReturnType<typeof getPool>>,
-  channelId: string
+  channelId: string,
+  readSinceParam: string | null
 ): Promise<number> {
+  if (readSinceParam !== null && readSinceParam !== '') {
+    const s = Number(readSinceParam)
+    if (Number.isFinite(s) && s >= 0) return s
+  }
   const { rows } = await pool.query<{ m: string }>(
     `SELECT COALESCE(MAX(read_at), 0)::text AS m FROM aaelink.message_reads
      WHERE channel_id = $1`,
@@ -84,7 +91,7 @@ async function _GET(req: Request) {
   }
   let watermarkMs = await initialWatermark(pool, channelId, url.searchParams.get('since'))
   let threadReplyWatermarkMs = await initialThreadReplyWatermark(pool, channelId, url.searchParams.get('since'))
-  let readWatermarkMs = await initialReadWatermark(pool, channelId)
+  let readWatermarkMs = await initialReadWatermark(pool, channelId, url.searchParams.get('read_since'))
 
   const stream = new ReadableStream({
     start(controller) {
@@ -116,6 +123,7 @@ async function _GET(req: Request) {
             reply_counts?: Record<string, number>
             deletions?: { id: string; deleted_at: number; thread_root_id?: string }[]
             read_receipts?: Record<string, ReadReceipt[]>
+            read_cursor?: number
           } = {}
           const collabW0 = watermarkMs
 
@@ -240,6 +248,9 @@ async function _GET(req: Request) {
           if (Object.keys(rrDelta.map).length > 0) {
             payload.read_receipts = rrDelta.map
             readWatermarkMs = rrDelta.nextWatermark
+            // Echo the advanced cursor so the client can resume from it on
+            // reconnect (`read_since`) and not miss reads during a disconnect.
+            payload.read_cursor = readWatermarkMs
           }
 
           const { rows: twRows } = await pool.query<{ m: string | null }>(
@@ -275,6 +286,11 @@ async function _GET(req: Request) {
       }
 
       req.signal.addEventListener('abort', stop)
+
+      // Emit the baseline read cursor up front so the client can resume the
+      // receipt stream from here on reconnect even if no reads are streamed
+      // before the disconnect (otherwise a gap read would be missed).
+      controller.enqueue(enc.encode(`data: ${JSON.stringify({ read_cursor: readWatermarkMs })}\n\n`))
 
       void tick()
       timer = setInterval(() => void tick(), 2000)
