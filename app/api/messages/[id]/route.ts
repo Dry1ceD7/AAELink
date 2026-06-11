@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { reactionSummariesForMessages, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import { recordMessageEdit } from '@/lib/messaging/messageEdits'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { emitMessageDeleted } from '@/lib/webhooks/webhookEmitter'
+import { writeAuditLog } from '@/lib/enterprise/auditLog'
 
 const MAX_BODY = 32_000
 
@@ -70,6 +75,7 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
   const rx = await reactionSummariesForMessages(pool, uid, [row.id])
+  const rr = await readReceiptsForMessages(pool, [row.id])
   const post = rowToPost(
     {
       id: row.id,
@@ -81,7 +87,8 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
       root_id: row.root_id,
       reply_count: row.reply_count
     },
-    rx.get(row.id)
+    rx.get(row.id),
+    rr.get(row.id)
   )
   return NextResponse.json({
     workspace_id: row.workspace_id,
@@ -91,6 +98,8 @@ async function _GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
 }
 
 async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -106,8 +115,8 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
     return NextResponse.json({ error: 'message_too_long' }, { status: 400 })
   }
 
-  const found = await pool.query<{ channel_id: string; user_id: string }>(
-    `SELECT channel_id, user_id FROM aaelink.messages WHERE id = $1`,
+  const found = await pool.query<{ channel_id: string; user_id: string; body: string }>(
+    `SELECT channel_id, user_id, body FROM aaelink.messages WHERE id = $1`,
     [messageId]
   )
   const row = found.rows[0]
@@ -116,6 +125,12 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!(await userCanReadChannel(pool, uid, row.channel_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
+  const previousBody = row.body
+
+  // DLP check on the new content before persisting the edit.
+  const dlp = await applyDlpToMessage({ content: message, userId: uid, channelId: row.channel_id })
+  if (!dlp.allowed) return NextResponse.json({ error: 'dlp_blocked' }, { status: 403 })
+  const safeMessage = dlp.content
 
   const now = Date.now()
   const { rows } = await pool.query<{
@@ -135,12 +150,33 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
      SELECT u.*,
             (SELECT COUNT(*)::int FROM aaelink.messages r WHERE r.channel_id = u.channel_id AND r.root_id = u.id) AS reply_count
      FROM u`,
-    [messageId, message, now, uid]
+    [messageId, safeMessage, now, uid]
   )
   const u = rows[0]
   if (!u) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
+  // Capture the pre-edit body for the message's edit history (D3).
+  if (previousBody !== safeMessage) {
+    await recordMessageEdit(pool, {
+      messageId,
+      channelId: row.channel_id,
+      editorId: uid,
+      previousBody,
+      editedAt: now,
+    }).catch(() => { /* history is best-effort, never blocks the edit */ })
+  }
+
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'message.edit',
+    resourceKind: 'message',
+    resourceId: messageId,
+    metadata: { channel_id: row.channel_id },
+  })
+
   const rx = await reactionSummariesForMessages(pool, uid, [u.id])
+  const rr = await readReceiptsForMessages(pool, [u.id])
   const post = rowToPost(
     {
       id: u.id,
@@ -152,13 +188,16 @@ async function _PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
       root_id: u.root_id,
       reply_count: u.reply_count
     },
-    rx.get(u.id)
+    rx.get(u.id),
+    rr.get(u.id)
   )
   return NextResponse.json({ ...post, reactions: post.reactions ?? [] })
 }
 
 /** Owner-only delete. Root posts remove all thread replies in this channel. */
-async function _DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -223,6 +262,17 @@ async function _DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) 
     }
 
     await client.query('COMMIT')
+    writeAuditLog({
+      pool,
+      actorId: uid,
+      action: 'message.delete',
+      resourceKind: 'message',
+      resourceId: messageId,
+      metadata: { channel_id: row.channel_id, deleted_ids: deletedIds },
+    })
+    try {
+      await emitMessageDeleted(pool, { channel_id: row.channel_id, message_id: messageId, user_id: uid })
+    } catch (e) { console.error('emitMessageDeleted', e) }
     return NextResponse.json({ deleted_ids: deletedIds, deleted_at: now })
   } catch {
     try {

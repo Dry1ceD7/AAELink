@@ -2,7 +2,7 @@
  * AAELink — UI Density Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { UI_DENSITY_KEY, readUiDensity, type UiDensity } from '@/lib/uiDensity'
+import { UI_DENSITY_KEY, readUiDensity, type UiDensity } from '@/lib/ui/uiDensity'
 
 // ── Constants ───────────────────────────────────────────────────────
 

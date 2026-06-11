@@ -4,8 +4,8 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { apiFetch } from '@/lib/apiClient'
-import { buildHomePathForTeam, rememberWorkspaceTeam } from '@/lib/workspaceNav'
+import { apiFetch } from '@/lib/api/apiClient'
+import { buildHomePathForTeam, rememberWorkspaceTeam } from '@/lib/workspace/workspaceNav'
 
 export default function OnboardingPage() {
   const router = useRouter()

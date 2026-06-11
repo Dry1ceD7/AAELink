@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Usergroups API — Slack usergroups.* parity.
@@ -176,6 +176,33 @@ async function _POST(req: NextRequest) {
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
 }
 
+/** PATCH — update a usergroup (delegated to POST with action=update) */
+async function _PATCH(req: NextRequest) {
+  // Rewrite as POST body with action=update
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
+  body.action = 'update'
+  const syntheticReq = new NextRequest(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify(body),
+  })
+  return _POST(syntheticReq)
+}
+
+/** DELETE — disable a usergroup (delegated to POST with action=disable) */
+async function _DELETE(req: NextRequest) {
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
+  body.action = 'disable'
+  const syntheticReq = new NextRequest(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify(body),
+  })
+  return _POST(syntheticReq)
+}
+
 // ── Traced exports ──────────────────────────────────────────────────
-export const GET    = tracedRoute('GET', '/api/usergroups', _GET)
-export const POST   = tracedRoute('POST', '/api/usergroups', _POST)
+export const GET    = tracedRoute('GET',    '/api/usergroups', _GET)
+export const POST   = tracedRoute('POST',   '/api/usergroups', _POST)
+export const PATCH  = tracedRoute('PATCH',  '/api/usergroups', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/usergroups', _DELETE)

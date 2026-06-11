@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { Pool } from 'pg'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { type ReactionSummary, isValidReactionKey } from '@/lib/reactions'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { type ReactionSummary, isValidReactionKey } from '@/lib/messaging/reactions'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { emitWebhookEvent } from '@/lib/webhooks/webhookEmitter'
 
 async function summarizeForMessage(
   pool: Pool,
@@ -34,6 +36,8 @@ async function summarizeForMessage(
 
 /** Toggle a quick reaction on a message (add/remove). */
 async function _POST(req: Request) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -59,6 +63,7 @@ async function _POST(req: Request) {
 
   // Atomic toggle: try to delete first; if nothing was deleted, insert.
   // Wrap in a transaction to prevent race conditions from rapid clicks.
+  let added = false
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -75,6 +80,7 @@ async function _POST(req: Request) {
          ON CONFLICT (message_id, user_id, reaction_key) DO NOTHING`,
         [messageId, uid, key, now]
       )
+      added = true
     }
     await client.query('COMMIT')
   } catch (e) {
@@ -83,6 +89,12 @@ async function _POST(req: Request) {
   } finally {
     client.release()
   }
+
+  // Fan out reaction add/remove to subscribed webhooks (no-op when none).
+  try {
+    await emitWebhookEvent(pool, added ? 'reaction.added' : 'reaction.removed',
+      { channel_id: ch, message_id: messageId, user_id: uid, reaction: key }, uid, ch)
+  } catch (e) { console.error('emitReaction', e) }
 
   const reactions = await summarizeForMessage(pool, uid, messageId)
   return NextResponse.json({ message_id: messageId, reactions })

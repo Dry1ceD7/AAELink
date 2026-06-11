@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
-import { buildHomePathForTeam, readRememberedWorkspaceTeam } from '@/lib/workspaceNav'
+import { buildHomePathForTeam, readRememberedWorkspaceTeam } from '@/lib/workspace/workspaceNav'
 
 /** Tickets live inside the home shell; this route keeps old links working. */
 export default function TicketsRedirectPage() {

@@ -2,7 +2,7 @@
  * AAELink — Webhook Event Types Tests
  */
 import { describe, it, expect } from 'vitest'
-import { WEBHOOK_EVENT_TYPES, type WebhookEventType } from '@/lib/webhookEmitter'
+import { WEBHOOK_EVENT_TYPES, type WebhookEventType } from '@/lib/webhooks/webhookEmitter'
 
 describe('WebhookEmitter — WEBHOOK_EVENT_TYPES', () => {
   it('includes message events', () => {

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Conversations Mark API — Slack conversations.mark parity.
@@ -28,9 +29,16 @@ async function _POST(req: NextRequest) {
 
   const lastRead = Number(body.ts) || Date.now()
 
+  // Verify channel access before writing the read cursor — channel_read_state
+  // has a NOT NULL FK to channels, so an unchecked/stale channel id would raise
+  // an unhandled FK violation (500). Also satisfies the per-channel-access rule.
+  if (!(await userCanReadChannel(pool, uid, body.channel))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
   // Upsert read state
   await pool.query(`
-    INSERT INTO aaelink.read_state (user_id, channel_id, last_read_at)
+    INSERT INTO aaelink.channel_read_state (user_id, channel_id, last_read_at)
     VALUES ($1, $2, $3)
     ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_at = $3
   `, [uid, body.channel, lastRead])

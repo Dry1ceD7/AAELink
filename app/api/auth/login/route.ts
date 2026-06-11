@@ -1,12 +1,16 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { verifyPassword } from '@/lib/password'
-import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
-
-const SESSION_MS = 30 * 24 * 60 * 60 * 1000
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { verifyPassword } from '@/lib/auth/password'
+import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { attachCsrfCookie } from '@/lib/auth/csrf'
+import { getSessionPolicy, sessionTtlMs } from '@/lib/auth/sessionPolicy'
+import { enforceSessionLimits } from '@/lib/auth/sessionEnforcement'
+import { getMfaPolicy, mfaEnrollmentRequired, userHasActiveMfa } from '@/lib/auth/mfaPolicy'
+import { getPasswordPolicy, isPasswordExpired } from '@/lib/auth/passwordPolicy'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // ── Rate limiting (in-memory per IP) ─────────────────────────────────────────
 const loginAttempts = new Map<string, { count: number; windowStart: number }>()
@@ -92,8 +96,8 @@ async function _POST(req: Request) {
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
     }
 
-    const { rows } = await pool.query<{ id: string; password_hash: string }>(
-      `SELECT id, password_hash FROM aaelink.users
+    const { rows } = await pool.query<{ id: string; password_hash: string; platform_role: string; created_at: string; password_changed_at: string; scim_active: boolean }>(
+      `SELECT id, password_hash, platform_role, created_at::text, COALESCE(password_changed_at, 0)::text AS password_changed_at, COALESCE(scim_active, true) AS scim_active FROM aaelink.users
        WHERE lower(username) = lower($1) OR lower(email) = lower($1) LIMIT 1`,
       [String(login_id).trim()]
     )
@@ -102,7 +106,7 @@ async function _POST(req: Request) {
       // Audit failed login
       try {
         await pool.query(
-          `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, ip_address, user_agent, meta, created_at)
+          `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, ip_address, user_agent, metadata, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             randomUUID(),
@@ -120,14 +124,57 @@ async function _POST(req: Request) {
       return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
     }
 
+    // Deactivated accounts cannot sign in. scim_active is the converged
+    // soft-delete flag set by SCIM (app/api/scim/v2/Users) and the admin
+    // deactivate endpoint (app/api/admin/users/deactivate). Checked AFTER
+    // password verification so a wrong password never reveals account state.
+    if (row.scim_active === false) {
+      try {
+        await pool.query(
+          `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, ip_address, user_agent, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [randomUUID(), row.id, 'user.login_failed', 'user', row.id, ipAddress, userAgent, JSON.stringify({ reason: 'deactivated' }), Date.now()]
+        )
+      } catch { /* best-effort */ }
+      return NextResponse.json({ error: 'account_deactivated' }, { status: 403 })
+    }
+
+    // Session policy drives session lifetime (D2) and the require_mfa_for_admin
+    // gate. Fetched once and reused. getSessionPolicy returns defaults only when
+    // no policy row is stored (fail open on ABSENT policy); a DB error propagates
+    // to the outer catch (fail closed) rather than silently skipping the gate.
+    const sessionPolicy = await getSessionPolicy(pool)
+    const isAdmin = isPlatformAdmin(row.platform_role || '')
+
+    // MFA enforcement (D2): if policy requires MFA for this user and the grace
+    // window has elapsed, block sign-in until they enroll. Default policy is
+    // 'optional', so this never fires unless an admin turns it on.
+    const mfaPolicy = await getMfaPolicy(pool)
+    const accountAgeMs = Date.now() - Number(row.created_at || 0)
+    const mfaRequired =
+      mfaEnrollmentRequired(mfaPolicy, { isAdmin, accountAgeMs }) ||
+      // session-policy require_mfa_for_admin: platform-admins must have MFA
+      // enrolled (no grace window — admins are the highest-value accounts). Honors
+      // the same login contract: deny with mfa_enrollment_required so the client
+      // routes the user through MFA setup.
+      (sessionPolicy.require_mfa_for_admin && isAdmin)
+    if (mfaRequired && !(await userHasActiveMfa(pool, row.id))) {
+      return NextResponse.json({ error: 'mfa_enrollment_required' }, { status: 403 })
+    }
+
     const sessionId = randomUUID()
     const now = Date.now()
-    const expiresAt = now + SESSION_MS
+    const sessionMs = sessionTtlMs(sessionPolicy, 'web')
+    const expiresAt = now + sessionMs
     await pool.query(
-      `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO aaelink.sessions (id, user_id, expires_at, user_agent, ip_address, created_at, last_active_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)`,
       [sessionId, row.id, expiresAt, userAgent, ipAddress, now]
     )
+    // Enforce max_sessions_per_user / single_session_mode now that the new
+    // session row exists. Best-effort: a cap-eviction failure must not block a
+    // valid login.
+    await enforceSessionLimits(pool, row.id, sessionPolicy, sessionId, now).catch(() => { /* non-critical */ })
     // Mark user as online + track login activity
     await pool.query(
       `UPDATE aaelink.users SET last_seen_at = $1, last_login_at = $1,
@@ -138,7 +185,7 @@ async function _POST(req: Request) {
     // Audit successful login
     try {
       await pool.query(
-        `INSERT INTO aaelink.audit_log (id, actor_id, action, entity_type, entity_id, ip_address, user_agent, meta, created_at)
+        `INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, ip_address, user_agent, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [randomUUID(), row.id, 'user.login', 'user', row.id, ipAddress, userAgent, JSON.stringify({ session_id: sessionId }), now]
       )
@@ -152,14 +199,21 @@ async function _POST(req: Request) {
       [row.id]
     )
     const user = u.rows[0]
-    const res = NextResponse.json({ user })
+    // Password rotation (max_age_days): flag an expired password so the client can
+    // force a change-password redirect. The session is still established (the user
+    // must be signed in to reach the change-password screen); readSessionUserId is
+    // untouched. Defaults to never-expire, so this is false unless rotation is on.
+    const pwPolicy = await getPasswordPolicy(pool)
+    const passwordExpired = isPasswordExpired(pwPolicy, Number(row.password_changed_at || 0), now)
+    const res = NextResponse.json({ user, password_expired: passwordExpired })
     res.cookies.set(SESSION_COOKIE, sessionId, {
       httpOnly: true,
       sameSite: 'lax',
       secure: sessionCookieSecure(),
       path: '/',
-      maxAge: Math.floor(SESSION_MS / 1000)
+      maxAge: Math.floor(sessionMs / 1000)
     })
+    attachCsrfCookie(res)
     return res
   } catch (e) {
     console.error('[auth/login]', e)

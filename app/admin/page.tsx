@@ -4,17 +4,22 @@ import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
-import { AlertCircle, Download, Search, BarChart3 } from 'lucide-react'
-import { apiFetch } from '@/lib/apiClient'
-import { isPlatformAdmin, isSuperAdmin } from '@/lib/platformRole'
-import AuditLogPanel from '@/app/components/admin/AuditLogPanel'
-import { WebhookManagementPanel } from '@/app/components/admin/WebhookManagementPanel'
-import { WorkflowManagementPanel } from '@/app/components/admin/WorkflowManagementPanel'
-import { DepartmentManagementPanel } from '@/app/components/admin/DepartmentManagementPanel'
-import { OAuthAppsPanel } from '@/app/components/admin/OAuthAppsPanel'
-import { MigrationPanel } from '@/app/components/admin/MigrationPanel'
-import { FunctionsPanel } from '@/app/components/admin/FunctionsPanel'
-import { ObservabilityPanel } from '@/app/components/admin/ObservabilityPanel'
+import { AlertCircle, Download, Search, BarChart3, UserPlus, Shield, Plug, Radio } from 'lucide-react'
+import { apiFetch } from '@/lib/api/apiClient'
+import { isPlatformAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
+import AuditLogPanel from '@/components/admin/AuditLogPanel'
+import { WebhookManagementPanel } from '@/components/admin/WebhookManagementPanel'
+import { WorkflowManagementPanel } from '@/components/admin/WorkflowManagementPanel'
+import { DepartmentManagementPanel } from '@/components/admin/DepartmentManagementPanel'
+import { OAuthAppsPanel } from '@/components/admin/OAuthAppsPanel'
+import { MigrationPanel } from '@/components/admin/MigrationPanel'
+import { FunctionsPanel } from '@/components/admin/FunctionsPanel'
+import { ObservabilityPanel } from '@/components/admin/ObservabilityPanel'
+import { TicketingSettingsPanel } from '@/components/admin/TicketingSettingsPanel'
+import GuestManagementPanel from '@/components/admin/GuestManagementPanel'
+import CustomRolePanel from '@/components/admin/CustomRolePanel'
+import SCIMPanel from '@/components/admin/SCIMPanel'
+import AuditStreamsPanel from '@/components/admin/AuditStreamsPanel'
 
 type Me = { platform_role?: string }
 
@@ -37,7 +42,10 @@ type UserRow = {
   last_name: string
   platform_role: string
   created_at: string | number
+  scim_active?: boolean
 }
+
+type AdminPanelId = 'guests' | 'roles' | 'scim' | 'audit-streams'
 
 type EmergencyQueueRow = {
   id: string
@@ -75,6 +83,8 @@ export default function AdminPage() {
   const [editBusy, setEditBusy] = useState(false)
   const [editMsg, setEditMsg] = useState('')
   const [userSearch, setUserSearch] = useState('')
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'deactivated'>('all')
+  const [activePanel, setActivePanel] = useState<AdminPanelId | null>(null)
   const [stats, setStats] = useState<{ user_count: number; active_today: number; channel_count: number; message_count: number; messages_today: number; session_count: number } | null>(null)
   const issuedPanelRef = useRef<HTMLDivElement>(null)
   const issuedCopyRef = useRef<HTMLButtonElement>(null)
@@ -98,9 +108,12 @@ export default function AdminPage() {
       return
     }
     setMe(mj.user ?? {})
+    const usersUrl = userStatusFilter === 'all'
+      ? '/api/admin/users'
+      : `/api/admin/users?status=${userStatusFilter}`
     const [rReq, rUsers, rPres, rEmerg] = await Promise.all([
       apiFetch('/api/admin/account-requests'),
-      apiFetch('/api/admin/users'),
+      apiFetch(usersUrl),
       apiFetch('/api/admin/support-presence'),
       apiFetch('/api/admin/support-emergency')
     ])
@@ -132,7 +145,7 @@ export default function AdminPage() {
         if (sj.stats) setStats(sj.stats)
       }
     } catch { /* non-critical */ }
-  }, [router])
+  }, [router, userStatusFilter])
 
   useEffect(() => {
     void loadAll()
@@ -318,6 +331,26 @@ export default function AdminPage() {
       { value: 'employee', label: 'Standard member' },
       { value: 'it_employee', label: 'IT support member' }
     ]
+
+  if (activePanel) {
+    return (
+      <main className="aae-auth-page">
+        <div className="aae-auth-card aae-auth-card--wide" style={{ margin: '0 auto' }}>
+          <p style={{ margin: '0 0 12px' }}>
+            <button type="button" className="link-button" onClick={() => setActivePanel(null)}>
+              Back to admin
+            </button>
+          </p>
+          <div className="slack-card mm-auth-form" style={{ padding: '28px 28px' }}>
+            {activePanel === 'guests' && <GuestManagementPanel onClose={() => setActivePanel(null)} />}
+            {activePanel === 'roles' && <CustomRolePanel onClose={() => setActivePanel(null)} />}
+            {activePanel === 'scim' && <SCIMPanel onClose={() => setActivePanel(null)} />}
+            {activePanel === 'audit-streams' && <AuditStreamsPanel onClose={() => setActivePanel(null)} />}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <>
@@ -549,6 +582,23 @@ export default function AdminPage() {
             </section>
           )}
 
+          {/* ── Member tools (Guest Management, Custom Roles) ──── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <h2 className="mm-auth-section-title">Member tools</h2>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="ghost-button"
+                style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setActivePanel('guests')}>
+                <UserPlus size={14} /> Guest management
+              </button>
+              <button type="button" className="ghost-button"
+                style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setActivePanel('roles')}>
+                <Shield size={14} /> Custom roles
+              </button>
+            </div>
+          </section>
+
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <h2 className="mm-auth-section-title" style={{ margin: 0 }}>
@@ -556,6 +606,14 @@ export default function AdminPage() {
               </h2>
               <span style={{ fontSize: 11, color: 'var(--mm-muted)' }}>({users.length})</span>
               <span style={{ flex: 1 }} />
+              <select className="slack-input" value={userStatusFilter}
+                onChange={e => setUserStatusFilter(e.target.value as 'all' | 'active' | 'deactivated')}
+                style={{ width: 150, flex: 'none', fontSize: 12, padding: '4px 8px' }}
+                aria-label="Filter by status">
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="deactivated">Deactivated</option>
+              </select>
               <div className="mm-forward-search" style={{ width: 180, flex: 'none' }}>
                 <Search size={12} />
                 <input type="search" placeholder="Filter users…" value={userSearch}
@@ -575,6 +633,7 @@ export default function AdminPage() {
                     <th style={{ padding: '6px' }}>Name</th>
                     <th style={{ padding: '6px' }}>Email</th>
                     <th style={{ padding: '6px' }}>Role</th>
+                    <th style={{ padding: '6px' }}>Status</th>
                     <th style={{ padding: '6px' }}>Actions</th>
                   </tr>
                 </thead>
@@ -600,6 +659,11 @@ export default function AdminPage() {
                         </span>
                       </td>
                       <td style={{ padding: '6px' }}>
+                        <span style={{ fontSize: 12, color: u.scim_active === false ? 'var(--mm-muted)' : 'inherit' }}>
+                          {u.scim_active === false ? 'Deactivated' : 'Active'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '6px' }}>
                         <button type="button" className="ghost-button" style={{ fontSize: 12, padding: '3px 8px' }}
                           onClick={() => setEditingUser(u)}>
                           Edit
@@ -619,6 +683,23 @@ export default function AdminPage() {
           {/* ── Audit Log ─────────────────────────────────────── */}
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
             <AuditLogPanel />
+          </section>
+
+          {/* ── Provisioning & audit forwarding (SCIM, Audit Streams) ── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <h2 className="mm-auth-section-title">Provisioning &amp; audit forwarding</h2>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="ghost-button"
+                style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setActivePanel('scim')}>
+                <Plug size={14} /> SCIM provisioning
+              </button>
+              <button type="button" className="ghost-button"
+                style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={() => setActivePanel('audit-streams')}>
+                <Radio size={14} /> Audit streams
+              </button>
+            </div>
           </section>
 
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
@@ -653,6 +734,11 @@ export default function AdminPage() {
           {/* ── Observability & Tracing ────────────────────────── */}
           <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
             <ObservabilityPanel />
+          </section>
+
+          {/* ── Ticketing — SLA & Business Hours ────────────────── */}
+          <section style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid rgba(0, 89, 150, 0.12)' }}>
+            <TicketingSettingsPanel />
           </section>
           </div>
         </div>
@@ -746,8 +832,10 @@ export default function AdminPage() {
                           setEditMsg(`Error: ${d.error || 'save failed'}`)
                         } else {
                           setEditMsg('Saved successfully!')
-                          // Refresh user list
-                          const r2 = await apiFetch('/api/admin/users')
+                          // Refresh user list (respect the active status filter)
+                          const r2 = await apiFetch(userStatusFilter === 'all'
+                            ? '/api/admin/users'
+                            : `/api/admin/users?status=${userStatusFilter}`)
                           if (r2.ok) {
                             const d2 = await r2.json() as { users?: UserRow[] }
                             if (d2.users) setUsers(d2.users)

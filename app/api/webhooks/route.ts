@@ -1,11 +1,11 @@
 import { randomUUID, randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import { writeAuditLog, extractIp } from '@/lib/auditLog'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /** List webhooks for a workspace. Query param: workspace_id */
 async function _GET(req: Request) {

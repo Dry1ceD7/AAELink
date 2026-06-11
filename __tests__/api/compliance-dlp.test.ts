@@ -18,13 +18,15 @@ import {
 let ctx: TestContext
 let admin: TestUser
 let employee: TestUser
+let itAdmin: TestUser
 const createdIds: string[] = []
 
 beforeAll(async () => {
   ctx = await createTestContext()
   admin = await createTestUser(ctx.pool, { role: 'super_admin' })
   employee = await createTestUser(ctx.pool, { role: 'employee' })
-  createdIds.push(admin.id, employee.id)
+  itAdmin = await createTestUser(ctx.pool, { role: 'it_admin' })
+  createdIds.push(admin.id, employee.id, itAdmin.id)
 })
 
 afterAll(async () => {
@@ -56,6 +58,13 @@ describe('GET /api/compliance/dlp', () => {
     expect(body).toHaveProperty('rules')
     expect(Array.isArray(body.rules)).toBe(true)
   })
+
+  it('allows it_admin (platform admin tier) — was locked out by the platform_admin role-name bug', async () => {
+    const { GET } = await import('@/app/api/compliance/dlp/route')
+    const req = asRequest('GET', '/api/compliance/dlp', { cookie: itAdmin.sessionCookie })
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+  })
 })
 
 describe('POST /api/compliance/dlp', () => {
@@ -81,17 +90,16 @@ describe('POST /api/compliance/dlp', () => {
     ruleId = body.rule.id
   })
 
-  it('toggles a rule off', async () => {
-    const { POST } = await import('@/app/api/compliance/dlp/route')
-    const req = asRequest('POST', '/api/compliance/dlp', {
+  it('toggles a rule off (via PUT)', async () => {
+    const { PUT } = await import('@/app/api/compliance/dlp/route')
+    const req = asRequest('PUT', '/api/compliance/dlp', {
       cookie: admin.sessionCookie,
       body: {
-        action: 'toggle',
         rule_id: ruleId,
         is_active: false,
       },
     })
-    const res = await POST(req)
+    const res = await PUT(req)
     expect(res.status).toBe(200)
   })
 

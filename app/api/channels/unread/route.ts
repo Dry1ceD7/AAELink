@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/channels/unread?workspace_id=...
@@ -60,7 +60,7 @@ async function _GET(req: NextRequest) {
       )::text AS latest_message_at
     FROM aaelink.channel_members cm
     JOIN aaelink.channels c ON c.id = cm.channel_id AND c.workspace_id = $2
-    LEFT JOIN aaelink.read_state rs ON rs.channel_id = c.id AND rs.user_id = $1
+    LEFT JOIN aaelink.channel_read_state rs ON rs.channel_id = c.id AND rs.user_id = $1
     LEFT JOIN aaelink.users u_self ON u_self.id = $1
     WHERE cm.user_id = $1
       AND c.archived_at = 0

@@ -1,9 +1,10 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { Pool } from 'pg'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import type { Pool } from 'pg'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 interface RateLimitConfig {
   global_rpm?: number; auth_rpm?: number; api_rpm?: number

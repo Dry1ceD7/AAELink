@@ -1,8 +1,9 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Backup Management API — schedule, list, and manage database backups.
@@ -122,7 +123,7 @@ async function _POST(req: NextRequest) {
 
   // Audit log
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'backup_triggered', 'backup', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({ type, storage_dest: storageDest }), now])
 

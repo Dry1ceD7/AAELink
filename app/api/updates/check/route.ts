@@ -1,5 +1,6 @@
+// keep: external integration entry point (webhook / IdP / push provider / device)
 import { NextRequest, NextResponse } from 'next/server'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const GITHUB_OWNER = 'Dry1ceD7'
 const GITHUB_REPO = 'AAELink'

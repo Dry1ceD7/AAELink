@@ -2,7 +2,7 @@
  * AAELink — Notification Sound Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { getNotifSoundPref, getNotifVolume, type NotifSoundPref } from '@/lib/notificationSound'
+import { getNotifSoundPref, getNotifVolume, type NotifSoundPref } from '@/lib/notifications/notificationSound'
 
 // ── NotifSoundPref type ─────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
  * AAELink — Password Hashing Tests
  */
 import { describe, it, expect } from 'vitest'
-import { hashPassword, verifyPassword } from '@/lib/password'
+import { hashPassword, verifyPassword } from '@/lib/auth/password'
 
 describe('Password — hashPassword', () => {
   it('returns scrypt-prefixed hash', () => {

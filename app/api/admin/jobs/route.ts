@@ -1,9 +1,10 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Job Queue API — background job management and monitoring.
@@ -23,14 +24,19 @@ import { tracedRoute } from '@/lib/tracedRoute'
  *   - analytics_rollup    — aggregate analytics into daily summaries
  *   - webhook_dispatch    — retry failed webhook deliveries
  *   - invite_expire       — clean up expired invite links
+ *   - saved_search_alerts — self-rescheduling heartbeat: notify on saved-search hits
+ *   - email_digest        — self-rescheduling heartbeat: send missed-activity digests
  *
- * Workers poll this table and process jobs in priority order.
+ * Workers poll this table and process jobs in priority order. The two heartbeat
+ * jobs are seeded by migration 039; exposing them here lets an admin manually
+ * (re-)arm the cadence if a heartbeat row is ever lost.
  */
 
 const VALID_JOB_TYPES = [
   'email_send', 'retention_enforce', 'audit_export', 'backup_run',
   'file_scan', 'guest_expire', 'scheduled_send', 'index_rebuild',
   'analytics_rollup', 'webhook_dispatch', 'invite_expire',
+  'saved_search_alerts', 'email_digest',
 ] as const
 
 type JobType = typeof VALID_JOB_TYPES[number]

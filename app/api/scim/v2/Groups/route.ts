@@ -4,6 +4,9 @@
  * RFC 7644 compliant SCIM 2.0 implementation for group provisioning.
  * Maps to the existing `aaelink.user_groups` and `aaelink.user_group_members` tables.
  *
+ * Every operation is scoped to the org of the presented SCIM bearer token
+ * (scim_connections.org_id). Cross-org group reads/writes resolve to 404.
+ *
  * Supported operations:
  *   GET    /api/scim/v2/Groups           — List/filter groups
  *   GET    /api/scim/v2/Groups/:id       — Get single group
@@ -15,9 +18,11 @@
 
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { applyGroupRoleMappings } from '@/lib/auth/idpRoleMappings'
 
 // ── SCIM Types ──────────────────────────────────────────────────────
 
@@ -38,6 +43,12 @@ interface ScimGroup {
   meta?: { resourceType: string; created?: string; lastModified?: string }
 }
 
+interface ScimConnection {
+  id: string
+  /** Org this connection provisions into, or null for a legacy global connection. */
+  org_id: string | null
+}
+
 function scimError(detail: string, status: number): Response {
   return NextResponse.json(
     { schemas: [SCIM_ERROR_SCHEMA], detail, status: String(status) },
@@ -45,31 +56,46 @@ function scimError(detail: string, status: number): Response {
   )
 }
 
-/** Validate SCIM bearer token */
-async function validateScimToken(req: Request): Promise<boolean> {
+/**
+ * Resolve the active SCIM connection for a request's bearer token, or null. The
+ * connection carries the org all group operations are scoped to (org_id), so a
+ * token of org A can never read or write org B's groups (cross-org → 404).
+ */
+async function resolveScimConnection(req: Request): Promise<ScimConnection | null> {
   const auth = req.headers.get('authorization') || ''
-  if (!auth.startsWith('Bearer ')) return false
+  if (!auth.startsWith('Bearer ')) return null
   const token = auth.slice(7)
-  if (!token) return false
+  if (!token) return null
   const pool = getPool()
-  if (!pool) return false
+  if (!pool) return null
   const crypto = await import('crypto')
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT id FROM aaelink.scim_connections WHERE bearer_token_hash = $1 AND is_active = true LIMIT 1`,
+  const { rows } = await pool.query<{ id: string; org_id: string | null }>(
+    `SELECT id, org_id::text AS org_id FROM aaelink.scim_connections
+      WHERE bearer_token_hash = $1 AND is_active = true LIMIT 1`,
     [tokenHash]
   )
-  return rows.length > 0
+  return rows[0] ?? null
 }
 
-/** Load group with members */
-async function loadGroup(groupId: string): Promise<ScimGroup | null> {
+/** Build the org-scope SQL predicate + param for a connection. */
+function orgScope(conn: ScimConnection, nextIdx: number): { sql: string; param?: unknown } {
+  if (conn.org_id) return { sql: ` AND org_id = $${nextIdx}`, param: conn.org_id }
+  // Global (org_id NULL) connection only sees legacy unscoped groups.
+  return { sql: ` AND org_id IS NULL` }
+}
+
+/** Load a group, scoped to the connection's org. Cross-org → null (→ 404). */
+async function loadGroup(groupId: string, conn: ScimConnection): Promise<ScimGroup | null> {
   const pool = getPool()
   if (!pool) return null
 
-  const { rows } = await pool.query<{ id: string; name: string; handle: string; description: string; created_at: string }>(
-    `SELECT id, name, handle, description, created_at FROM aaelink.user_groups WHERE id = $1`,
-    [groupId]
+  const scope = orgScope(conn, 2)
+  const params: unknown[] = [groupId]
+  if (scope.param !== undefined) params.push(scope.param)
+  const { rows } = await pool.query<{ id: string; name: string; created_at: string }>(
+    `SELECT id, name, created_at FROM aaelink.user_groups WHERE id = $1${scope.sql}`,
+    params
   )
   if (!rows[0]) return null
   const g = rows[0]
@@ -87,10 +113,44 @@ async function loadGroup(groupId: string): Promise<ScimGroup | null> {
     id: g.id,
     displayName: g.name,
     members: members.map(m => ({ value: m.user_id, display: m.username || '' })),
-    meta: {
-      resourceType: 'Group',
-      created: new Date(Number(g.created_at)).toISOString(),
-    },
+    meta: { resourceType: 'Group', created: new Date(Number(g.created_at)).toISOString() },
+  }
+}
+
+function audit(req: Request, conn: ScimConnection, action: string, groupId: string, metadata: Record<string, unknown> = {}): void {
+  const pool = getPool()
+  if (!pool) return
+  writeAuditLog({
+    pool, actorId: `scim:${conn.id}`, actorRole: 'scim',
+    action, resourceKind: 'user_group', resourceId: groupId,
+    ipAddress: extractIp(req),
+    metadata: { ...metadata, org_id: conn.org_id },
+  })
+}
+
+/**
+ * After a group membership change, re-resolve each affected user's full set of
+ * group names (org-scoped) against the IdP group → role mappings and grant the
+ * mapped role. Grant-only: super_admin is clamped out and removal never demotes.
+ * Best-effort: a failure here must never break the SCIM operation.
+ */
+async function applyMappingsForUsers(conn: ScimConnection, userIds: string[]): Promise<void> {
+  const pool = getPool()
+  if (!pool || userIds.length === 0) return
+  const scope = orgScope(conn, 2)
+  for (const userId of [...new Set(userIds)]) {
+    try {
+      const params: unknown[] = [userId]
+      if (scope.param !== undefined) params.push(scope.param)
+      const { rows } = await pool.query<{ name: string }>(
+        `SELECT g.name FROM aaelink.user_group_members m
+           JOIN aaelink.user_groups g ON g.id = m.group_id
+          WHERE m.user_id = $1${scope.sql}`,
+        params
+      )
+      const groups = rows.map(r => r.name)
+      await applyGroupRoleMappings(pool, userId, groups, { orgId: conn.org_id })
+    } catch { /* non-critical */ }
   }
 }
 
@@ -99,27 +159,28 @@ async function loadGroup(groupId: string): Promise<ScimGroup | null> {
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const conn = await resolveScimConnection(req)
+  if (!conn) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
 
-  // Single group
   const pathMatch = url.pathname.match(/\/Groups\/([^/]+)$/)
   if (pathMatch) {
-    const group = await loadGroup(pathMatch[1])
+    const group = await loadGroup(pathMatch[1], conn)
     if (!group) return scimError('Group not found', 404)
     return NextResponse.json(group, { headers: { 'Content-Type': 'application/scim+json' } })
   }
 
-  // List groups with filter + pagination
   const filter = url.searchParams.get('filter') || ''
   const startIndex = Math.max(1, Number(url.searchParams.get('startIndex')) || 1)
   const count = Math.min(100, Math.max(1, Number(url.searchParams.get('count')) || 100))
 
-  let whereClause = 'WHERE 1=1'
+  const scope = orgScope(conn, 1)
   const params: unknown[] = []
-  let paramIdx = 0
+  let whereClause = 'WHERE 1=1' + scope.sql
+  if (scope.param !== undefined) params.push(scope.param)
+  let paramIdx = params.length
 
   if (filter) {
     const match = filter.match(/^displayName\s+(eq|co|sw)\s+"([^"]*)"$/i)
@@ -145,7 +206,7 @@ async function _GET(req: Request) {
 
   const groups: ScimGroup[] = []
   for (const r of rows) {
-    const g = await loadGroup(r.id)
+    const g = await loadGroup(r.id, conn)
     if (g) groups.push(g)
   }
 
@@ -161,7 +222,8 @@ async function _GET(req: Request) {
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const conn = await resolveScimConnection(req)
+  if (!conn) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const body = (await req.json()) as { displayName?: string; members?: ScimGroupMember[]; externalId?: string }
@@ -172,11 +234,10 @@ async function _POST(req: Request) {
   const handle = body.displayName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50)
 
   await pool.query(
-    `INSERT INTO aaelink.user_groups (id, name, handle, description, is_active, created_by, created_at) VALUES ($1, $2, $3, '', true, 'scim', $4)`,
-    [id, body.displayName, handle, now]
+    `INSERT INTO aaelink.user_groups (id, name, handle, description, is_active, created_by, created_at, org_id) VALUES ($1, $2, $3, '', true, 'scim', $4, $5)`,
+    [id, body.displayName, handle, now, conn.org_id]
   )
 
-  // Add members
   if (body.members?.length) {
     for (const m of body.members) {
       await pool.query(
@@ -186,26 +247,41 @@ async function _POST(req: Request) {
     }
   }
 
-  const group = await loadGroup(id)
+  audit(req, conn, 'scim.group.create', id, { displayName: body.displayName, memberCount: body.members?.length ?? 0 })
+  if (body.members?.length) await applyMappingsForUsers(conn, body.members.map(m => m.value))
+
+  const group = await loadGroup(id, conn)
   return NextResponse.json(group, {
     status: 201,
     headers: { 'Content-Type': 'application/scim+json', 'Location': `/api/scim/v2/Groups/${id}` },
   })
 }
 
+/** Resolve a group id scoped to the connection's org, or null (→ 404). */
+async function scopedGroupId(groupId: string, conn: ScimConnection): Promise<string | null> {
+  const pool = getPool()
+  if (!pool) return null
+  const scope = orgScope(conn, 2)
+  const params: unknown[] = [groupId]
+  if (scope.param !== undefined) params.push(scope.param)
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM aaelink.user_groups WHERE id = $1${scope.sql}`, params
+  )
+  return rows[0]?.id ?? null
+}
+
 async function _PUT(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const conn = await resolveScimConnection(req)
+  if (!conn) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
   const pathMatch = url.pathname.match(/\/Groups\/([^/]+)$/)
   if (!pathMatch) return scimError('Group ID required in path', 400)
-  const groupId = pathMatch[1]
-
-  const { rows: check } = await pool.query<{ id: string }>(`SELECT id FROM aaelink.user_groups WHERE id = $1`, [groupId])
-  if (!check[0]) return scimError('Group not found', 404)
+  const groupId = await scopedGroupId(pathMatch[1], conn)
+  if (!groupId) return scimError('Group not found', 404)
 
   const body = (await req.json()) as { displayName?: string; members?: ScimGroupMember[] }
   const now = Date.now()
@@ -215,7 +291,6 @@ async function _PUT(req: Request) {
     await pool.query(`UPDATE aaelink.user_groups SET name = $1, handle = $2 WHERE id = $3`, [body.displayName, handle, groupId])
   }
 
-  // Replace membership entirely
   if (body.members !== undefined) {
     await pool.query(`DELETE FROM aaelink.user_group_members WHERE group_id = $1`, [groupId])
     for (const m of body.members || []) {
@@ -226,23 +301,25 @@ async function _PUT(req: Request) {
     }
   }
 
-  const group = await loadGroup(groupId)
+  audit(req, conn, 'scim.group.replace', groupId, { displayName: body.displayName })
+  if (body.members !== undefined) await applyMappingsForUsers(conn, (body.members || []).map(m => m.value))
+
+  const group = await loadGroup(groupId, conn)
   return NextResponse.json(group, { headers: { 'Content-Type': 'application/scim+json' } })
 }
 
 async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const conn = await resolveScimConnection(req)
+  if (!conn) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
   const pathMatch = url.pathname.match(/\/Groups\/([^/]+)$/)
   if (!pathMatch) return scimError('Group ID required in path', 400)
-  const groupId = pathMatch[1]
-
-  const { rows: check } = await pool.query<{ id: string }>(`SELECT id FROM aaelink.user_groups WHERE id = $1`, [groupId])
-  if (!check[0]) return scimError('Group not found', 404)
+  const groupId = await scopedGroupId(pathMatch[1], conn)
+  if (!groupId) return scimError('Group not found', 404)
 
   const body = (await req.json()) as {
     schemas?: string[]
@@ -250,6 +327,7 @@ async function _PATCH(req: Request) {
   }
 
   const now = Date.now()
+  const affectedUserIds: string[] = []
 
   for (const op of body.Operations || []) {
     const operation = op.op.toLowerCase()
@@ -259,17 +337,16 @@ async function _PATCH(req: Request) {
       await pool.query(`UPDATE aaelink.user_groups SET name = $1, handle = $2 WHERE id = $3`, [op.value, handle, groupId])
     }
 
-    // Add members
     if (operation === 'add' && op.path === 'members' && Array.isArray(op.value)) {
       for (const m of op.value as ScimGroupMember[]) {
         await pool.query(
           `INSERT INTO aaelink.user_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [groupId, m.value, now]
         ).catch(() => {})
+        affectedUserIds.push(m.value)
       }
     }
 
-    // Remove members
     if (operation === 'remove' && op.path?.startsWith('members[')) {
       const valueMatch = op.path.match(/members\[value eq "([^"]+)"\]/)
       if (valueMatch) {
@@ -277,7 +354,6 @@ async function _PATCH(req: Request) {
       }
     }
 
-    // Replace members entirely
     if (operation === 'replace' && op.path === 'members' && Array.isArray(op.value)) {
       await pool.query(`DELETE FROM aaelink.user_group_members WHERE group_id = $1`, [groupId])
       for (const m of op.value as ScimGroupMember[]) {
@@ -285,31 +361,35 @@ async function _PATCH(req: Request) {
           `INSERT INTO aaelink.user_group_members (group_id, user_id, added_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [groupId, m.value, now]
         ).catch(() => {})
+        affectedUserIds.push(m.value)
       }
     }
   }
 
-  const group = await loadGroup(groupId)
+  audit(req, conn, 'scim.group.patch', groupId, { ops: (body.Operations || []).map(o => o.op) })
+  if (affectedUserIds.length) await applyMappingsForUsers(conn, affectedUserIds)
+
+  const group = await loadGroup(groupId, conn)
   return NextResponse.json(group, { headers: { 'Content-Type': 'application/scim+json' } })
 }
 
 async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const conn = await resolveScimConnection(req)
+  if (!conn) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
   const pathMatch = url.pathname.match(/\/Groups\/([^/]+)$/)
   if (!pathMatch) return scimError('Group ID required in path', 400)
-  const groupId = pathMatch[1]
+  const groupId = await scopedGroupId(pathMatch[1], conn)
+  if (!groupId) return scimError('Group not found', 404)
 
-  const { rows: check } = await pool.query<{ id: string }>(`SELECT id FROM aaelink.user_groups WHERE id = $1`, [groupId])
-  if (!check[0]) return scimError('Group not found', 404)
-
-  // Remove all members then delete group
   await pool.query(`DELETE FROM aaelink.user_group_members WHERE group_id = $1`, [groupId])
   await pool.query(`DELETE FROM aaelink.user_groups WHERE id = $1`, [groupId])
+
+  audit(req, conn, 'scim.group.delete', groupId)
 
   return new Response(null, { status: 204 })
 }

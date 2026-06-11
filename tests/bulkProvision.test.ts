@@ -7,7 +7,7 @@ import {
   parseCsv,
   validateRecord,
   type BulkUserRecord,
-} from '@/lib/bulkProvision'
+} from '@/lib/enterprise/bulkProvision'
 
 // ── CSV Parsing ──────────────────────────────────────────────────────
 

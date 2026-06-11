@@ -1,13 +1,26 @@
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { hashPassword, verifyPassword } from '@/lib/password'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { hashPassword, verifyPassword } from '@/lib/auth/password'
+import { readSessionUserId, SESSION_COOKIE } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { getSessionPolicy } from '@/lib/auth/sessionPolicy'
+import { revokeOtherUserSessions } from '@/lib/auth/sessionEnforcement'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import {
+  getPasswordPolicy,
+  validatePassword,
+  isPasswordReused,
+  recordPasswordHistory,
+} from '@/lib/auth/passwordPolicy'
 
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
@@ -24,15 +37,12 @@ async function _POST(req: Request) {
   if (!current || !next) {
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
-  if (next.length < 8) {
-    return NextResponse.json({ error: 'password_too_short' }, { status: 422 })
-  }
   if (current === next) {
     return NextResponse.json({ error: 'password_same' }, { status: 422 })
   }
 
-  const { rows } = await pool.query<{ password_hash: string }>(
-    `SELECT password_hash FROM aaelink.users WHERE id = $1`,
+  const { rows } = await pool.query<{ password_hash: string; username: string; email: string }>(
+    `SELECT password_hash, username, email FROM aaelink.users WHERE id = $1`,
     [uid]
   )
   const row = rows[0]
@@ -42,13 +52,53 @@ async function _POST(req: Request) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 })
   }
 
-  const newHash = hashPassword(next)
-  await pool.query(
-    `UPDATE aaelink.users SET password_hash = $1, updated_at = now() WHERE id = $2`,
-    [newHash, uid]
-  )
+  // Enforce the admin-configured password policy (complexity / username-email).
+  const policy = await getPasswordPolicy(pool)
+  const detail = validatePassword(policy, next, { username: row.username, email: row.email })
+  if (detail.length > 0) {
+    return NextResponse.json({ error: 'password_policy_violation', detail }, { status: 400 })
+  }
 
-  return NextResponse.json({ ok: true })
+  // History reuse prevention (no-op when history_count = 0).
+  if (await isPasswordReused(pool, uid, next, policy, verifyPassword)) {
+    return NextResponse.json({ error: 'password_policy_violation', detail: ['password_reused'] }, { status: 400 })
+  }
+
+  const newHash = hashPassword(next)
+  const now = Date.now()
+  // Note: aaelink.users has no `updated_at` column (the prior `updated_at = now()`
+  // here referenced a non-existent column and 500'd any real change-password call);
+  // password_changed_at is the meaningful write and doubles as the rotation stamp.
+  await pool.query(
+    `UPDATE aaelink.users SET password_hash = $1, password_changed_at = $2 WHERE id = $3`,
+    [newHash, now, uid]
+  )
+  // Record the OLD hash so a future change cannot reuse it; trims to the window.
+  await recordPasswordHistory(pool, uid, row.password_hash, policy, now)
+
+  // revoke_on_password_change (D2): invalidate every OTHER session of this user so
+  // a credential rotation logs out sessions established with the old password. The
+  // caller's own session is kept so they are not logged out mid-flow. Defaults to
+  // on; getSessionPolicy returns defaults only when no policy row exists.
+  let revokedSessions = 0
+  const sessionPolicy = await getSessionPolicy(pool)
+  if (sessionPolicy.revoke_on_password_change) {
+    const sid = (await cookies()).get(SESSION_COOKIE)?.value?.trim() || ''
+    revokedSessions = await revokeOtherUserSessions(pool, uid, sid)
+  }
+
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'user.password_change',
+    resourceKind: 'user',
+    resourceId: uid,
+    ipAddress: extractIp(req),
+    userAgent: req.headers.get('user-agent') || '',
+    metadata: { revoked_sessions: revokedSessions },
+  })
+
+  return NextResponse.json({ ok: true, revoked_sessions: revokedSessions })
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

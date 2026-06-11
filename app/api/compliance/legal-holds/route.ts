@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Legal Hold API — compliance hold management for eDiscovery.
@@ -29,7 +30,7 @@ async function _GET(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role || '')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -72,7 +73,7 @@ async function _POST(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role || '')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -107,7 +108,7 @@ async function _POST(req: NextRequest) {
 
   // Audit trail
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'legal_hold_created', 'legal_hold', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({
     name, custodian_count: custodians.length, channel_count: channels.length
@@ -131,7 +132,7 @@ async function _PATCH(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role || '')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -150,7 +151,7 @@ async function _PATCH(req: NextRequest) {
     if (!rowCount) return NextResponse.json({ error: 'hold_not_found_or_already_released' }, { status: 404 })
 
     await pool.query(`
-      INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, created_at)
+      INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, created_at)
       VALUES ($1, $2, 'legal_hold_released', 'legal_hold', $3, $4)
     `, [randomUUID(), uid, holdId, now])
 

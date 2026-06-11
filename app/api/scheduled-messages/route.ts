@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
 import { randomUUID } from 'crypto'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { isChannelArchived, userCanPostToChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Scheduled Messages API — "Send Later" (Slack-style).
@@ -14,6 +16,8 @@ import { tracedRoute } from '@/lib/tracedRoute'
  */
 
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -36,6 +40,20 @@ async function _POST(req: NextRequest) {
   if (!messageBody) return NextResponse.json({ error: 'body_required' }, { status: 400 })
   if (!Number.isFinite(sendAt) || sendAt <= Date.now()) {
     return NextResponse.json({ error: 'send_at_must_be_future' }, { status: 400 })
+  }
+
+  // Verify channel exists and caller has permission to post.
+  const { rows: ch } = await pool.query<{ id: string }>(
+    `SELECT id FROM aaelink.channels WHERE id = $1`,
+    [channelId]
+  )
+  if (!ch[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+
+  if (await isChannelArchived(pool, channelId)) {
+    return NextResponse.json({ error: 'channel_archived' }, { status: 403 })
+  }
+  if (!(await userCanPostToChannel(pool, uid, channelId))) {
+    return NextResponse.json({ error: 'forbidden_read_only_channel' }, { status: 403 })
   }
 
   const id = randomUUID()

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { Pool } from 'pg'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Custom Functions API — Slack functions.* parity.
@@ -27,8 +26,6 @@ async function _GET(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureFunctionsTables(pool)
 
   const functionId = req.nextUrl.searchParams.get('function_id') || ''
   const view = req.nextUrl.searchParams.get('view') || 'list'
@@ -78,8 +75,6 @@ async function _POST(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureFunctionsTables(pool)
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: 'register' | 'execute' | 'complete' | 'complete_error' | 'delete'
@@ -167,34 +162,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
-}
-
-async function ensureFunctionsTables(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.functions (
-      id                  TEXT PRIMARY KEY,
-      callback_id         TEXT UNIQUE NOT NULL,
-      title               TEXT NOT NULL DEFAULT '',
-      description         TEXT NOT NULL DEFAULT '',
-      type                TEXT NOT NULL DEFAULT 'custom',
-      input_parameters    JSONB NOT NULL DEFAULT '{}',
-      output_parameters   JSONB NOT NULL DEFAULT '{}',
-      created_by          TEXT NOT NULL DEFAULT '',
-      created_at          BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS aaelink.function_executions (
-      id              TEXT PRIMARY KEY,
-      function_id     TEXT NOT NULL,
-      status          TEXT NOT NULL DEFAULT 'pending',
-      inputs          JSONB NOT NULL DEFAULT '{}',
-      outputs         JSONB NOT NULL DEFAULT '{}',
-      error           TEXT NOT NULL DEFAULT '',
-      created_by      TEXT NOT NULL DEFAULT '',
-      created_at      BIGINT NOT NULL DEFAULT 0,
-      completed_at    BIGINT NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_fn_executions_fn ON aaelink.function_executions(function_id, created_at DESC);
-  `)
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

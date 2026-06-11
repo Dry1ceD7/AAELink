@@ -1,10 +1,13 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import type { Pool } from 'pg'
 import { NextResponse, type NextRequest } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { channelTopic, getPubSub, type PubSubEvent } from '@/lib/realtime/redisPubSub'
+import { log } from '@/lib/infra/log'
 
 const TYPING_TTL_MS = 8_000
 const STALE_PRUNE_MS = 120_000
@@ -106,6 +109,7 @@ async function _POST(req: NextRequest) {
         channelId,
         uid
       ])
+      await emitTyping(channelId, uid, false)
     }
     return NextResponse.json({ ok: true })
   }
@@ -125,8 +129,37 @@ async function _POST(req: NextRequest) {
        ON CONFLICT (channel_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at`,
       [channelId, uid, now]
     )
+    await emitTyping(channelId, uid, true)
   }
   return NextResponse.json({ ok: true })
+}
+
+/**
+ * Emit a `typing` event on the channel topic for the WS gateway. Wrapped in a
+ * try/catch so a Redis outage cannot break the typing-route 200 — the DB row
+ * is the source of truth for the legacy GET-poll consumers.
+ *
+ * Thread-typing intentionally does not emit; thread typing stays on the GET
+ * poll for v0.0.43 (PRD non-goal).
+ */
+async function emitTyping(
+  channelId: string,
+  userId: string,
+  active: boolean
+): Promise<void> {
+  const event: PubSubEvent = {
+    type: 'typing',
+    channel_id: channelId,
+    user_id: userId,
+    active,
+  }
+  try {
+    await getPubSub().publish(channelTopic(channelId), event)
+  } catch (err) {
+    log.warn('collab.typing.emit_failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

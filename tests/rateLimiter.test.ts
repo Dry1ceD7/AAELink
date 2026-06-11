@@ -2,7 +2,7 @@
  * AAELink — Rate Limiter Tests
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getRateLimiter } from '@/lib/rateLimiter'
+import { getRateLimiter } from '@/lib/api/rateLimiter'
 
 describe('RateLimiter', () => {
   let limiter: ReturnType<typeof getRateLimiter>

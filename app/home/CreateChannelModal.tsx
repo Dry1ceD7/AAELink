@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { apiFetch } from '@/lib/apiClient'
+import { apiFetch } from '@/lib/api/apiClient'
+import { toast } from '@/lib/ui/toast'
 
 interface CreateChannelModalProps {
   open: boolean
@@ -39,10 +40,21 @@ export function CreateChannelModal({ open, workspaceId, onClose, onCreated }: Cr
       })
     })
     setBusy(false)
-    if (!res.ok) { setError('Could not create channel.'); return }
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string }
+      const msg = err.error === 'channel_name_taken'
+        ? 'A channel with that name already exists.'
+        : 'Could not create channel.'
+      setError(msg)
+      toast.error(msg)
+      return
+    }
     const data = (await res.json()) as { channel?: { id: string; name: string; display_name: string; type: string } }
     reset()
-    if (data?.channel) onCreated(data.channel)
+    if (data?.channel) {
+      onCreated(data.channel)
+      toast.success(`Channel #${data.channel.display_name} created.`)
+    }
     onClose()
   }
 

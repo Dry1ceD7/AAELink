@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/admin/exports — list export jobs.
@@ -12,30 +12,6 @@ import { tracedRoute } from '@/lib/tracedRoute'
  *
  * Export jobs stored in `aaelink.export_jobs`.
  */
-
-const EXPORTS_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.export_jobs (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type            TEXT NOT NULL CHECK (type IN ('full','messages','files','members','channels')),
-    status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','completed','failed')),
-    requested_by    UUID NOT NULL REFERENCES aaelink.users(id),
-    date_from       TIMESTAMPTZ,
-    date_to         TIMESTAMPTZ,
-    channels_filter TEXT[],
-    file_size       BIGINT,
-    file_url        TEXT,
-    error_message   TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ
-  );
-  CREATE INDEX IF NOT EXISTS idx_exports_status ON aaelink.export_jobs(status, created_at DESC);
-`
-
-async function ensureExports(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(EXPORTS_DDL)
-}
 
 async function _GET(req: NextRequest) {
   await ensureSchema()
@@ -52,8 +28,6 @@ async function _GET(req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureExports(pool)
 
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 20, 100)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
@@ -91,8 +65,6 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  await ensureExports(pool)
-
   const body = await req.json()
   const { type, date_from, date_to, channels } = body as {
     type: string; date_from?: string; date_to?: string; channels?: string[]
@@ -111,7 +83,7 @@ async function _POST(req: NextRequest) {
 
   // Log export request
   await pool.query(
-    `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+    `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
      VALUES ($1, 'export.create', 'export', $2, $3)`,
     [uid, rows[0].id, JSON.stringify({ type })]
   ).catch(() => {})

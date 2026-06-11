@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks -- `use(page)` here is a Playwright fixture continuation, not React's use() hook */
 import { test as base, type Page } from '@playwright/test'
 
 /* ─────────────────────────────────────────────────────────────────────

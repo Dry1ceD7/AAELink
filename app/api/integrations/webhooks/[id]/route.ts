@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { randomUUID } from 'crypto'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
 
-async function _DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -53,10 +57,19 @@ async function _DELETE(_req: NextRequest, { params }: { params: Promise<{ id: st
     }
 
     await pool.query(`DELETE FROM aaelink.incoming_webhooks WHERE id = $1`, [id])
+
+    // Domain audit — best-effort, must not fail the request (Hard Rule #5).
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
+         VALUES ($1, $2, $3, 'incoming_webhook.delete', $4, $5, $6)`,
+        [randomUUID(), hook.workspace_id, userId, id, JSON.stringify({ created_by: hook.created_by }), Date.now()]
+      )
+    } catch { /* audit log is best-effort */ }
+
     return NextResponse.json({ success: true })
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'webhook_delete_failed'
-    return NextResponse.json({ error: msg }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'webhook_delete_failed' }, { status: 503 })
   }
 }
 

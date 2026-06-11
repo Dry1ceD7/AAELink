@@ -1,9 +1,14 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import type { Pool } from 'pg'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Files Comments API — Slack files.comments parity.
@@ -11,7 +16,29 @@ import { tracedRoute } from '@/lib/tracedRoute'
  * GET  /api/files/comments?file_id=... — list comments on a file
  * POST /api/files/comments — add/edit/delete comment
  *   Actions: add, edit, delete
+ *
+ * Read access mirrors the canonical download route: the uploader always; a
+ * channel-attached file requires channel read access; unattached uploads stay
+ * private to the uploader. Denied as 404 (no existence oracle for the file id).
  */
+
+/**
+ * True when `uid` may read the file behind a comment thread. Same predicate as
+ * app/api/files/[id]/download. Returns false for missing/soft-deleted files so
+ * the caller can collapse "no such file" and "no access" into one 404.
+ */
+async function canReadFile(pool: Pool, uid: string, fileId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ user_id: string; channel_id: string | null; deleted_at: string }>(
+    `SELECT user_id, channel_id, deleted_at::text
+       FROM aaelink.file_attachments WHERE id = $1`,
+    [fileId]
+  )
+  const att = rows[0]
+  if (!att || Number(att.deleted_at) !== 0) return false
+  if (att.user_id === uid) return true
+  return att.channel_id ? await userCanReadChannel(pool, uid, att.channel_id) : false
+}
+
 async function _GET(req: NextRequest) {
   await ensureSchema()
   const pool = getPool()
@@ -22,11 +49,14 @@ async function _GET(req: NextRequest) {
   const fileId = req.nextUrl.searchParams.get('file_id') || ''
   if (!fileId) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
-  await ensureFileCommentsTable(pool)
+  // Read gate: anyone could otherwise list comments for any file id.
+  if (!(await canReadFile(pool, uid, fileId))) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  }
 
   const { rows } = await pool.query(
     `SELECT fc.id, fc.file_id, fc.user_id, fc.comment, fc.created_at, fc.updated_at,
-            u.username, u.display_name, u.avatar_url
+            u.username, u.nickname, u.avatar_url
      FROM aaelink.file_comments fc
      LEFT JOIN aaelink.users u ON u.id = fc.user_id
      WHERE fc.file_id = $1
@@ -38,6 +68,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -53,8 +85,14 @@ async function _POST(req: NextRequest) {
 
   if (!body.file_id) return NextResponse.json({ error: 'file_id_required' }, { status: 400 })
 
-  await ensureFileCommentsTable(pool)
+  // Mutations require the same read access as the list (deny as 404).
+  if (!(await canReadFile(pool, uid, body.file_id))) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  }
+
   const now = Date.now()
+  const ip = extractIp(req)
+  const ua = req.headers.get('user-agent') || ''
 
   if (body.action === 'add' || !body.action) {
     if (!body.comment?.trim()) return NextResponse.json({ error: 'comment_required' }, { status: 400 })
@@ -64,6 +102,8 @@ async function _POST(req: NextRequest) {
        VALUES ($1, $2, $3, $4, $5, $5)`,
       [id, body.file_id, uid, body.comment.trim(), now]
     )
+    writeAuditLog({ pool, actorId: uid, action: 'file.comment.create', resourceKind: 'file_comment',
+      resourceId: id, ipAddress: ip, userAgent: ua, metadata: { file_id: body.file_id } })
     return NextResponse.json({ ok: true, comment_id: id })
   }
 
@@ -74,6 +114,8 @@ async function _POST(req: NextRequest) {
       `UPDATE aaelink.file_comments SET comment = $1, updated_at = $2 WHERE id = $3 AND user_id = $4`,
       [body.comment.trim(), now, body.comment_id, uid]
     )
+    writeAuditLog({ pool, actorId: uid, action: 'file.comment.edit', resourceKind: 'file_comment',
+      resourceId: body.comment_id, ipAddress: ip, userAgent: ua, metadata: { file_id: body.file_id } })
     return NextResponse.json({ ok: true })
   }
 
@@ -85,24 +127,12 @@ async function _POST(req: NextRequest) {
       ))`,
       [body.comment_id, uid]
     )
+    writeAuditLog({ pool, actorId: uid, action: 'file.comment.delete', resourceKind: 'file_comment',
+      resourceId: body.comment_id, ipAddress: ip, userAgent: ua, metadata: { file_id: body.file_id } })
     return NextResponse.json({ ok: true })
   }
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 })
-}
-
-async function ensureFileCommentsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.file_comments (
-      id         TEXT PRIMARY KEY,
-      file_id    TEXT NOT NULL,
-      user_id    TEXT NOT NULL,
-      comment    TEXT NOT NULL DEFAULT '',
-      created_at BIGINT NOT NULL DEFAULT 0,
-      updated_at BIGINT NOT NULL DEFAULT 0
-    )
-  `).catch(() => {})
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_file_comments_file ON aaelink.file_comments(file_id)`).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/files/comments', _GET)

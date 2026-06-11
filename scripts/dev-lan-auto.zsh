@@ -8,7 +8,7 @@ cd "$ROOT"
 
 ip=$(zsh "${ROOT}/scripts/lan-ipv4-print.zsh" || true)
 if [[ -z "${ip// }" ]]; then
-  echo "dev:wifi:auto / dev:lan:auto: could not detect a Wi‑Fi/LAN IPv4. Set NEXT_PUBLIC_APP_URL manually, then run npm run dev:lan" >&2
+  echo "dev:wifi:auto / dev:lan:auto: could not detect a Wi‑Fi/LAN IPv4. Set NEXT_PUBLIC_APP_URL manually, then run bun run dev:lan" >&2
   exit 1
 fi
 
@@ -34,4 +34,4 @@ echo ""
 echo "Listening on 0.0.0.0:3040 ..."
 echo ""
 
-exec npx next dev -p 3040 -H 0.0.0.0
+exec bunx next dev -p 3040 -H 0.0.0.0

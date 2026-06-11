@@ -2,7 +2,7 @@
  * Unit tests for lib/emailTemplates.ts — Template rendering and validation
  */
 import { describe, it, expect } from 'vitest'
-import { renderEmail, listEmailTemplates } from '@/lib/emailTemplates'
+import { renderEmail, listEmailTemplates } from '@/lib/comms/emailTemplates'
 
 describe('Email Templates', () => {
   describe('listEmailTemplates()', () => {

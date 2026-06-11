@@ -2,7 +2,7 @@
  * AAELink — Audit Log & IP Extraction Tests
  */
 import { describe, it, expect } from 'vitest'
-import { extractIp } from '@/lib/auditLog'
+import { extractIp } from '@/lib/enterprise/auditLog'
 
 describe('AuditLog — extractIp', () => {
   it('reads x-forwarded-for', () => {

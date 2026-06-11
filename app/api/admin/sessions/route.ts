@@ -1,9 +1,10 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/admin/sessions — list active sessions for the workspace.
@@ -11,30 +12,6 @@ import { tracedRoute } from '@/lib/tracedRoute'
  *
  * Sessions are stored in `aaelink.user_sessions`.
  */
-
-const SESSIONS_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.user_sessions (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id       UUID NOT NULL REFERENCES aaelink.users(id) ON DELETE CASCADE,
-    device        TEXT NOT NULL DEFAULT 'Unknown',
-    os            TEXT NOT NULL DEFAULT 'Unknown',
-    browser       TEXT NOT NULL DEFAULT 'Unknown',
-    ip_address    INET,
-    location      TEXT,
-    user_agent    TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_active   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at    TIMESTAMPTZ,
-    is_active     BOOLEAN NOT NULL DEFAULT true
-  );
-  CREATE INDEX IF NOT EXISTS idx_sessions_user   ON aaelink.user_sessions(user_id) WHERE is_active;
-  CREATE INDEX IF NOT EXISTS idx_sessions_active ON aaelink.user_sessions(is_active, last_active DESC);
-`
-
-async function ensureSessions(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(SESSIONS_DDL)
-}
 
 async function _GET(req: NextRequest) {
   await ensureSchema()
@@ -52,8 +29,6 @@ async function _GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  await ensureSessions(pool)
-
   const limit = Math.min(Number(req.nextUrl.searchParams.get('limit')) || 50, 200)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
   const userId = req.nextUrl.searchParams.get('user_id')?.trim() || ''
@@ -63,7 +38,7 @@ async function _GET(req: NextRequest) {
 
   if (userId) {
     params.push(userId)
-    where.push(`s.user_id = $${params.length}::uuid`)
+    where.push(`s.user_id = $${params.length}`)
   }
 
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
@@ -106,8 +81,6 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  await ensureSessions(pool)
-
   const body = await req.json()
   const { action, session_id, user_id } = body as { action: string; session_id?: string; user_id?: string }
 
@@ -118,7 +91,7 @@ async function _POST(req: NextRequest) {
     )
     // Log the revocation
     await pool.query(
-      `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+      `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
        VALUES ($1, 'session.revoke', 'session', $2, '{}')`,
       [uid, session_id]
     ).catch(() => { /* audit_log table may not exist yet */ })
@@ -132,7 +105,7 @@ async function _POST(req: NextRequest) {
       [user_id, session_id || '00000000-0000-0000-0000-000000000000']
     )
     await pool.query(
-      `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+      `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
        VALUES ($1, 'session.revoke_all', 'user', $2, $3)`,
       [uid, user_id, JSON.stringify({ count: rowCount })]
     ).catch(() => {})

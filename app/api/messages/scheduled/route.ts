@@ -1,9 +1,12 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { isChannelArchived, userCanPostToChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Scheduled Messages API (Slack "Schedule send").
@@ -57,6 +60,8 @@ async function _GET(req: NextRequest) {
 
 /** POST — schedule a message for future delivery */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -87,19 +92,18 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'send_at_too_far_future' }, { status: 400 })
   }
 
-  // Verify channel membership
+  // Verify channel exists
   const { rows: ch } = await pool.query<{ type: string }>(
     `SELECT type FROM aaelink.channels WHERE id = $1`,
     [channelId]
   )
   if (!ch[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
 
-  if (ch[0].type === 'P') {
-    const { rows: mem } = await pool.query(
-      `SELECT 1 FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`,
-      [channelId, uid]
-    )
-    if (!mem[0]) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (await isChannelArchived(pool, channelId)) {
+    return NextResponse.json({ error: 'channel_archived' }, { status: 403 })
+  }
+  if (!(await userCanPostToChannel(pool, uid, channelId))) {
+    return NextResponse.json({ error: 'forbidden_read_only_channel' }, { status: 403 })
   }
 
   const id = randomUUID()
@@ -125,6 +129,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE — cancel a scheduled message */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

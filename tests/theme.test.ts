@@ -5,7 +5,7 @@
  * (localStorage, matchMedia, document) are mocked or skipped.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { ThemePreference } from '@/lib/theme'
+import type { ThemePreference } from '@/lib/ui/theme'
 
 // ── Type contracts ───────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ describe('Theme — readThemePreference (server-side)', () => {
     // The lib guards with typeof window === 'undefined'
     // In vitest (node env), window is undefined by default unless jsdom is used
     // We import fresh and test the exported function directly
-    const { readThemePreference } = await import('@/lib/theme')
+    const { readThemePreference } = await import('@/lib/ui/theme')
     // In node env, this should return 'system' as fallback
     const result = readThemePreference()
     // Either system (no window) or a valid preference
@@ -40,7 +40,7 @@ describe('Theme — readThemePreference (server-side)', () => {
 
 describe('Theme — readScheduleConfig (defaults)', () => {
   it('returns default schedule when window is unavailable', async () => {
-    const { readScheduleConfig } = await import('@/lib/theme')
+    const { readScheduleConfig } = await import('@/lib/ui/theme')
     const config = readScheduleConfig()
     // Should return the default schedule
     expect(config).toHaveProperty('darkStart')

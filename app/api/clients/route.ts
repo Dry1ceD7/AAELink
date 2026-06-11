@@ -1,10 +1,10 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * GET /api/clients — list client profiles for a workspace.
@@ -100,11 +100,22 @@ async function _POST(req: NextRequest) {
   const now = Date.now()
   const id = randomUUID()
 
+  // Write the legacy flat address columns and the canonical JSONB blob in
+  // one shot. The JSONB form is what the Puzzle Box pipeline reads.
+  const addressJson = {
+    line1: String(body.address_line1 || '').trim() || undefined,
+    line2: String(body.address_line2 || '').trim() || undefined,
+    city: String(body.city || '').trim() || undefined,
+    state: String(body.state || '').trim() || undefined,
+    postal_code: String(body.postal_code || '').trim() || undefined,
+    country: String(body.country || '').trim() || undefined,
+  }
+
   await pool.query(
     `INSERT INTO aaelink.client_profiles
       (id, workspace_id, name, code, address_line1, address_line2, city, state, postal_code, country,
-       phone, email, website, legal_boilerplate, tax_id, metadata, created_by, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)`,
+       phone, email, website, legal_boilerplate, tax_id, metadata, address, created_by, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)`,
     [
       id, workspaceId, name,
       String(body.code || '').trim(),
@@ -120,6 +131,7 @@ async function _POST(req: NextRequest) {
       String(body.legal_boilerplate || '').trim(),
       String(body.tax_id || '').trim(),
       JSON.stringify(body.metadata || {}),
+      JSON.stringify(addressJson),
       uid, now
     ]
   )
@@ -138,6 +150,7 @@ async function _PATCH(req: NextRequest) {
   await ensureSchema()
 
   const body = (await req.json()) as {
+    id?: string
     client_id?: string
     name?: string
     code?: string
@@ -157,7 +170,8 @@ async function _PATCH(req: NextRequest) {
     metadata?: Record<string, unknown>
   }
 
-  const clientId = String(body.client_id || '').trim()
+  // Accept both `id` (legacy ClientsPanel) and `client_id` (newer callers)
+  const clientId = String(body.client_id || body.id || '').trim()
   if (!clientId) return NextResponse.json({ error: 'client_id_required' }, { status: 400 })
 
   const { rows } = await pool.query<{ workspace_id: string }>(
@@ -182,6 +196,29 @@ async function _PATCH(req: NextRequest) {
       updates.push(`${f} = $${params.length}`)
     }
   }
+
+  // Whenever any address field is updated, also rewrite the JSONB `address`
+  // blob the Puzzle Box pipeline reads from. Idempotent.
+  const addressFieldNames = ['address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country'] as const
+  if (addressFieldNames.some(f => body[f] !== undefined)) {
+    const addressJson = {
+      line1: body.address_line1 !== undefined ? String(body.address_line1).trim() || undefined : undefined,
+      line2: body.address_line2 !== undefined ? String(body.address_line2).trim() || undefined : undefined,
+      city: body.city !== undefined ? String(body.city).trim() || undefined : undefined,
+      state: body.state !== undefined ? String(body.state).trim() || undefined : undefined,
+      postal_code: body.postal_code !== undefined ? String(body.postal_code).trim() || undefined : undefined,
+      country: body.country !== undefined ? String(body.country).trim() || undefined : undefined,
+    }
+    // Merge with existing JSONB to preserve fields that weren't part of this PATCH
+    const { rows: cur } = await pool.query<{ address: Record<string, string> | string }>(
+      `SELECT address FROM aaelink.client_profiles WHERE id = $1`, [clientId]
+    )
+    const existing = cur[0]?.address
+    const existingObj = typeof existing === 'string' ? JSON.parse(existing || '{}') : (existing || {})
+    const merged = { ...existingObj, ...Object.fromEntries(Object.entries(addressJson).filter(([, v]) => v !== undefined)) }
+    params.push(JSON.stringify(merged))
+    updates.push(`address = $${params.length}`)
+  }
   if (body.metadata !== undefined) {
     params.push(JSON.stringify(body.metadata))
     updates.push(`metadata = $${params.length}`)
@@ -195,7 +232,32 @@ async function _PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
+/** DELETE /api/clients — remove a client profile (workspace member). */
+async function _DELETE(req: NextRequest) {
+  const uid = await readSessionUserId()
+  if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const pool = getPool()
+  if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
+  await ensureSchema()
+
+  const body = (await req.json().catch(() => ({}))) as { id?: string; client_id?: string }
+  const clientId = String(body.client_id || body.id || '').trim()
+  if (!clientId) return NextResponse.json({ error: 'client_id_required' }, { status: 400 })
+
+  const { rows } = await pool.query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM aaelink.client_profiles WHERE id = $1`, [clientId]
+  )
+  if (!rows[0]) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (!(await isWorkspaceMember(pool, uid, rows[0].workspace_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  await pool.query(`DELETE FROM aaelink.client_profiles WHERE id = $1`, [clientId])
+  return NextResponse.json({ ok: true })
+}
+
 // ── Traced exports ──────────────────────────────────────────────────
 export const GET    = tracedRoute('GET', '/api/clients', _GET)
 export const POST   = tracedRoute('POST', '/api/clients', _POST)
 export const PATCH  = tracedRoute('PATCH', '/api/clients', _PATCH)
+export const DELETE = tracedRoute('DELETE', '/api/clients', _DELETE)

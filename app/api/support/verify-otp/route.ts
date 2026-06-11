@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { verifyPassword } from '@/lib/password'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { verifyPassword } from '@/lib/auth/password'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   createSupportContactSession,
   setSupportSessionCookie
-} from '@/lib/supportSession'
+} from '@/lib/auth/supportSession'
 
 async function _POST(req: Request) {
   const pool = getPool()

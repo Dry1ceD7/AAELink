@@ -2,7 +2,7 @@
  * AAELink — DB Pool Tests
  */
 import { describe, it, expect } from 'vitest'
-import { getPool } from '@/lib/db'
+import { getPool } from '@/lib/infra/db'
 
 describe('DB — getPool', () => {
   it('returns null when DATABASE_URL not set', () => {

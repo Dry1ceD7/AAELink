@@ -1,9 +1,10 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Clips API — short video/audio recordings attached to channels/DMs.
@@ -120,7 +121,7 @@ async function _POST(req: NextRequest) {
     await pool.query(`
       INSERT INTO aaelink.jobs
         (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
-      VALUES ($1, 'compliance_export', 'pending', 5, $2, $3, 3, 0, $4, $3)
+      VALUES ($1, 'clip_transcription', 'pending', 5, $2, $3, 3, 0, $4, $3)
     `, [randomUUID(), JSON.stringify({ clip_id: id, file_id: fileId, action: 'transcribe' }), now, uid])
   }
 

@@ -2,8 +2,8 @@
  * AAELink — Notification Schedule Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { evaluateNotification, checkKeywordMatch, suppressionReason } from '@/lib/notificationSchedule'
-import type { UserPreferences } from '@/lib/userPreferences'
+import { evaluateNotification, checkKeywordMatch, suppressionReason } from '@/lib/notifications/notificationSchedule'
+import type { UserPreferences } from '@/lib/ui/userPreferences'
 
 function basePrefs(overrides: Partial<UserPreferences> = {}): UserPreferences {
   return {
@@ -244,8 +244,8 @@ describe('NotificationSchedule — checkKeywordMatch', () => {
     expect(checkKeywordMatch('critical bug found', prefs)).toBe(true)
     expect(checkKeywordMatch('normal update', prefs)).toBe(false)
   })
-  it('matches partial word', () => {
-    expect(checkKeywordMatch('urgently needed', basePrefs({ notifyKeywords: ['urgent'] }))).toBe(true)
+  it('does not match partial word (whole-word matching)', () => {
+    expect(checkKeywordMatch('urgently needed', basePrefs({ notifyKeywords: ['urgent'] }))).toBe(false)
   })
   it('handles empty message', () => {
     expect(checkKeywordMatch('', basePrefs({ notifyKeywords: ['urgent'] }))).toBe(false)

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 const VALID_STATUSES = ['online', 'away', 'dnd', 'offline']
 
@@ -15,10 +15,30 @@ async function _GET() {
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const { rows } = await pool.query(
-    `SELECT status, custom_text FROM aaelink.user_status WHERE user_id = $1`,
+    `SELECT status, custom_text, expires_at FROM aaelink.user_status WHERE user_id = $1`,
     [uid]
   )
-  const row = rows[0] as { status: string; custom_text: string } | undefined
+  const row = rows[0] as { status: string; custom_text: string; expires_at: string } | undefined
+
+  // Proactively clear an expired custom status (best-effort). expires_at is epoch
+  // ms (matching _PUT). On expiry, clear the user_status row and mirror the clear
+  // to the users table exactly as _PUT mirrors a set.
+  const expiresAt = Number(row?.expires_at) || 0
+  if (row && expiresAt > 0 && expiresAt < Date.now()) {
+    const now = Date.now()
+    await pool
+      .query(
+        `WITH cleared AS (
+           UPDATE aaelink.user_status
+           SET status = 'online', custom_text = '', updated_at = $2, expires_at = 0
+           WHERE user_id = $1
+         )
+         UPDATE aaelink.users SET status_text = '', status_emoji = '' WHERE id = $1`,
+        [uid, now]
+      )
+      .catch(() => {})
+    return NextResponse.json({ status: 'online', custom_text: '' })
+  }
 
   return NextResponse.json({
     status: row?.status || 'online',

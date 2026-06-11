@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Observability / Metrics API — platform telemetry for monitoring dashboards.
@@ -93,14 +93,16 @@ async function _GET(req: NextRequest) {
   `, [since, now])
 
   // === File Upload Metrics ===
+  // Canonical file table is aaelink.file_attachments (migration 033/034); the
+  // legacy aaelink.file_uploads table never existed in the migration runner.
   const { rows: [fileMetrics] } = await pool.query<{
     uploads_period: string; total_bytes: string
   }>(`
     SELECT
       COUNT(*)::text AS uploads_period,
-      COALESCE(SUM(size_bytes), 0)::text AS total_bytes
-    FROM aaelink.file_uploads
-    WHERE created_at > $1
+      COALESCE(SUM(size), 0)::text AS total_bytes
+    FROM aaelink.file_attachments
+    WHERE created_at > $1 AND deleted_at = 0
   `, [since])
 
   // === Notification Metrics ===
@@ -114,9 +116,11 @@ async function _GET(req: NextRequest) {
   `, [since])
 
   // === Reaction Metrics ===
+  // Canonical reaction table is aaelink.message_reactions (migrate.ts:134);
+  // aaelink.reactions never existed in the migration runner.
   const { rows: [reactionMetrics] } = await pool.query<{ reactions_period: string }>(`
     SELECT COUNT(*)::text AS reactions_period
-    FROM aaelink.reactions
+    FROM aaelink.message_reactions
     WHERE created_at > $1
   `, [since])
 

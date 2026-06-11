@@ -2,7 +2,7 @@
  * AAELink — Notification Preferences Type Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { NotificationPrefRule } from '@/lib/notificationPrefs'
+import type { NotificationPrefRule } from '@/lib/notifications/notificationPrefs'
 
 describe('NotificationPrefs — NotificationPrefRule type', () => {
   it('accepts mentions', () => {

@@ -1,9 +1,14 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { applyDlpToMessage } from '@/lib/enterprise/dlpInterceptor'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { isChannelArchived, userCanPostToChannel, userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
 
 /**
  * Message Forwarding API (Slack "Share message" / "Forward to channel").
@@ -15,6 +20,8 @@ import { tracedRoute } from '@/lib/tracedRoute'
  */
 
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -46,6 +53,14 @@ async function _POST(req: NextRequest) {
 
   const original = msgRows[0]
 
+  // Source-read authz (IDOR guard): the requester must be able to read the
+  // channel the original message lives in before they may forward its content.
+  // Deny with the SAME shape as message-not-found so this never reveals whether
+  // a message exists in a channel the caller cannot see (no existence oracle).
+  if (!(await userCanReadChannel(pool, uid, original.channel_id))) {
+    return NextResponse.json({ error: 'message_not_found' }, { status: 404 })
+  }
+
   // Get the original author info
   const { rows: authorRows } = await pool.query<{ username: string; first_name: string; last_name: string }>(
     `SELECT username, first_name, last_name FROM aaelink.users WHERE id = $1`,
@@ -63,12 +78,11 @@ async function _POST(req: NextRequest) {
   )
   if (!targetCheck[0]) return NextResponse.json({ error: 'target_channel_not_found' }, { status: 404 })
 
-  if (targetCheck[0].type === 'P') {
-    const { rows: membership } = await pool.query(
-      `SELECT 1 FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`,
-      [targetChannelId, uid]
-    )
-    if (!membership[0]) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (await isChannelArchived(pool, targetChannelId)) {
+    return NextResponse.json({ error: 'channel_archived' }, { status: 403 })
+  }
+  if (!(await userCanPostToChannel(pool, uid, targetChannelId))) {
+    return NextResponse.json({ error: 'forbidden_read_only_channel' }, { status: 403 })
   }
 
   // Get source channel name for attribution
@@ -88,6 +102,11 @@ async function _POST(req: NextRequest) {
     forwardedBody += `\n\n${comment}`
   }
 
+  // DLP check on the forwarded body before persisting.
+  const dlp = await applyDlpToMessage({ content: forwardedBody, userId: uid, channelId: targetChannelId })
+  if (!dlp.allowed) return NextResponse.json({ error: 'dlp_blocked' }, { status: 403 })
+  const safeBody = dlp.content
+
   // Create the forwarded message
   const newId = randomUUID()
   const now = Date.now()
@@ -95,7 +114,7 @@ async function _POST(req: NextRequest) {
   await pool.query(
     `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, '', $5, $5)`,
-    [newId, targetChannelId, uid, forwardedBody, now]
+    [newId, targetChannelId, uid, safeBody, now]
   )
 
   // Record in forwarding log for analytics
@@ -104,6 +123,21 @@ async function _POST(req: NextRequest) {
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [randomUUID(), messageId, newId, original.channel_id, targetChannelId, uid, now]
   ).catch(() => { /* best-effort tracking */ })
+
+  // Audit: forwarding moves content across channel boundaries (compliance scope).
+  writeAuditLog({
+    pool,
+    actorId: uid,
+    action: 'message.forward',
+    resourceKind: 'message',
+    resourceId: newId,
+    ipAddress: extractIp(req),
+    metadata: {
+      original_message_id: messageId,
+      source_channel_id: original.channel_id,
+      target_channel_id: targetChannelId,
+    },
+  })
 
   return NextResponse.json({
     ok: true,

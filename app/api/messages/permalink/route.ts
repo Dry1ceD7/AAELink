@@ -1,8 +1,10 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * GET /api/messages/permalink?message_id=...
@@ -46,6 +48,9 @@ async function _GET(req: NextRequest) {
   if (!rows[0]) return NextResponse.json({ error: 'message_not_found' }, { status: 404 })
 
   const msg = rows[0]
+  if (!(await userCanReadChannel(pool, uid, msg.channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
   const isThreadReply = msg.root_id.length > 0
 
   // Get the app URL for building the permalink

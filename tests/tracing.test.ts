@@ -5,7 +5,7 @@
  *        W3C traceparent parsing, and withTracing wrapper.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { trace, metrics, withTracing } from '@/lib/tracing'
+import { trace, metrics, withTracing } from '@/lib/infra/tracing'
 
 describe('Tracing Module', () => {
   beforeEach(() => {

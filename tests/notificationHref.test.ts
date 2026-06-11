@@ -2,8 +2,8 @@
  * AAELink — Notification Href Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { hrefForNotification } from '@/lib/notificationHref'
-import type { ApiNotification } from '@/lib/notificationTypes'
+import { hrefForNotification } from '@/lib/notifications/notificationHref'
+import type { ApiNotification } from '@/lib/notifications/notificationTypes'
 
 function makeNotification(overrides: Partial<ApiNotification> = {}): ApiNotification {
   return {

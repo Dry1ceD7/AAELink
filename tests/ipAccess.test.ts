@@ -11,7 +11,7 @@ import {
   isPrivateIp,
   extractClientIp,
   IpAccessController,
-} from '@/lib/ipAccess'
+} from '@/lib/auth/ipAccess'
 
 // ── IP Parsing ───────────────────────────────────────────────────────
 

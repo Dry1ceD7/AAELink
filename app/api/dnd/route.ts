@@ -1,8 +1,11 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { isDndActiveNow } from '@/lib/notifications/dndWindow'
 
 /**
  * Do Not Disturb (DND) schedule API.
@@ -86,6 +89,8 @@ async function _GET(req: NextRequest) {
 /** PUT — update DND schedule */
 async function _PUT(req: NextRequest) {
   await ensureSchema()
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -125,6 +130,8 @@ async function _PUT(req: NextRequest) {
 /** POST — quick snooze for N minutes */
 async function _POST(req: NextRequest) {
   await ensureSchema()
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
@@ -170,27 +177,6 @@ function validateTime(t?: string): string | null {
   const min = Number(m[2])
   if (h < 0 || h > 23 || min < 0 || min > 59) return null
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
-}
-
-function isDndActiveNow(startTime: string, endTime: string, _timezone: string): boolean {
-  try {
-    const now = new Date()
-    const nowMinutes = now.getHours() * 60 + now.getMinutes()
-    const [sh, sm] = startTime.split(':').map(Number)
-    const [eh, em] = endTime.split(':').map(Number)
-    const startMin = sh * 60 + sm
-    const endMin = eh * 60 + em
-
-    if (startMin < endMin) {
-      // Same-day range: e.g. 09:00 – 17:00
-      return nowMinutes >= startMin && nowMinutes < endMin
-    } else {
-      // Overnight range: e.g. 22:00 – 08:00
-      return nowMinutes >= startMin || nowMinutes < endMin
-    }
-  } catch {
-    return false
-  }
 }
 
 // ── Traced exports ──────────────────────────────────────────────────

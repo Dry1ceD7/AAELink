@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabListKeyAction } from '@/app/components/a11y/tabListKeyHandler'
+import { tabListKeyAction } from '@/components/a11y/tabListKeyHandler'
 
 describe('tabListKeyAction', () => {
   describe('horizontal orientation', () => {

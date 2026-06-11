@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Reminder Dispatcher — POST /api/reminders/dispatch

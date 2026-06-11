@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import './styles.css'
 import { Lato, Open_Sans } from 'next/font/google'
-import { DesktopNavigateSubscriber } from './components/DesktopNavigateSubscriber'
-import { UiDensityBoot } from './components/UiDensityBoot'
-import { ThemeBoot } from './components/ThemeBoot'
-import { PreferencesBoot } from './components/PreferencesBoot'
+import { DesktopNavigateSubscriber } from '@/components/shared/DesktopNavigateSubscriber'
+import { UiDensityBoot } from '@/components/shared/UiDensityBoot'
+import { ThemeBoot } from '@/components/shared/ThemeBoot'
+import { PreferencesBoot } from '@/components/shared/PreferencesBoot'
 
 const lato = Lato({
   subsets: ['latin'],
@@ -71,7 +71,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     var p = JSON.parse(raw);
                     if (p.accentColor) document.documentElement.style.setProperty('--aae-accent', p.accentColor);
                     if (p.uiScale && p.uiScale !== 100) document.documentElement.style.fontSize = p.uiScale + '%';
-                    if (p.messageDensity) document.documentElement.setAttribute('data-density', p.messageDensity);
+                    if (p.messageDensity) {
+                      // Drive a single app-wide density signal off the same UI-density source
+                      // (aaelink_ui_density / data-mm-density). data-density on <html> lets the
+                      // WHOLE app respond -- sidebar, header, composer, panels, timeline -- in
+                      // lockstep, not just the message timeline (no FOUC on cold load).
+                      var compact = p.messageDensity === 'compact';
+                      document.documentElement.setAttribute('data-density', compact ? 'compact' : 'comfortable');
+                      if (compact) {
+                        document.documentElement.setAttribute('data-mm-density', 'compact');
+                        try { localStorage.setItem('aaelink_ui_density', 'compact'); } catch (e) {}
+                      } else {
+                        document.documentElement.removeAttribute('data-mm-density');
+                        try { localStorage.setItem('aaelink_ui_density', 'comfortable'); } catch (e) {}
+                      }
+                    }
                     if (p.highContrast) document.documentElement.classList.add('high-contrast');
                     if (p.reduceMotion) document.documentElement.classList.add('reduce-motion');
                   }

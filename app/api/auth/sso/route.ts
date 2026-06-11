@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { encryptSecret, ssoSecretKeyConfigured } from '@/lib/auth/ssoSecretCrypto'
+import { fetchSamlIdpMetadata } from '@/lib/auth/samlMetadata'
 
 /**
  * SSO Configuration API — manage SAML/OIDC identity provider settings.
@@ -76,12 +78,13 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     name?: string; type?: string
     issuer?: string; metadata_url?: string; discovery_url?: string
-    client_id?: string; client_secret?: string
+    client_id?: string; client_secret?: string; scopes?: string
     callback_url?: string
-    jit_provisioning?: boolean; default_role?: string
+    jit_provisioning?: boolean; default_role?: string; default_workspace_id?: string
     attribute_mapping?: Record<string, string>
     group_role_mapping?: Record<string, string>
     session_lifetime_hours?: number; enforce_mfa?: boolean
+    saml_entry_point?: string; saml_idp_cert?: string; saml_audience?: string
   }
 
   const name = String(body.name || '').trim()
@@ -90,42 +93,88 @@ async function _POST(req: NextRequest) {
   const VALID_TYPES = ['saml', 'oidc', 'oauth2']
   const type = VALID_TYPES.includes(body.type || '') ? body.type! : 'oidc'
 
-  // Validate type-specific requirements
+  // Validate type-specific requirements.
+  // SAML can be configured EITHER via an IdP metadata_url (auto-discovers the
+  // entry point + signing cert) OR via explicit saml_entry_point + saml_idp_cert.
+  // Only require the explicit pair when no metadata_url was supplied.
   if (type === 'saml' && !body.metadata_url) {
-    return NextResponse.json({ error: 'metadata_url_required_for_saml' }, { status: 400 })
+    if (!body.saml_entry_point) {
+      return NextResponse.json({ error: 'saml_entry_point_required' }, { status: 400 })
+    }
+    if (!body.saml_idp_cert) {
+      return NextResponse.json({ error: 'saml_idp_cert_required' }, { status: 400 })
+    }
   }
   if ((type === 'oidc' || type === 'oauth2') && (!body.client_id || !body.client_secret)) {
     return NextResponse.json({ error: 'client_id_and_client_secret_required' }, { status: 400 })
   }
+  if ((type === 'oidc' || type === 'oauth2') && !body.issuer && !body.discovery_url) {
+    return NextResponse.json({ error: 'issuer_or_discovery_url_required' }, { status: 400 })
+  }
+  // We only persist a recoverable (AES-256-GCM) client secret when one is
+  // actually supplied. The secret-encryption key is therefore only required when
+  // there is a secret to encrypt — otherwise providers without a stored secret
+  // (SAML, or metadata-only config) must still save as before.
+  if (body.client_secret && !ssoSecretKeyConfigured()) {
+    return NextResponse.json({ error: 'sso_secret_key_unconfigured' }, { status: 503 })
+  }
 
   const id = randomUUID()
   const now = Date.now()
+  // Store BOTH a non-recoverable hash (legacy display) and a recoverable,
+  // AES-256-GCM ciphertext used by the RP code exchange. Never the plaintext.
+  const secretEnc = body.client_secret ? encryptSecret(body.client_secret) : ''
+
+  // SAML metadata auto-discovery: when an IdP metadata_url is supplied, fetch +
+  // parse it to fill the entry point + signing cert set (ADR 0015). Explicit
+  // values still win for the single-cert/entry-point fields if also provided.
+  let samlEntryPoint = body.saml_entry_point || ''
+  let samlIdpCert = body.saml_idp_cert || ''
+  let samlIdpCerts: string[] = []
+  let resolvedIssuer = body.issuer || ''
+  if (type === 'saml' && body.metadata_url) {
+    try {
+      const md = await fetchSamlIdpMetadata(body.metadata_url)
+      samlEntryPoint = samlEntryPoint || md.entryPoint
+      samlIdpCerts = md.certs
+      samlIdpCert = samlIdpCert || md.certs[0] || ''
+      resolvedIssuer = resolvedIssuer || md.entityId
+    } catch {
+      return NextResponse.json({ error: 'saml_metadata_fetch_failed' }, { status: 400 })
+    }
+  }
 
   await pool.query(`
     INSERT INTO aaelink.sso_providers
       (id, name, type, issuer, metadata_url, discovery_url,
-       client_id, client_secret_hash, callback_url,
-       jit_provisioning, default_role, attribute_mapping, group_role_mapping,
+       client_id, client_secret_hash, client_secret_enc, callback_url, scopes,
+       jit_provisioning, default_role, default_workspace_id,
+       attribute_mapping, group_role_mapping,
+       saml_entry_point, saml_idp_cert, saml_idp_certs, saml_audience,
        session_lifetime_hours, enforce_mfa, is_active,
        login_count, last_login_at, created_by, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-            $10, $11, $12, $13, $14, $15, true,
-            0, 0, $16, $17, $17)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, true,
+            0, 0, $23, $24, $24)
   `, [
     id, name, type,
-    body.issuer || '', body.metadata_url || '', body.discovery_url || '',
+    resolvedIssuer, body.metadata_url || '', body.discovery_url || '',
     body.client_id || '', body.client_secret ? `sha256:${body.client_secret.slice(0, 8)}***` : '',
+    secretEnc,
     body.callback_url || `/api/auth/sso/callback/${id}`,
+    body.scopes || 'openid profile email',
     body.jit_provisioning !== false, body.default_role || 'member',
+    body.default_workspace_id || null,
     JSON.stringify(body.attribute_mapping || { email: 'email', name: 'name', groups: 'groups' }),
     JSON.stringify(body.group_role_mapping || {}),
+    samlEntryPoint, samlIdpCert, JSON.stringify(samlIdpCerts), body.saml_audience || '',
     Math.min(Math.max(body.session_lifetime_hours || 24, 1), 720),
     body.enforce_mfa || false,
     uid, now
   ])
 
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'sso_provider_created', 'sso', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({ name, type }), now])
 

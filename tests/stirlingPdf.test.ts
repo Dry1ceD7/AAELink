@@ -39,7 +39,7 @@ describe('StirlingPdf — assertUrl', () => {
 
 describe('StirlingPdf — isStirlingAvailable (unconfigured)', () => {
   it('returns false without STIRLING_URL', async () => {
-    const { isStirlingAvailable } = await import('@/lib/stirlingPdf')
+    const { isStirlingAvailable } = await import('@/lib/documents/stirlingPdf')
     const result = await isStirlingAvailable()
     expect(result).toBe(false)
   })

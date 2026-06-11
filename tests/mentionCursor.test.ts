@@ -2,7 +2,7 @@
  * AAELink — Mention Cursor Tests
  */
 import { describe, it, expect } from 'vitest'
-import { mentionPrefixAtCursor, applyMentionPick } from '@/lib/mentionCursor'
+import { mentionPrefixAtCursor, applyMentionPick } from '@/lib/messaging/mentionCursor'
 
 describe('MentionCursor — mentionPrefixAtCursor', () => {
   it('detects @query at cursor', () => {

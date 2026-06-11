@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { turnConfigured } from '@/lib/calls/turnCredentials'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { emitWebhookEvent } from '@/lib/webhooks/webhookEmitter'
 
 /**
  * Calls & Huddles API — call signaling, room management, and screen share sessions.
@@ -52,8 +56,12 @@ async function _GET(req: NextRequest) {
       noise_suppression: true,
       screen_share_enabled: true,
       huddles_enabled: true,
-      turn_servers: [{ urls: 'turn:turn.aaelink.local:3478', username: '', credential: '' }],
-      stun_servers: ['stun:stun.l.google.com:19302'],
+      // Per-user ephemeral TURN credentials are issued at GET /api/calls/ice;
+      // this admin view reports the configured server URLs + whether a TURN
+      // shared secret is present, never static credentials.
+      turn_servers: (process.env.TURN_URLS || 'turn:turn.aaelink.local:3478').split(',').map(s => s.trim()).filter(Boolean),
+      turn_configured: turnConfigured(),
+      stun_servers: (process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',').map(s => s.trim()).filter(Boolean),
       ice_timeout_seconds: 30,
     }
     let config = defaultConfig
@@ -93,6 +101,8 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -141,6 +151,13 @@ async function _POST(req: NextRequest) {
       callType === 'screen_share',
       now])
 
+  // Emit call.started best-effort — must not block or fail the create.
+  try {
+    await emitWebhookEvent(pool, 'call.started', {
+      room_id: id, call_type: callType, channel_id: body.channel_id || null, created_by: uid,
+    }, uid, body.channel_id || undefined)
+  } catch { /* best-effort */ }
+
   return NextResponse.json({
     room: { id, call_type: callType, status: 'active', created_at: now },
     participant: { role: 'host', joined_at: now },
@@ -148,6 +165,8 @@ async function _POST(req: NextRequest) {
 }
 
 async function _PUT(req: NextRequest) {
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -223,8 +242,51 @@ async function _PUT(req: NextRequest) {
   }
 
   if (body.action === 'end') {
+    // Only the room creator (host) or a super_admin may end a call for everyone.
+    const { rows: roomRows } = await pool.query<{ created_by: string; status: string; ended_at: string }>(
+      `SELECT created_by, status, ended_at::text AS ended_at FROM aaelink.call_rooms WHERE id = $1`, [roomId]
+    )
+    if (!roomRows[0]) return NextResponse.json({ error: 'room_not_found' }, { status: 404 })
+    if (roomRows[0].created_by !== uid) {
+      const { rows: uRows } = await pool.query<{ platform_role: string }>(
+        `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
+      )
+      if (uRows[0]?.platform_role !== 'super_admin') {
+        return NextResponse.json({ error: 'host_or_admin_only' }, { status: 403 })
+      }
+    }
+    // Idempotent: re-ending an already-ended room must not rewrite ended_at or
+    // emit a phantom second audit row.
+    if (roomRows[0].status !== 'active') {
+      return NextResponse.json({ ok: true, ended_at: Number(roomRows[0].ended_at || 0) })
+    }
+    // Count the participants this ends the call for (compliance trail).
+    const { rows: [endCount] } = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM aaelink.call_participants WHERE room_id = $1 AND left_at = 0`, [roomId]
+    )
     await pool.query(`UPDATE aaelink.call_rooms SET status = 'ended', ended_at = $1 WHERE id = $2`, [now, roomId])
     await pool.query(`UPDATE aaelink.call_participants SET left_at = $1 WHERE room_id = $2 AND left_at = 0`, [now, roomId])
+
+    // Ending a call removes every active participant — a write that affects other
+    // users, so it is audited (Hard Rule 5).
+    writeAuditLog({
+      pool,
+      actorId: uid,
+      action: 'call.end',
+      resourceKind: 'call_room',
+      resourceId: roomId,
+      ipAddress: extractIp(req),
+      userAgent: req.headers.get('user-agent') || '',
+      metadata: { ended_at: now, participants_ended: Number(endCount?.n || 0) },
+    })
+
+    // Emit call.ended best-effort — must not block or fail the end action.
+    try {
+      await emitWebhookEvent(pool, 'call.ended', {
+        room_id: roomId, ended_at: now, ended_by: uid,
+      }, uid)
+    } catch { /* best-effort */ }
+
     return NextResponse.json({ ok: true, ended_at: now })
   }
 

@@ -2,7 +2,7 @@
  * AAELink — Composer Markdown & Formatting Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { applyComposerFormat, applyComposerLink, type ComposerFormatKindNoLink } from '@/lib/composerMarkdown'
+import { applyComposerFormat, applyComposerLink, type ComposerFormatKindNoLink } from '@/lib/messaging/composerMarkdown'
 
 // ── Bold ────────────────────────────────────────────────────────────
 

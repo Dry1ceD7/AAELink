@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Conversation History API — Slack conversations.history parity.
@@ -47,20 +47,20 @@ async function _GET(req: NextRequest) {
   }
 
   let query = `
-    SELECT m.id, m.channel_id, m.user_id, m.content, m.type, m.root_id,
+    SELECT m.id, m.channel_id, m.user_id, m.body, m.root_id,
            m.created_at, m.updated_at,
            u.display_name, u.avatar_url,
-           (SELECT COUNT(*)::int FROM aaelink.messages r WHERE r.root_id = m.id) AS reply_count,
-           (SELECT json_agg(json_build_object('name', me.emoji, 'count', me.count))
+           (SELECT COUNT(*)::int FROM aaelink.messages r WHERE r.root_id = m.id AND r.root_id <> '') AS reply_count,
+           (SELECT json_agg(json_build_object('name', me.reaction_key, 'count', me.count))
             FROM (
-              SELECT mr.emoji, COUNT(*)::int AS count
+              SELECT mr.reaction_key, COUNT(*)::int AS count
               FROM aaelink.message_reactions mr WHERE mr.message_id = m.id
-              GROUP BY mr.emoji
+              GROUP BY mr.reaction_key
             ) me
            ) AS reactions
     FROM aaelink.messages m
     LEFT JOIN aaelink.users u ON u.id = m.user_id
-    WHERE m.channel_id = $1 AND m.root_id IS NULL
+    WHERE m.channel_id = $1 AND m.root_id = ''
   `
   const params: unknown[] = [channelId]
 
@@ -84,11 +84,11 @@ async function _GET(req: NextRequest) {
   const hasMore = rows.length > limit
   const messages = rows.slice(0, limit).map(r => {
     return {
-      type: r.type || 'message',
+      type: 'message',
       user: r.user_id,
       user_name: r.display_name,
       user_avatar: r.avatar_url,
-      text: r.content,
+      text: r.body,
       ts: String(r.created_at),
       thread_ts: r.root_id ? String(r.root_id) : undefined,
       reply_count: r.reply_count || 0,

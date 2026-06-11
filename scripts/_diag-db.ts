@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { getPool } from '../lib/db'
+import { getPool } from '../lib/infra/db'
 
 function applyEnvFile(p: string) {
   if (!existsSync(p)) return

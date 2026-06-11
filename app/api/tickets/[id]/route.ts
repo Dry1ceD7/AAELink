@@ -1,13 +1,13 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { canViewTicket, userIsItForWorkspace } from '@/lib/ticketAccess'
-import { isTicketStatus, isTicketPriority, isValidTransition, calculateSlaDue, type TicketPriority, type TicketStatus } from '@/lib/slaEngine'
-import { notifyTicketAssignment, notifyTicketStatusChange } from '@/lib/notificationsServer'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { canViewTicket, userIsItForWorkspace } from '@/lib/enterprise/ticketAccess'
+import { isTicketStatus, isTicketPriority, isValidTransition, calculateSlaDue, type TicketPriority, type TicketStatus } from '@/lib/enterprise/slaEngine'
+import { notifyTicketAssignment, notifyTicketStatusChange } from '@/lib/notifications/notificationsServer'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // ── GET /api/tickets/[id] — detailed view with comments + activity + viewers ─
 

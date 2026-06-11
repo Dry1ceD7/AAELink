@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { SESSION_COOKIE, sessionCookieSecure } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   SUPPORT_SESSION_COOKIE,
   clearSupportSessionCookie,
   revokeSupportContactSessionByCookieId
-} from '@/lib/supportSession'
+} from '@/lib/auth/supportSession'
 
 async function _POST() {
   const pool = getPool()

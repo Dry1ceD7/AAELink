@@ -2,7 +2,7 @@
  * AAELink — Support OTP Rate Limit Tests
  */
 import { describe, it, expect } from 'vitest'
-import { supportOtpRateLimitHit } from '@/lib/supportOtpRateLimit'
+import { supportOtpRateLimitHit } from '@/lib/auth/supportOtpRateLimit'
 
 describe('SupportOtpRateLimit', () => {
   it('allows first 5 requests', () => {

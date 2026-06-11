@@ -2,7 +2,7 @@
  * AAELink — Account Request ID Tests
  */
 import { describe, it, expect } from 'vitest'
-import { newAccountRequestId } from '@/lib/accountRequestId'
+import { newAccountRequestId } from '@/lib/ui/accountRequestId'
 
 describe('AccountRequestId', () => {
   it('returns 12-char hex string', () => {

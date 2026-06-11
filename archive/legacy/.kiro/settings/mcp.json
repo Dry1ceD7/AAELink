@@ -1,0 +1,74 @@
+{
+  "mcpServers": {
+    "aaelink-pg": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=restricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgres://mattermost:mattermost-dev-2026@127.0.0.1:30432/aaelink?sslmode=disable",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list_schemas",
+        "list_objects",
+        "get_object_details",
+        "explain_query",
+        "analyze_db_health",
+        "analyze_query_indexes",
+        "analyze_workload_indexes",
+        "get_top_queries",
+        "execute_sql"
+      ]
+    },
+    "aaelink-context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "resolve-library-id",
+        "get-library-docs",
+        "query-docs"
+      ]
+    },
+    "aaelink-fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "fetch"
+      ]
+    },
+    "aaelink-playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ],
+      "disabled": false,
+      "autoApprove": []
+    },
+    "aaelink-filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/d7y1ce/AAE/AAELink"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "list_directory",
+        "read_file",
+        "search_files",
+        "get_file_info"
+      ]
+    }
+  }
+}

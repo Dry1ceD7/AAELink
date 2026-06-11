@@ -2,7 +2,7 @@
  * Unit tests for lib/webhookEngine.ts — HMAC signing, backoff, and verification
  */
 import { describe, it, expect } from 'vitest'
-import { signPayload, verifySignature, calculateBackoffMs } from '@/lib/webhookEngine'
+import { signPayload, verifySignature, calculateBackoffMs } from '@/lib/webhooks/webhookEngine'
 
 describe('Webhook Engine', () => {
   describe('HMAC signing', () => {

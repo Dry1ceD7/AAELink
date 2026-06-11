@@ -20,18 +20,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Lint
-        run: npm run lint
+        run: bun run lint
       - name: Typecheck
-        run: npm run type-check
+        run: bun run type-check
       - name: Unit Tests
-        run: npm test
+        run: bun run test
       - name: Build
-        run: npm run build
+        run: bun run build
         env:
           DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
           AAELINK_OPEN_REGISTRATION: '1'
@@ -67,12 +68,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Run Integration Tests
-        run: npx vitest run --dir __tests__
+        run: bunx vitest run --dir __tests__
         env:
           DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
           TEST_DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
@@ -104,14 +106,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
       - name: Run E2E Tests
-        run: npm run e2e:chromium
+        run: bun run e2e:chromium
         env:
           DATABASE_URL: postgres://aaelink:aaelink@127.0.0.1:5432/aaelink
           AAELINK_OPEN_REGISTRATION: '1'

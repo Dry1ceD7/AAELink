@@ -1,9 +1,10 @@
 'use client'
 
-import { Menu, Search, Hash, Lock, Info, Pin, BellOff, Users } from 'lucide-react'
-import { ChannelHeaderDropdown } from '@/app/components/chat/ChannelHeaderDropdown'
-import { ChannelTopicInline } from '@/app/components/chat/ChannelTopicInline'
-import { NotificationsBell } from '@/app/components/NotificationsBell'
+import { Menu, Search, Hash, Lock, Info, Pin, Users, Folder } from 'lucide-react'
+import { ChannelHeaderDropdown } from '@/components/chat/ChannelHeaderDropdown'
+import { ChannelTopicInline } from '@/components/chat/ChannelTopicInline'
+import { ChannelNotificationPrefsPopover } from '@/components/chat/ChannelNotificationPrefsPopover'
+import { NotificationsBell } from '@/components/notifications/NotificationsBell'
 
 interface ChatHeaderProps {
   channel: { id: string; name: string; display_name: string; type?: string; purpose?: string } | null
@@ -27,6 +28,9 @@ interface ChatHeaderProps {
   streamUp: boolean
   meExists: boolean
   onOpenChannelNotifPrefs: () => void
+  /** Open the file browser in the right pane, pre-filtered to this channel. */
+  onOpenFiles?: () => void
+  filesPanelOpen?: boolean
 }
 
 export function ChatHeader({
@@ -49,7 +53,8 @@ export function ChatHeader({
   memberCount,
   streamUp,
   meExists,
-  onOpenChannelNotifPrefs,
+  onOpenFiles,
+  filesPanelOpen,
 }: ChatHeaderProps) {
   return (
     <header className="chat-header">
@@ -100,13 +105,19 @@ export function ChatHeader({
           onClick={onTogglePinnedPanel}>
           <Pin size={16} aria-hidden />
         </button>
+        {onOpenFiles && (
+          <button type="button" className={`mm-icon-btn${filesPanelOpen ? ' mm-icon-btn--active' : ''}`} title="Files"
+            aria-label="Channel files" aria-pressed={filesPanelOpen}
+            onClick={onOpenFiles}>
+            <Folder size={16} aria-hidden />
+          </button>
+        )}
         <NotificationsBell enabled={meExists} />
         {channel && channel.type !== 'D' && (
-          <button type="button" className="mm-icon-btn" title="Notification preferences"
-            aria-label="Notification preferences"
-            onClick={onOpenChannelNotifPrefs}>
-            <BellOff size={16} aria-hidden />
-          </button>
+          <ChannelNotificationPrefsPopover
+            channelId={channel.id}
+            channelName={channel.display_name || channel.name}
+          />
         )}
         <button type="button" className={`mm-icon-btn${memberListOpen ? ' mm-icon-btn--active' : ''}`} title="Members"
           aria-label="Channel members" aria-pressed={memberListOpen}

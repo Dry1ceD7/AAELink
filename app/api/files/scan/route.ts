@@ -1,9 +1,14 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { writeAuditLog, extractIp } from '@/lib/enterprise/auditLog'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { getScanPolicy, setScanPolicy } from '@/lib/files/scanGate'
 
 /**
  * File Scanning API — virus/malware scanning for uploaded files.
@@ -34,7 +39,7 @@ async function _GET(req: NextRequest) {
   const { rows: uRows } = await pool.query<{ platform_role: string }>(
     `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
   )
-  if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+  if (!isPlatformAdmin(uRows[0]?.platform_role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
@@ -70,23 +75,10 @@ async function _GET(req: NextRequest) {
     FROM aaelink.file_scans
   `)
 
-  // Get scan policy
-  const { rows: cfgRows } = await pool.query<{ value: string }>(
-    `SELECT value FROM aaelink.system_config WHERE key = 'file_scan_policy'`
-  )
-  const defaultPolicy = {
-    enabled: true,
-    scan_on_upload: true,
-    quarantine_infected: true,
-    max_file_size_mb: 100,
-    blocked_extensions: ['.exe', '.bat', '.cmd', '.scr', '.com', '.pif'],
-    scan_engine: 'clamav',
-    auto_delete_infected_after_days: 30,
-  }
-  let policy = defaultPolicy
-  if (cfgRows[0]?.value) {
-    try { policy = { ...defaultPolicy, ...JSON.parse(cfgRows[0].value) } } catch { /**/ }
-  }
+  // Get scan policy — single source of truth (lib/files/scanGate). This is the
+  // SAME shape the access gate, upload route and pipeline enforce, so the admin
+  // dashboard reads exactly what is enforced (no decorative divergence).
+  const policy = await getScanPolicy(pool)
 
   return NextResponse.json({
     scans: rows.map(s => ({
@@ -113,6 +105,10 @@ async function _POST(req: NextRequest) {
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
+  // Mutating route — fail-closed CSRF before any write (Hard Rule 4).
+  const csrf = await verifyCsrf(req)
+  if (csrf) return csrf
+
   const body = (await req.json().catch(() => ({}))) as {
     action?: 'scan_file' | 'update_policy'
     file_id?: string; filename?: string; file_size?: number; mime_type?: string
@@ -120,27 +116,33 @@ async function _POST(req: NextRequest) {
   }
 
   if (body.action === 'update_policy') {
-    // Admin-only
+    // Admin-only (org-wide policy mutation).
     const { rows: uRows } = await pool.query<{ platform_role: string }>(
       `SELECT platform_role FROM aaelink.users WHERE id = $1`, [uid]
     )
-    if (!['super_admin', 'platform_admin'].includes(uRows[0]?.platform_role || '')) {
+    const role = uRows[0]?.platform_role
+    if (!isPlatformAdmin(role)) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
 
-    const { rows: existing } = await pool.query<{ value: string }>(
-      `SELECT value FROM aaelink.system_config WHERE key = 'file_scan_policy'`
-    )
-    let current: Record<string, unknown> = {}
-    if (existing[0]?.value) { try { current = JSON.parse(existing[0].value) } catch { /**/ } }
-
-    const updated = { ...current, ...body.policy }
+    // Persist through the single source of truth: setScanPolicy coerces legacy
+    // keys, normalizes blocked_extensions and pins block_infected. The route can
+    // no longer clobber the enforced security flags.
+    const updated = await setScanPolicy(pool, (body.policy ?? {}) as never)
     const now = Date.now()
-    await pool.query(`
-      INSERT INTO aaelink.system_config (key, value, updated_at)
-      VALUES ('file_scan_policy', $1, $2)
-      ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = $2
-    `, [JSON.stringify(updated), now])
+
+    // Audit the org-wide policy change (Hard Rule 5).
+    writeAuditLog({
+      pool,
+      actorId: uid,
+      actorRole: role ?? '',
+      action: 'file.scan_policy.update',
+      resourceKind: 'system_config',
+      resourceId: 'file_scan_policy',
+      ipAddress: extractIp(req),
+      userAgent: req.headers.get('user-agent') ?? '',
+      metadata: { policy: updated },
+    })
 
     return NextResponse.json({ policy: updated, updated_at: now })
   }

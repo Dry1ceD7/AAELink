@@ -5,7 +5,7 @@
  * and execution logic.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { RetentionEngine, DEFAULT_RETENTION_POLICIES, type RetentionEntity } from '@/lib/retention'
+import { RetentionEngine, DEFAULT_RETENTION_POLICIES, type RetentionEntity } from '@/lib/enterprise/retention'
 
 describe('Data Retention Engine', () => {
   let engine: RetentionEngine
@@ -17,7 +17,7 @@ describe('Data Retention Engine', () => {
   it('loads default policies', () => {
     const policies = engine.getPolicies()
     expect(policies.length).toBe(DEFAULT_RETENTION_POLICIES.length)
-    expect(policies.length).toBe(10)
+    expect(policies.length).toBe(9) // read_state policy dropped in 04299563 (read-state unification)
   })
 
   it('gets specific policy by entity', () => {
@@ -99,5 +99,51 @@ describe('Data Retention Engine', () => {
       async () => ({ rowCount: 0, rows: [{ count: 0 }] })
     )
     expect(result.deleted).toBe(0)
+  })
+
+  it("pins the 'files' policy to the canonical file_attachments table (repoint)", () => {
+    // The phantom 'aaelink.files' never existed in the migration runner, so
+    // previews/execute silently caught the missing-relation error and reported a
+    // phantom 0. Repointed to the real canonical table so admin previews count
+    // real rows. This assertion pins the repoint per hard rule #8.
+    const p = engine.getPolicy('files')!
+    expect(p.table).toBe('aaelink.file_attachments')
+    expect(p.timestampColumn).toBe('created_at')
+  })
+
+  it("refuses to physically DELETE 'files' — degrades to a preview (no byte-blind purge)", async () => {
+    // file_attachments purges MUST go through retentionJob.deleteFiles (byte +
+    // dependent-row + legal-hold aware). The engine's generic batched DELETE has
+    // none of that, so execute('files') must NOT emit a DELETE even when enabled.
+    engine.updatePolicy('files', { enabled: true, retentionDays: 30 })
+    const seen: string[] = []
+    const result = await engine.execute(
+      'files',
+      async (sql) => {
+        seen.push(sql)
+        return { rowCount: 0, rows: [{ count: 7 }] }
+      },
+      false // explicitly NOT a dry run
+    )
+    // It ran a COUNT (preview), never a DELETE.
+    expect(seen.some(s => s.includes('DELETE'))).toBe(false)
+    expect(seen.some(s => s.includes('COUNT(*)'))).toBe(true)
+    // Reports a truthful preview count and is flagged as a dry run.
+    expect(result.deleted).toBe(7)
+    expect(result.dryRun).toBe(true)
+  })
+
+  it('still physically deletes a non-file entity (guard is files-only)', async () => {
+    engine.updatePolicy('sessions', { enabled: true, retentionDays: 90 })
+    const seen: string[] = []
+    await engine.execute(
+      'sessions',
+      async (sql) => {
+        seen.push(sql)
+        return { rowCount: 0, rows: [{ count: 0 }] }
+      },
+      false
+    )
+    expect(seen.some(s => s.includes('DELETE'))).toBe(true)
   })
 })

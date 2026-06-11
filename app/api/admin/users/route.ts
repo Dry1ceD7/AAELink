@@ -1,25 +1,32 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { getAdminSession } from '@/lib/adminAuth'
-import { hashPassword } from '@/lib/password'
-import { isItAdmin, isSuperAdmin } from '@/lib/platformRole'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { getAdminSession } from '@/lib/auth/adminAuth'
+import { hashPassword } from '@/lib/auth/password'
+import { getPasswordPolicy, validatePassword } from '@/lib/auth/passwordPolicy'
+import { isItAdmin, isSuperAdmin } from '@/lib/comms/platformRole'
 import { AAELINK_GLOBAL_WORKSPACE_ID } from '@/lib/constants'
-import { autoJoinDefaultChannels } from '@/lib/defaultChannel'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { autoJoinDefaultChannels } from '@/lib/channels/defaultChannel'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 const ALLOWED_ROLES = new Set(['', 'employee', 'it_employee', 'it_admin'])
 
-async function _GET() {
+async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
   await ensureSchema()
   const adm = await getAdminSession(pool)
   if (!adm) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const status = new URL(req.url).searchParams.get('status')
+  const where =
+    status === 'active' ? 'WHERE COALESCE(scim_active, true) = true'
+    : status === 'deactivated' ? 'WHERE COALESCE(scim_active, true) = false'
+    : ''
   const { rows } = await pool.query(
-    `SELECT id, username, email, first_name, last_name, platform_role, created_at, avatar_url, job_title, phone, timezone, status_text, status_emoji
-     FROM aaelink.users ORDER BY created_at DESC LIMIT 500`
+    `SELECT id, username, email, first_name, last_name, platform_role, created_at, avatar_url, job_title, phone, timezone, status_text, status_emoji, COALESCE(scim_active, true) AS scim_active
+     FROM aaelink.users ${where} ORDER BY created_at DESC LIMIT 500`
   )
   return NextResponse.json({ users: rows })
 }
@@ -53,16 +60,22 @@ async function _POST(req: Request) {
   }
   const roleToStore =
     platform_role === 'it_admin' || platform_role === 'it_employee' ? platform_role : 'employee'
-  if (username.length < 2 || !email.includes('@') || password.length < 8) {
+  if (username.length < 2 || !email.includes('@')) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
+  }
+  // Enforce the admin-configured password policy on admin-created accounts too.
+  const policy = await getPasswordPolicy(pool)
+  const detail = validatePassword(policy, password, { username, email })
+  if (detail.length > 0) {
+    return NextResponse.json({ error: 'password_policy_violation', detail }, { status: 400 })
   }
   const id = randomUUID()
   const now = Date.now()
   const password_hash = hashPassword(password)
   try {
     await pool.query(
-      `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, created_at, last_seen_at, platform_role)
-       VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, $8)`,
+      `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, created_at, last_seen_at, platform_role, password_changed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, '', $7, 0, $8, $7)`,
       [id, username, email, password_hash, first_name, last_name, now, roleToStore]
     )
     await pool.query(
@@ -87,6 +100,10 @@ async function _POST(req: Request) {
     }
     return NextResponse.json({ error: 'create_failed' }, { status: 400 })
   }
+  // Emit user.created best-effort — must not block or fail the admin create.
+  try {
+    await emitUserCreated(pool, { user_id: id, email, role: roleToStore, created_by: adm.userId })
+  } catch { /* best-effort */ }
   return NextResponse.json({ user: { id, username, email, first_name, last_name, platform_role } })
 }
 

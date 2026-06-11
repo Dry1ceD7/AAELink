@@ -5,7 +5,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import { AlertCircle, Eye, EyeOff, Loader2, ShieldCheck, X } from 'lucide-react'
 
-import { RequestAccessFlow } from '../components/RequestAccessFlow'
+import { RequestAccessFlow } from '@/components/modals/RequestAccessFlow'
+import { MfaStepUp } from '@/components/auth/MfaStepUp'
 
 const phone = process.env.NEXT_PUBLIC_AAELINK_IT_PHONE?.trim() || ''
 const email = process.env.NEXT_PUBLIC_AAELINK_IT_EMAIL?.trim() || ''
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [banner, setBanner] = useState('')
+  const [mfaStepUp, setMfaStepUp] = useState(false)
   const [requestOpen, setRequestOpen] = useState(false)
   const [requestKey, setRequestKey] = useState(0)
   const [conn, setConn] = useState<{ host: string; secure: boolean } | null>(null)
@@ -77,12 +79,19 @@ export default function LoginPage() {
     if (q.get('registered') === '1') setBanner('Account created. Sign in below.')
     if (q.get('verified') === '1') setBanner('Your access request was confirmed. When IT creates your sign-in, use it here.')
     
-    // SSO Error handling
+    // SSO handling.
+    // The hardened inbound-SSO flow (ADR 0014) funnels ALL auth failures through
+    // a single generic ?error=sso_failed redirect (no failure-mode oracle), and
+    // signals a successful-but-MFA-gated login via ?mfa=stepup. sso_failed is the
+    // only failure code the SSO stack (oidc/saml/entra + ssoRouteHelpers) emits.
     const err = q.get('error')
-    if (err === 'sso_disabled') setError('SSO is currently disabled. Please sign in with email/password.')
-    else if (err === 'sso_failed') setError('SSO authentication failed. Please try again.')
-    else if (err === 'sso_profile_failed') setError('Failed to retrieve user profile from identity provider.')
-    else if (err === 'sso_error') setError('An unexpected SSO error occurred.')
+    if (err === 'sso_failed') setError('SSO authentication failed. Please try again.')
+
+    // A provider with enforce_mfa=true leaves the session mfa_pending and lands
+    // the user here. Render the actual step-up control (TOTP / passkey) instead
+    // of a dead-end banner — re-submitting the password form would start an
+    // unrelated local-credential login.
+    if (q.get('mfa') === 'stepup') setMfaStepUp(true)
   }, [])
 
   useEffect(() => {
@@ -206,8 +215,11 @@ export default function LoginPage() {
       setError('Sign-in failed.')
       return
     }
+    // Expired password (admin rotation policy): session is established, but send
+    // the user straight into Preferences (?prefs=1 opens the modal) to change it.
+    const okBody = (await res.json().catch(() => ({}))) as { password_expired?: boolean }
     // Full navigation so the browser reliably applies Set-Cookie before loading /workspaces (avoids soft-nav races).
-    window.location.assign('/workspaces')
+    window.location.assign(okBody.password_expired ? '/home?prefs=1' : '/workspaces')
   }
 
   const serverLine = conn ? `${conn.secure ? 'https' : 'http'}://${conn.host}` : ''
@@ -234,7 +246,7 @@ export default function LoginPage() {
               Secure enterprise collaboration for your entire organization
             </p>
           </div>
-          <p className="mm-login-brand-footer">
+          <p className="mm-login-brand-footer" suppressHydrationWarning>
             © {new Date().getFullYear()} Advanced ID Asia Engineering
           </p>
         </div>
@@ -259,11 +271,19 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <h2 className="mm-login-title">Sign in to your account</h2>
+              <h2 className="mm-login-title">
+                {mfaStepUp ? 'Verify it’s you' : 'Sign in to your account'}
+              </h2>
               <p className="mm-login-subtitle">
-                Use the email or user name and password issued by your IT team.
+                {mfaStepUp
+                  ? 'One more step to finish signing in.'
+                  : 'Use the email or user name and password issued by your IT team.'}
               </p>
 
+              {mfaStepUp ? (
+                <MfaStepUp onComplete={() => window.location.assign('/home')} />
+              ) : (
+              <>
               {conn ? (
                 <div className="mm-login-server-info" aria-label="Connection">
                   {serverLine ? (
@@ -368,7 +388,7 @@ export default function LoginPage() {
               </div>
 
               <div style={{ marginBottom: 24, textAlign: 'center' }}>
-                <a href="/api/auth/entra" className="ghost-button" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '12px 16px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, textDecoration: 'none', fontWeight: 600, transition: 'background 0.15s ease, border-color 0.15s ease' }}>
+                <a href="/api/auth/sso/oidc/start" className="ghost-button" style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '12px 16px', background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, textDecoration: 'none', fontWeight: 600, transition: 'background 0.15s ease, border-color 0.15s ease' }}>
                   <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
                     <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
                     <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
@@ -378,6 +398,8 @@ export default function LoginPage() {
                   Sign in with Microsoft
                 </a>
               </div>
+              </>
+              )}
 
               <p className="mm-login-request-row">
                 Don&apos;t have an account?{' '}

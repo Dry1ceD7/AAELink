@@ -15,10 +15,11 @@
 
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { hashPassword } from '@/lib/password'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { hashPassword } from '@/lib/auth/password'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { emitUserCreated } from '@/lib/webhooks/webhookEmitter'
 
 // ── SCIM Types ──────────────────────────────────────────────────────
 
@@ -125,25 +126,35 @@ function dbUserToScim(row: DbUser): ScimUser {
   }
 }
 
-/** Validate SCIM bearer token against hashed tokens in scim_connections */
-async function validateScimToken(req: Request): Promise<boolean> {
+interface ScimConnection {
+  id: string
+  /** Org this connection provisions into, or null for a legacy global connection. */
+  org_id: string | null
+}
+
+/**
+ * Resolve the active SCIM connection for a request's bearer token, or null. The
+ * connection carries the org provisioning is scoped to (org_id), so callers can
+ * enroll/deprovision users in that org (org-scope SCIM).
+ */
+async function resolveScimConnection(req: Request): Promise<ScimConnection | null> {
   const auth = req.headers.get('authorization') || ''
-  if (!auth.startsWith('Bearer ')) return false
+  if (!auth.startsWith('Bearer ')) return null
   const token = auth.slice(7)
-  if (!token) return false
+  if (!token) return null
 
   const pool = getPool()
-  if (!pool) return false
+  if (!pool) return null
 
-  // Hash the incoming token and compare against stored hashes
   const crypto = await import('crypto')
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
 
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT id FROM aaelink.scim_connections WHERE bearer_token_hash = $1 AND is_active = true LIMIT 1`,
+  const { rows } = await pool.query<{ id: string; org_id: string | null }>(
+    `SELECT id, org_id::text AS org_id FROM aaelink.scim_connections
+      WHERE bearer_token_hash = $1 AND is_active = true LIMIT 1`,
     [tokenHash]
   )
-  return rows.length > 0
+  return rows[0] ?? null
 }
 
 /** Parse SCIM filter string (basic: userName eq "value") */
@@ -158,7 +169,7 @@ function parseScimFilter(filter: string): { field: string; op: string; value: st
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  if (!(await resolveScimConnection(req))) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
@@ -244,7 +255,8 @@ async function _GET(req: Request) {
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const connection = await resolveScimConnection(req)
+  if (!connection) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const body = (await req.json()) as ScimUser
@@ -276,16 +288,30 @@ async function _POST(req: Request) {
   const passwordHash = hashPassword(tempPassword)
 
   await pool.query(
-    `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active, scim_last_sync, created_at, platform_role)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'member')`,
+    `INSERT INTO aaelink.users (id, username, email, password_hash, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active, scim_last_sync, created_at, platform_role, password_changed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'member', $15)`,
     [id, body.userName, email, passwordHash, firstName, lastName, nickname, jobTitle, phone, timezone, avatarUrl, externalId, active, now, now]
   )
+
+  // Org-scope SCIM: enroll the provisioned user into the connection's org.
+  if (connection.org_id) {
+    await pool.query(
+      `INSERT INTO aaelink.org_members (org_id, user_id, role)
+       VALUES ($1, $2, 'member') ON CONFLICT (org_id, user_id) DO NOTHING`,
+      [connection.org_id, id]
+    )
+  }
 
   // Log SCIM sync
   await pool.query(
     `INSERT INTO aaelink.scim_sync_log (id, action, external_id, user_id, status, created_at) VALUES ($1, 'create', $2, $3, 'success', $4)`,
     [randomUUID(), externalId, id, now]
   ).catch(() => {})
+
+  // Emit user.created best-effort — must not block or fail the SCIM provision.
+  try {
+    await emitUserCreated(pool, { user_id: id, email, role: 'member', created_by: id })
+  } catch { /* best-effort */ }
 
   const { rows } = await pool.query(
     `SELECT id, username, email, first_name, last_name, nickname, job_title, phone, timezone, avatar_url, scim_external_id, scim_active
@@ -301,7 +327,7 @@ async function _POST(req: Request) {
 async function _PUT(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  if (!(await resolveScimConnection(req))) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
@@ -369,7 +395,7 @@ async function _PUT(req: Request) {
 async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  if (!(await resolveScimConnection(req))) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
@@ -434,7 +460,8 @@ async function _PATCH(req: Request) {
 async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return scimError('Service unavailable', 503)
-  if (!(await validateScimToken(req))) return scimError('Unauthorized', 401)
+  const connection = await resolveScimConnection(req)
+  if (!connection) return scimError('Unauthorized', 401)
   await ensureSchema()
 
   const url = new URL(req.url)
@@ -452,6 +479,14 @@ async function _DELETE(req: Request) {
     `UPDATE aaelink.users SET scim_active = false, scim_last_sync = $1 WHERE id = $2`,
     [now, userId]
   )
+
+  // Org-scope SCIM: deprovision the user from the connection's org.
+  if (connection.org_id) {
+    await pool.query(
+      `DELETE FROM aaelink.org_members WHERE org_id = $1 AND user_id = $2`,
+      [connection.org_id, userId]
+    )
+  }
 
   // Revoke all sessions
   await pool.query(`DELETE FROM aaelink.sessions WHERE user_id = $1`, [userId])

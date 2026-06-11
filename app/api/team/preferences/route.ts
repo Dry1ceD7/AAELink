@@ -1,8 +1,9 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Team Preferences API — Slack team.preferences parity.
@@ -18,8 +19,6 @@ async function _GET(req: NextRequest) {
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const wsId = req.nextUrl.searchParams.get('workspace_id') || ''
-
-  await ensureTeamPrefsTable(pool)
 
   const { rows } = await pool.query(
     `SELECT key, value FROM aaelink.team_preferences WHERE workspace_id = $1 ORDER BY key`,
@@ -78,7 +77,6 @@ async function _POST(req: NextRequest) {
   const wsId = body.workspace_id || '__default__'
   const prefs = body.preferences || {}
 
-  await ensureTeamPrefsTable(pool)
   const now = Date.now()
 
   for (const [key, value] of Object.entries(prefs)) {
@@ -91,18 +89,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, updated: Object.keys(prefs).length })
-}
-
-async function ensureTeamPrefsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.team_preferences (
-      workspace_id TEXT NOT NULL DEFAULT '__default__',
-      key          TEXT NOT NULL,
-      value        TEXT NOT NULL DEFAULT '',
-      updated_at   BIGINT NOT NULL DEFAULT 0,
-      PRIMARY KEY (workspace_id, key)
-    )
-  `).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/team/preferences', _GET)

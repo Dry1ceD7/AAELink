@@ -1,12 +1,12 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { getMemberDepartmentId } from '@/lib/ticketAccess'
-import { calculateSlaDue, isTicketPriority, isTicketCategory, type TicketPriority, type TicketCategory } from '@/lib/slaEngine'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { getMemberDepartmentId } from '@/lib/enterprise/ticketAccess'
+import { calculateSlaDue, isTicketPriority, isTicketCategory, type TicketPriority, type TicketCategory } from '@/lib/enterprise/slaEngine'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * POST /api/tickets/from-message — create a ticket from a chat message.

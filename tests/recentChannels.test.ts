@@ -21,7 +21,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, wri
 
 const KEY = 'aaelink_recent_channel_ids_v1'
 
-import { readRecentChannelIds, touchRecentChannel } from '@/lib/recentChannels'
+import { readRecentChannelIds, touchRecentChannel } from '@/lib/channels/recentChannels'
 
 describe('RecentChannels — readRecentChannelIds', () => {
   beforeEach(() => {

@@ -1,10 +1,11 @@
+// keep: external integration entry point (webhook / IdP / push provider / device)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { renderEmail, listEmailTemplates } from '@/lib/emailTemplates'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { renderEmail, listEmailTemplates } from '@/lib/comms/emailTemplates'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Email Templates API — preview, send, and manage branded email templates.

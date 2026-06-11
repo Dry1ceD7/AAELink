@@ -39,11 +39,13 @@ describe('GET /api/admin/prometheus', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 403 for non-admin', async () => {
+  it('returns 401 for non-admin (route uses 401 for all auth failures, including non-admin sessions)', async () => {
     const { GET } = await import('@/app/api/admin/prometheus/route')
     const req = asRequest('GET', '/api/admin/prometheus', { cookie: employee.sessionCookie })
     const res = await GET(req)
-    expect(res.status).toBe(403)
+    // The route returns 401 when neither bearer token nor platform-admin session matches.
+    // A non-admin employee session does not satisfy isPlatformAdmin(), so 401 is returned.
+    expect(res.status).toBe(401)
   })
 
   it('returns OpenMetrics text for admin', async () => {

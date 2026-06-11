@@ -1,8 +1,10 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { userCanPostToChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * Channel Posting Permissions API (Slack "Announcement" / "Read-only" channels).
@@ -53,30 +55,8 @@ async function _GET(req: NextRequest) {
     approvedPosters = ap.map(r => r.user_id)
   }
 
-  // Check if current user can post
-  let canPost = true
-  if (rows[0].posting_mode === 'admins_only') {
-    const { rows: cmRows } = await pool.query<{ role: string }>(
-      `SELECT role FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`,
-      [channelId, uid]
-    )
-    canPost = ['admin', 'owner'].includes(cmRows[0]?.role || '')
-    // Also check workspace admin
-    if (!canPost) {
-      const { rows: chRows } = await pool.query<{ workspace_id: string }>(
-        `SELECT workspace_id FROM aaelink.channels WHERE id = $1`, [channelId]
-      )
-      if (chRows[0]) {
-        const { rows: wmRows } = await pool.query<{ role: string }>(
-          `SELECT role FROM aaelink.workspace_members WHERE workspace_id = $1 AND user_id = $2`,
-          [chRows[0].workspace_id, uid]
-        )
-        canPost = ['admin', 'owner'].includes(wmRows[0]?.role || '')
-      }
-    }
-  } else if (rows[0].posting_mode === 'approved') {
-    canPost = approvedPosters.includes(uid)
-  }
+  // Delegate to shared helper — keeps flag and enforcement in agreement
+  const canPost = await userCanPostToChannel(pool, uid, channelId)
 
   return NextResponse.json({
     posting_mode: rows[0].posting_mode,

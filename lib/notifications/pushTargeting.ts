@@ -1,0 +1,209 @@
+/**
+ * AAELink — Push targeting: decide WHO gets a push, then enqueue delivery.
+ *
+ * `selectPushTargets` filters a candidate user list down to those who should
+ * actually be pushed for a given channel — dropping anyone who muted the
+ * channel or is currently in a Do-Not-Disturb window / active snooze. The
+ * `push_deliver` worker (lib/notifications/pushDelivery.ts) does NOT apply
+ * these preference checks, so they must happen here at enqueue time.
+ *
+ * `enqueuePush` writes a `push_log` row + a `push_deliver` job per user,
+ * producing rows identical to the inline send path in
+ * app/api/notifications/push/route.ts (single source of truth).
+ */
+import { randomUUID } from 'crypto'
+import type { Pool } from 'pg'
+import { isDndActiveNow } from '@/lib/notifications/dndWindow'
+import { getPushPolicy, applyQuietHours, applyMaxRate } from '@/lib/notifications/pushPolicy'
+
+export type PushPriority = 'high' | 'normal' | 'low'
+
+/** Push priority → job-queue priority (lower runs first). Mirrors push route. */
+export function jobPriorityFor(p: PushPriority): number {
+  return p === 'high' ? 2 : p === 'low' ? 6 : 4
+}
+
+/**
+ * Filter `userIds` to those eligible for a push on `channelId`: drops users who
+ * muted the channel (channel_notification_prefs.muted OR a channel_mutes row)
+ * or are currently in DND (active snooze, or enabled schedule window). When an
+ * admin push policy is active, also drops everyone during org quiet hours and
+ * caps each user at the policy's per-hour rate. Returns the allowed subset
+ * (deduped; order not significant). Absent/disabled policy → no policy effect.
+ */
+export async function selectPushTargets(
+  pool: Pool,
+  userIds: string[],
+  channelId: string,
+  now: number = Date.now(),
+): Promise<string[]> {
+  const uniq = [...new Set(userIds.filter(Boolean))]
+  if (uniq.length === 0) return []
+
+  // Admin push policy: org quiet hours drop everyone before any per-user work.
+  const policy = await getPushPolicy(pool)
+  if (applyQuietHours(policy, uniq, new Date(now)).length === 0) return []
+
+  // Suppressed = channel muted, an explicit mute row, OR notification level
+  // 'nothing' (the user turned this channel's notifications off entirely).
+  const { rows: muted } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_notification_prefs
+       WHERE channel_id = $2 AND user_id = ANY($1) AND (muted = true OR level = 'nothing')
+     UNION
+     SELECT user_id FROM aaelink.channel_mutes
+       WHERE channel_id = $2 AND user_id = ANY($1)`,
+    [uniq, channelId],
+  )
+  const mutedSet = new Set(muted.map(r => r.user_id))
+
+  const { rows: dnd } = await pool.query<{
+    user_id: string
+    enabled: boolean
+    start_time: string
+    end_time: string
+    timezone: string
+    snooze_until: string
+  }>(
+    `SELECT user_id, enabled, start_time, end_time, timezone, snooze_until
+       FROM aaelink.dnd_settings WHERE user_id = ANY($1)`,
+    [uniq],
+  )
+  const dndSet = new Set<string>()
+  const at = new Date(now)
+  for (const d of dnd) {
+    if (Number(d.snooze_until) > now) {
+      dndSet.add(d.user_id)
+      continue
+    }
+    if (d.enabled && isDndActiveNow(d.start_time, d.end_time, d.timezone, at)) {
+      dndSet.add(d.user_id)
+    }
+  }
+
+  // Manual status='dnd' also suppresses push (expires_at=0 means never-expires;
+  // positive value is a ms-epoch cutoff). In-app notifications are unaffected.
+  const { rows: statusDnd } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.user_status
+       WHERE user_id = ANY($1) AND status = 'dnd'
+         AND (expires_at = 0 OR expires_at > $2)`,
+    [uniq, now],
+  )
+  for (const r of statusDnd) dndSet.add(r.user_id)
+
+  const survivors = uniq.filter(u => !mutedSet.has(u) && !dndSet.has(u))
+  // Per-user max-rate cap runs last so only real (non-muted, non-DND) pushes
+  // consume a rate-limit count. Absent/disabled policy → unchanged.
+  return applyMaxRate(policy, survivors)
+}
+
+export interface EnqueuePushArgs {
+  userIds: string[]
+  title: string
+  body: string
+  channelId?: string
+  priority?: PushPriority
+  badgeCount?: number
+  silent?: boolean
+}
+
+/**
+ * Write a push_log row + enqueue a `push_deliver` job per user (capped at 100).
+ * Returns the number of jobs enqueued. `createdBy` stamps the job's owner.
+ */
+export async function enqueuePush(
+  pool: Pool,
+  args: EnqueuePushArgs,
+  createdBy: string,
+): Promise<number> {
+  const userIds = [...new Set(args.userIds.filter(Boolean))]
+  if (userIds.length === 0) return 0
+  const priority: PushPriority =
+    args.priority === 'high' || args.priority === 'low' ? args.priority : 'normal'
+  const jobPriority = jobPriorityFor(priority)
+  const now = Date.now()
+  let queued = 0
+
+  for (const targetId of userIds.slice(0, 100)) {
+    const logId = randomUUID()
+    await pool.query(
+      `INSERT INTO aaelink.push_log
+         (id, user_id, title, body, channel_id, priority, silent, badge_count, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9)`,
+      [logId, targetId, args.title, args.body, args.channelId || '',
+        priority, args.silent || false, args.badgeCount || 0, now],
+    )
+    await pool.query(
+      `INSERT INTO aaelink.jobs
+         (id, type, status, priority, payload, run_after, max_retries, attempts, created_by, created_at)
+       VALUES ($1, 'push_deliver', 'pending', $2, $3, $4, 3, 0, $5, $4)`,
+      [randomUUID(), jobPriority, JSON.stringify({
+        user_id: targetId,
+        title: args.title,
+        body: args.body,
+        channel_id: args.channelId || '',
+        badge_count: args.badgeCount || 0,
+        silent: args.silent || false,
+        priority,
+        log_id: logId,
+      }), now, createdBy],
+    )
+    queued++
+  }
+  return queued
+}
+
+/**
+ * Drop users who set this channel's notification level to 'nothing' (off).
+ * Applied to in-app notification targets — selectPushTargets handles the push
+ * side; this stops the in-app row too.
+ */
+export async function dropLevelNothing(
+  pool: Pool, userIds: string[], channelId: string,
+): Promise<string[]> {
+  const uniq = [...new Set(userIds.filter(Boolean))]
+  if (uniq.length === 0) return []
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_notification_prefs
+       WHERE channel_id = $2 AND user_id = ANY($1) AND level = 'nothing'`,
+    [uniq, channelId],
+  )
+  const off = new Set(rows.map(r => r.user_id))
+  return uniq.filter(u => !off.has(u))
+}
+
+/**
+ * Drop users who muted this channel (muted flag, a channel_mutes row, or level
+ * 'nothing'). For in-app notifications where a mute must win — e.g. level='all'
+ * every-message alerts should not appear in-app for a muted member.
+ */
+export async function dropMuted(
+  pool: Pool, userIds: string[], channelId: string,
+): Promise<string[]> {
+  const uniq = [...new Set(userIds.filter(Boolean))]
+  if (uniq.length === 0) return []
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_notification_prefs
+       WHERE channel_id = $2 AND user_id = ANY($1) AND (muted = true OR level = 'nothing')
+     UNION
+     SELECT user_id FROM aaelink.channel_mutes
+       WHERE channel_id = $2 AND user_id = ANY($1)`,
+    [uniq, channelId],
+  )
+  const off = new Set(rows.map(r => r.user_id))
+  return uniq.filter(u => !off.has(u))
+}
+
+/**
+ * Channel members who set notification level 'all' — they want a notification
+ * for every message, not just @mentions.
+ */
+export async function channelMembersLevelAll(pool: Pool, channelId: string): Promise<string[]> {
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT cm.user_id FROM aaelink.channel_members cm
+       INNER JOIN aaelink.channel_notification_prefs p
+         ON p.user_id = cm.user_id AND p.channel_id = cm.channel_id
+      WHERE cm.channel_id = $1 AND p.level = 'all'`,
+    [channelId],
+  )
+  return rows.map(r => r.user_id)
+}

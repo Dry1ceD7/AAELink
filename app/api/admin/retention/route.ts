@@ -1,10 +1,11 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import { tracedRoute } from '@/lib/tracedRoute'
-import { RetentionEngine, type RetentionEntity, type RetentionQueryFn } from '@/lib/retention'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { RetentionEngine, type RetentionEntity, type RetentionQueryFn } from '@/lib/enterprise/retention'
 
 /**
  * GET /api/admin/retention — get current retention policies.
@@ -12,33 +13,6 @@ import { RetentionEngine, type RetentionEntity, type RetentionQueryFn } from '@/
  *
  * Policies stored in `aaelink.retention_policies`.
  */
-
-const RETENTION_DDL = `
-  CREATE TABLE IF NOT EXISTS aaelink.retention_policies (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    scope           TEXT NOT NULL UNIQUE CHECK (scope IN ('workspace','channel','dm','file')),
-    retention_days  INT NOT NULL DEFAULT 0,
-    enabled         BOOLEAN NOT NULL DEFAULT false,
-    delete_files    BOOLEAN NOT NULL DEFAULT false,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by      UUID REFERENCES aaelink.users(id)
-  );
-
-  -- Seed default policies if empty
-  INSERT INTO aaelink.retention_policies (scope, retention_days, enabled)
-  VALUES
-    ('workspace', 0, false),
-    ('channel', 0, false),
-    ('dm', 0, false),
-    ('file', 0, false)
-  ON CONFLICT (scope) DO NOTHING;
-`
-
-async function ensureRetention(pool: ReturnType<typeof getPool>) {
-  if (!pool) return
-  await pool.query(RETENTION_DDL)
-}
 
 async function _GET(_req: NextRequest) {
   await ensureSchema()
@@ -55,8 +29,6 @@ async function _GET(_req: NextRequest) {
   if (!isPlatformAdmin(role)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
-
-  await ensureRetention(pool)
 
   const { rows } = await pool.query(
     `SELECT p.*, u.username AS updated_by_username
@@ -84,8 +56,6 @@ async function _PUT(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
-  await ensureRetention(pool)
-
   const body = await req.json()
   const { scope, retention_days, enabled, delete_files } = body as {
     scope: string; retention_days: number; enabled: boolean; delete_files?: boolean
@@ -108,7 +78,7 @@ async function _PUT(req: NextRequest) {
 
   // Audit log
   await pool.query(
-    `INSERT INTO aaelink.audit_log (actor_id, action, target_type, target_id, metadata)
+    `INSERT INTO aaelink.audit_log (actor_id, action, resource_kind, resource_id, metadata)
      VALUES ($1, 'retention.update', 'policy', $2, $3)`,
     [uid, rows[0]?.id || scope, JSON.stringify({ scope, retention_days, enabled })]
   ).catch(() => {})

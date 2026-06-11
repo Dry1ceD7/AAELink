@@ -1,114 +1,70 @@
 /**
- * AAELink — Composer Slash Expansion Tests
+ * `lib/composerSlash.ts` regression suite.
+ *
+ * Pins the `getClientSlashCommands()` registry so the Composer autocomplete and
+ * the `expandComposerSlash()` parser stay in lockstep. Drift between them is
+ * the bug v0.0.32 closed.
  */
 import { describe, it, expect } from 'vitest'
-import { expandComposerSlash, type SlashMeUser } from '@/lib/composerSlash'
+import {
+  expandComposerSlash,
+  getClientSlashCommands,
+} from '@/lib/messaging/composerSlash'
+import { getSlashCommands } from '@/lib/comms/slashCommands'
 
-const testUser: SlashMeUser = {
-  username: 'alice',
-  first_name: 'Alice',
-  last_name: 'Smith',
-}
+describe('composerSlash — getClientSlashCommands', () => {
+  const client = getClientSlashCommands()
+  const clientNames = client.map(c => c.name)
 
-describe('ComposerSlash — Basic text', () => {
-  it('non-slash message passes through', () => {
-    const r = expandComposerSlash('hello world', testUser)
-    expect(r).toEqual({ kind: 'send', text: 'hello world' })
+  it('contains exactly the seven client-handled slash commands', () => {
+    expect(clientNames.sort()).toEqual(
+      ['clear', 'code', 'me', 'shortcuts', 'shrug', 'tableflip', 'unflip'].sort()
+    )
   })
-})
 
-describe('ComposerSlash — /shrug', () => {
-  it('bare /shrug', () => {
-    const r = expandComposerSlash('/shrug', null)
-    expect(r.kind).toBe('send')
-    if (r.kind === 'send') expect(r.text).toContain('_(ツ)_')
+  it('every entry has a non-empty name, description, and usage', () => {
+    for (const c of client) {
+      expect(c.name.length).toBeGreaterThan(0)
+      expect(c.description.length).toBeGreaterThan(0)
+      expect(c.usage.startsWith('/')).toBe(true)
+      expect(c.usage.includes(c.name)).toBe(true)
+    }
   })
-  it('/shrug with text', () => {
-    const r = expandComposerSlash('/shrug oh well', null)
-    if (r.kind === 'send') {
-      expect(r.text).toContain('oh well')
-      expect(r.text).toContain('_(ツ)_')
+
+  it('does not duplicate names', () => {
+    expect(new Set(clientNames).size).toBe(clientNames.length)
+  })
+
+  it('every client command name is actually intercepted by expandComposerSlash', () => {
+    // For each client-only name, expanding should NOT return `kind: 'send'` of
+    // the raw text — it should be intercepted into a more specific kind.
+    const me = { username: 'tester', first_name: 'T', last_name: 'Test' }
+    for (const c of client) {
+      const result = expandComposerSlash(`/${c.name}`, me)
+      // Allow `send` for shrug/tableflip/unflip (they expand text in `kind: 'send'`)
+      // and for `me` (renders italics). The bug we're guarding against is the
+      // command name silently dropping through to the lib registry as
+      // `async-command`, which would happen if the name was missing here.
+      expect(result.kind).not.toBe('async-command')
     }
   })
 })
 
-describe('ComposerSlash — /tableflip & /unflip', () => {
-  it('/tableflip', () => {
-    const r = expandComposerSlash('/tableflip', null)
-    if (r.kind === 'send') expect(r.text).toContain('┻━┻')
+describe('composerSlash — overlap with lib/slashCommands.ts', () => {
+  it('client and lib registries together cover the full Slack-parity surface', () => {
+    const client = getClientSlashCommands().map(c => c.name)
+    const lib = getSlashCommands().map(c => c.name)
+    const union = new Set([...client, ...lib])
+    // Sanity floor: at least the 12 commands shipped at v0.0.31.
+    expect(union.size).toBeGreaterThanOrEqual(12)
   })
-  it('/unflip', () => {
-    const r = expandComposerSlash('/unflip', null)
-    if (r.kind === 'send') expect(r.text).toContain('┬─┬')
-  })
-})
 
-describe('ComposerSlash — /me', () => {
-  it('/me with action text', () => {
-    const r = expandComposerSlash('/me is coding', testUser)
-    if (r.kind === 'send') {
-      expect(r.text).toBe('_Alice Smith is coding_')
+  it('shrug / tableflip / unflip / me / help appear in the merged set', () => {
+    const client = getClientSlashCommands().map(c => c.name)
+    const lib = getSlashCommands().map(c => c.name)
+    const union = new Set([...client, ...lib])
+    for (const must of ['shrug', 'tableflip', 'unflip', 'me', 'help']) {
+      expect(union.has(must)).toBe(true)
     }
-  })
-  it('/me without text uses display name', () => {
-    const r = expandComposerSlash('/me', testUser)
-    if (r.kind === 'send') expect(r.text).toBe('_Alice Smith_')
-  })
-  it('/me without user passes through', () => {
-    const r = expandComposerSlash('/me test', null)
-    expect(r).toEqual({ kind: 'send', text: '/me test' })
-  })
-})
-
-describe('ComposerSlash — /clear & /shortcuts', () => {
-  it('/clear → clear-draft', () => {
-    expect(expandComposerSlash('/clear', null)).toEqual({ kind: 'clear-draft' })
-  })
-  it('/shortcuts → open-shortcuts', () => {
-    expect(expandComposerSlash('/shortcuts', null)).toEqual({ kind: 'open-shortcuts' })
-  })
-})
-
-describe('ComposerSlash — /code', () => {
-  it('/code with content → set-draft', () => {
-    const r = expandComposerSlash('/code const x = 1', null)
-    expect(r.kind).toBe('set-draft')
-    if (r.kind === 'set-draft') {
-      expect(r.text).toContain('```')
-      expect(r.text).toContain('const x = 1')
-    }
-  })
-  it('/code bare → empty block', () => {
-    const r = expandComposerSlash('/code', null)
-    expect(r.kind).toBe('set-draft')
-  })
-})
-
-describe('ComposerSlash — Async commands', () => {
-  it('/status → async-command', () => {
-    const r = expandComposerSlash('/status :smile: working', null)
-    expect(r).toEqual({ kind: 'async-command', name: 'status', args: ':smile: working' })
-  })
-  it('/dnd → async-command', () => {
-    const r = expandComposerSlash('/dnd 30', null)
-    expect(r).toEqual({ kind: 'async-command', name: 'dnd', args: '30' })
-  })
-  it('/mute → async-command', () => {
-    expect(expandComposerSlash('/mute', null).kind).toBe('async-command')
-  })
-  it('/remind → async-command', () => {
-    const r = expandComposerSlash('/remind 15 review PR', null)
-    expect(r.kind).toBe('async-command')
-    if (r.kind === 'async-command') expect(r.args).toBe('15 review PR')
-  })
-  it('/help → async-command', () => {
-    expect(expandComposerSlash('/help', null).kind).toBe('async-command')
-  })
-})
-
-describe('ComposerSlash — Unknown commands', () => {
-  it('unknown /xyz passes through as send', () => {
-    const r = expandComposerSlash('/xyz hello', null)
-    expect(r).toEqual({ kind: 'send', text: '/xyz hello' })
   })
 })

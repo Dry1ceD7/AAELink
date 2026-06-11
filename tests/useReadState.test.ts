@@ -27,7 +27,7 @@ describe('useReadState — watermark dedup logic', () => {
   })
 
   it('posts when new message arrives', () => {
-    let lastPosted = 1000
+    const lastPosted = 1000
     const latestCreateAt = 2000
     expect(latestCreateAt > lastPosted).toBe(true)
   })

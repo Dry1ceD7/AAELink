@@ -2,7 +2,7 @@
  * AAELink — Workspace Navigation Tests
  */
 import { describe, it, expect } from 'vitest'
-import { buildHomePathForTeam, WORKSPACE_LAST_TEAM_KEY } from '@/lib/workspaceNav'
+import { buildHomePathForTeam, WORKSPACE_LAST_TEAM_KEY } from '@/lib/workspace/workspaceNav'
 
 describe('WorkspaceNav — buildHomePathForTeam', () => {
   it('builds basic path', () => {

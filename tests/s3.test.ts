@@ -2,7 +2,7 @@
  * AAELink — S3 Configuration Tests
  */
 import { describe, it, expect } from 'vitest'
-import { getBucket, getS3Client } from '@/lib/s3'
+import { getBucket, getS3Client } from '@/lib/infra/s3'
 
 describe('S3 — getBucket', () => {
   it('returns default bucket when env not set', () => {

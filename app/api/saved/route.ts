@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { verifyCsrf } from '@/lib/auth/csrf'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
 
 /**
  * GET /api/saved — list saved/bookmarked messages for the current user.
@@ -23,10 +25,30 @@ async function _GET(req: NextRequest) {
   const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit')) || 50, 1), 100)
   const offset = Math.max(Number(req.nextUrl.searchParams.get('offset')) || 0, 0)
 
+  // Channel-access predicate (mirrors userCanReadChannel logic in SQL so we can
+  // filter in a single query rather than N async round-trips per row).
+  const channelAccessClause = `
+    AND EXISTS (
+      SELECT 1 FROM aaelink.channels ch
+      INNER JOIN aaelink.workspace_members wm
+        ON wm.workspace_id = ch.workspace_id AND wm.user_id = $1
+      WHERE ch.id = s.channel_id
+        AND (
+          ch.type = 'O'
+          OR (ch.type IN ('P', 'G') AND EXISTS (
+            SELECT 1 FROM aaelink.channel_members cm2
+            WHERE cm2.channel_id = ch.id AND cm2.user_id = $1
+          ))
+          OR (ch.type = 'D' AND (ch.dm_user_a = $1 OR ch.dm_user_b = $1))
+          OR wm.role IN ('owner', 'admin')
+        )
+    )`
+
   // Count total
   let countQuery = `SELECT COUNT(*)::text AS cnt FROM aaelink.saved_messages s
     JOIN aaelink.messages m ON m.id = s.message_id
     WHERE s.user_id = $1`
+  countQuery += channelAccessClause
   const countParams: (string | number)[] = [uid]
 
   if (q) {
@@ -51,6 +73,7 @@ async function _GET(req: NextRequest) {
      JOIN aaelink.channels c ON c.id = s.channel_id
      LEFT JOIN aaelink.users u ON u.id = m.user_id
      WHERE s.user_id = $1`
+  query += channelAccessClause
   const params: (string | number)[] = [uid]
 
   if (q) {
@@ -74,6 +97,8 @@ async function _GET(req: NextRequest) {
 
 /** POST /api/saved — bookmark a message.  Body: { message_id, channel_id } */
 async function _POST(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
@@ -89,6 +114,10 @@ async function _POST(req: NextRequest) {
   const { message_id, channel_id } = body
   if (!message_id || !channel_id) {
     return NextResponse.json({ error: 'message_id_and_channel_id_required' }, { status: 400 })
+  }
+
+  if (!(await userCanReadChannel(pool, uid, channel_id))) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   await pool.query(
@@ -108,6 +137,8 @@ async function _POST(req: NextRequest) {
 
 /** DELETE /api/saved — remove a bookmark.  Body: { message_id } */
 async function _DELETE(req: NextRequest) {
+  const csrfErr = await verifyCsrf(req)
+  if (csrfErr) return csrfErr
   await ensureSchema()
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })

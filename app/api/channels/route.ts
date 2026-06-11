@@ -1,11 +1,14 @@
-import { randomUUID } from 'crypto'
+import { randomUUID, createHash } from 'crypto'
 import type { Pool } from 'pg'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { slugifySegment } from '@/lib/slug'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { slugifySegment } from '@/lib/ui/slug'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isDmBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
+import { enforceScope, SCOPES, grantWorkspaceMatches, type OAuthGrant } from '@/lib/api/oauthScopes'
+import { emitChannelCreated, emitChannelArchived } from '@/lib/webhooks/webhookEmitter'
 
 async function assertWorkspaceMember(pool: Pool, uid: string, workspaceId: string) {
   const { rows } = await pool.query<{ ok: number }>(
@@ -30,12 +33,19 @@ function peerDisplayName(row: {
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:read). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHANNELS_READ)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const grant: OAuthGrant | null = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  const uid = grant ? grant.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const workspace_id = String(url.searchParams.get('workspace_id') || url.searchParams.get('team_id') || '')
   if (!workspace_id) return NextResponse.json({ error: 'workspace_id_required' }, { status: 400 })
   await ensureSchema()
+  if (grant && !grantWorkspaceMatches(grant, workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
   if (!(await assertWorkspaceMember(pool, uid, workspace_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -144,7 +154,11 @@ async function _GET(req: Request) {
 async function _POST(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResult = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResult.kind === 'error') return scopeResult.response
+  const grantPost: OAuthGrant | null = scopeResult.kind === 'ok' ? scopeResult.grant : null
+  const uid = grantPost ? grantPost.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
   const body = (await req.json()) as {
@@ -160,6 +174,9 @@ async function _POST(req: Request) {
   const workspace_id = String(body.workspace_id || body.team_id || '')
   if (!workspace_id) {
     return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
+  }
+  if (grantPost && !grantWorkspaceMatches(grantPost, workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
   if (!(await assertWorkspaceMember(pool, uid, workspace_id))) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -186,6 +203,14 @@ async function _POST(req: Request) {
     if (allIds.length <= 2) {
       // Normal DM (1:1)
       const actualPeer = allIds.find(id => id !== uid) || uid
+
+      if (await isDmBlocked(uid, actualPeer, workspace_id)) {
+        return NextResponse.json(
+          { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+          { status: 403 }
+        )
+      }
+
       const dm_user_a = uid < actualPeer ? uid : actualPeer
       const dm_user_b = uid < actualPeer ? actualPeer : uid
 
@@ -226,8 +251,18 @@ async function _POST(req: Request) {
       return NextResponse.json({ channel: { id, team_id: workspace_id, name, display_name, type: 'D', dm_peer_id: actualPeer, dm_peer_display: display_name } })
     } else {
       // Group DM (MPDM)
-      const crypto = require('crypto')
-      const nameHash = crypto.createHash('sha256').update(allIds.join(',')).digest('hex').slice(0, 40)
+      for (let i = 0; i < allIds.length; i++) {
+        for (let j = i + 1; j < allIds.length; j++) {
+          if (await isDmBlocked(allIds[i], allIds[j], workspace_id)) {
+            return NextResponse.json(
+              { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+              { status: 403 }
+            )
+          }
+        }
+      }
+
+      const nameHash = createHash('sha256').update(allIds.join(',')).digest('hex').slice(0, 40)
       const name = `mpdm-${nameHash}`
       
       const { rows: existing } = await pool.query<{ id: string; name: string; display_name: string; type: string }>(
@@ -295,7 +330,15 @@ async function _POST(req: Request) {
       [id, uid, now]
     )
     await pool.query('COMMIT')
-    
+
+    // Fan out to subscribed outgoing webhooks + Events-API subscriptions
+    // (no-op when none configured). Best-effort: never block the create.
+    try {
+      await emitChannelCreated(pool, {
+        channel_id: id, name, type, user_id: uid, workspace_id,
+      })
+    } catch (e) { console.error('emitChannelCreated', e) }
+
     const channel = {
       id,
       team_id: workspace_id,
@@ -317,7 +360,11 @@ async function _POST(req: Request) {
 async function _PATCH(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResultPatch = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResultPatch.kind === 'error') return scopeResultPatch.response
+  const grantPatch: OAuthGrant | null = scopeResultPatch.kind === 'ok' ? scopeResultPatch.grant : null
+  const uid = grantPatch ? grantPatch.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
 
@@ -340,14 +387,31 @@ async function _PATCH(req: Request) {
       `SELECT workspace_id FROM aaelink.channels WHERE id = $1`, [channelId]
     )
     if (!chRows[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+    if (grantPatch && !grantWorkspaceMatches(grantPatch, chRows[0].workspace_id)) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     if (!(await assertWorkspaceMember(pool, uid, chRows[0].workspace_id))) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
     if (body.purpose !== undefined) {
       await pool.query(`UPDATE aaelink.channels SET purpose = $1 WHERE id = $2`, [body.purpose.slice(0, 500), channelId])
+      try {
+        await pool.query(
+          `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, '', 'system_purpose', $5, $5)`,
+          [randomUUID(), channelId, uid, body.purpose.slice(0, 500), Date.now()]
+        )
+      } catch { /* best-effort */ }
     }
     if (body.header !== undefined) {
       await pool.query(`UPDATE aaelink.channels SET header = $1 WHERE id = $2`, [body.header.slice(0, 1000), channelId])
+      try {
+        await pool.query(
+          `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, '', 'system_header', $5, $5)`,
+          [randomUUID(), channelId, uid, body.header.slice(0, 1000), Date.now()]
+        )
+      } catch { /* best-effort */ }
     }
     return NextResponse.json({ ok: true })
   }
@@ -362,6 +426,10 @@ async function _PATCH(req: Request) {
   )
   const ch = chRows[0]
   if (!ch) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
+
+  if (grantPatch && !grantWorkspaceMatches(grantPatch, ch.workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   // Don't allow archiving DM channels
   if (ch.type === 'D') {
@@ -382,11 +450,27 @@ async function _PATCH(req: Request) {
     }
   }
 
+  const now = Date.now()
+
   if (action === 'archive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = $1 WHERE id = $2`,
-      [Date.now(), channelId]
+      [now, channelId]
     )
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, '', '', 'system_archive', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
+    // Fan out to subscribed outgoing webhooks + Events-API subscriptions.
+    // Best-effort: never block the archive.
+    try {
+      await emitChannelArchived(pool, {
+        channel_id: channelId, type: ch.type, user_id: uid, workspace_id: ch.workspace_id,
+      })
+    } catch (e) { console.error('emitChannelArchived', e) }
   } else if (action === 'unarchive') {
     await pool.query(
       `UPDATE aaelink.channels SET archived_at = 0 WHERE id = $1`,
@@ -402,9 +486,16 @@ async function _PATCH(req: Request) {
       await pool.query(
         `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
          VALUES ($1, $2, $3, 'channel.convert_to_private', $4, $5, $6)`,
-        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'O', to: 'P' }), Date.now()]
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'O', to: 'P' }), now]
       )
     } catch { /* audit log is best-effort */ }
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, 'private', '', 'system_channel_converted', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
   } else if (action === 'convert_to_public') {
     if (ch.type !== 'P') {
       return NextResponse.json({ error: 'channel_not_private' }, { status: 400 })
@@ -414,9 +505,16 @@ async function _PATCH(req: Request) {
       await pool.query(
         `INSERT INTO aaelink.audit_log (id, workspace_id, actor_id, action, resource_id, metadata, created_at)
          VALUES ($1, $2, $3, 'channel.convert_to_public', $4, $5, $6)`,
-        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'P', to: 'O' }), Date.now()]
+        [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ from: 'P', to: 'O' }), now]
       )
     } catch { /* audit log is best-effort */ }
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, 'public', '', 'system_channel_converted', $4, $4)`,
+        [randomUUID(), channelId, uid, now]
+      )
+    } catch { /* best-effort */ }
   }
 
   return NextResponse.json({ ok: true, action })
@@ -426,7 +524,11 @@ async function _PATCH(req: Request) {
 async function _DELETE(req: Request) {
   const pool = getPool()
   if (!pool) return NextResponse.json({ error: 'database_not_configured' }, { status: 503 })
-  const uid = await readSessionUserId()
+  // Bearer token path (channels:write). Falls through to session auth when no token present.
+  const scopeResultDel = await enforceScope(pool, req, SCOPES.CHANNELS_WRITE)
+  if (scopeResultDel.kind === 'error') return scopeResultDel.response
+  const grantDel: OAuthGrant | null = scopeResultDel.kind === 'ok' ? scopeResultDel.grant : null
+  const uid = grantDel ? grantDel.user_id : await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   await ensureSchema()
 
@@ -446,6 +548,10 @@ async function _DELETE(req: Request) {
   if (!rows[0]) return NextResponse.json({ error: 'channel_not_found' }, { status: 404 })
 
   const ch = rows[0]
+
+  if (grantDel && !grantWorkspaceMatches(grantDel, ch.workspace_id)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
 
   // Protect default channels from deletion
   if (ch.is_default) {
@@ -490,6 +596,13 @@ async function _DELETE(req: Request) {
        VALUES ($1, $2, $3, 'channel.delete', $4, $5, $6)`,
       [randomUUID(), ch.workspace_id, uid, channelId, JSON.stringify({ name: ch.name, type: ch.type }), Date.now()]
     )
+  } catch { /* best-effort */ }
+
+  // Emit channel.archived (convention for hard-delete) best-effort.
+  try {
+    await emitChannelArchived(pool, {
+      channel_id: channelId, name: ch.name, type: ch.type, user_id: uid, workspace_id: ch.workspace_id,
+    })
   } catch { /* best-effort */ }
 
   return NextResponse.json({ ok: true, deleted: channelId })

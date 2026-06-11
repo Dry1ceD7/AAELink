@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isDmBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * Direct Messages List API.
@@ -58,7 +59,7 @@ async function _GET(req: NextRequest) {
       COALESCE(
         (SELECT COUNT(*)::text FROM aaelink.messages m
          WHERE m.channel_id = c.id
-           AND m.created_at > COALESCE((SELECT rs.last_read_at FROM aaelink.read_state rs WHERE rs.channel_id = c.id AND rs.user_id = $1), 0)
+           AND m.created_at > COALESCE((SELECT rs.last_read_at FROM aaelink.channel_read_state rs WHERE rs.channel_id = c.id AND rs.user_id = $1), 0)
            AND m.user_id <> $1),
         '0'
       ) AS unread_count
@@ -139,6 +140,20 @@ async function _POST(req: NextRequest) {
   if (!workspaceId) return NextResponse.json({ error: 'workspace_id_required' }, { status: 400 })
 
   const allUserIds = [uid, ...targetIds].sort()
+
+  // Information barrier: check ALL unordered pairs (initiator + recipients) so
+  // a group DM where two recipients are barriered is also blocked, regardless of
+  // whether the initiator is in either group.
+  for (let i = 0; i < allUserIds.length; i++) {
+    for (let j = i + 1; j < allUserIds.length; j++) {
+      if (await isDmBlocked(allUserIds[i], allUserIds[j], workspaceId)) {
+        return NextResponse.json(
+          { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+          { status: 403 }
+        )
+      }
+    }
+  }
   const isGroupDM = targetIds.length > 1
   const channelType = isGroupDM ? 'G' : 'D'
 

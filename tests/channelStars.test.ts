@@ -13,7 +13,7 @@ const mockLocalStorage = {
   length: 0,
 } satisfies Storage
 
-vi.mock('@/lib/apiClient', () => ({
+vi.mock('@/lib/api/apiClient', () => ({
   apiFetch: vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
 }))
 
@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, 'window', {
 })
 Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, writable: true })
 
-import { readStarredChannels, isChannelStarred } from '@/lib/channelStars'
+import { readStarredChannels, isChannelStarred } from '@/lib/channels/channelStars'
 
 describe('ChannelStars — readStarredChannels', () => {
   beforeEach(() => {

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * Conversation Members API — Slack conversations.invite / conversations.kick parity.
@@ -108,6 +109,15 @@ async function _POST(req: NextRequest) {
     // Verify user exists
     const { rows: userCheck } = await pool.query(`SELECT 1 FROM aaelink.users WHERE id = $1`, [userId])
     if (!userCheck[0]) continue
+
+    // Information barrier: block invitee if they are separated from an existing
+    // channel member by an active block_channels barrier.
+    if (await isBlocked(userId, channelId, 'channel')) {
+      return NextResponse.json(
+        { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+        { status: 403 }
+      )
+    }
 
     const { rows: existing } = await pool.query(
       `SELECT 1 FROM aaelink.channel_members WHERE channel_id = $1 AND user_id = $2`, [channelId, userId]

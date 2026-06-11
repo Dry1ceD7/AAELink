@@ -2,7 +2,7 @@
  * AAELink — Chat Post Transformation Tests
  */
 import { describe, it, expect } from 'vitest'
-import { rowToPost, type MessageRowInput } from '@/lib/chat-post'
+import { rowToPost, type MessageRowInput } from '@/lib/messaging/chat-post'
 
 function makeRow(overrides: Partial<MessageRowInput> = {}): MessageRowInput {
   return {

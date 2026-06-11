@@ -6,7 +6,7 @@ import {
   DEFAULT_CHANNEL_NAME,
   DEFAULT_CHANNEL_DISPLAY_NAME,
   DEFAULT_CHANNEL_PURPOSE,
-} from '@/lib/defaultChannel'
+} from '@/lib/channels/defaultChannel'
 
 describe('DefaultChannel — Constants', () => {
   it('name is general', () => {

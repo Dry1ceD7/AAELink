@@ -1,8 +1,8 @@
-import type { ApiNotification } from '@/lib/notificationTypes'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import type { ApiNotification } from '@/lib/notifications/notificationTypes'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

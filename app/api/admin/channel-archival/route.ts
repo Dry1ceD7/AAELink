@@ -1,15 +1,16 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextResponse } from 'next/server'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   ChannelArchivalEngine,
   DEFAULT_ARCHIVAL_POLICY,
   type ArchivalPolicy,
-} from '@/lib/channelArchival'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
+} from '@/lib/channels/channelArchival'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
 
-let engine = new ChannelArchivalEngine()
+const engine = new ChannelArchivalEngine()
 
 async function requireAdmin(): Promise<{ uid: string } | NextResponse> {
   const uid = await readSessionUserId()

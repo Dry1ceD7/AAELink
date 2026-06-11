@@ -1,16 +1,16 @@
 import { randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { isWorkspaceMember } from '@/lib/workspaceAccess'
-import { getMemberDepartmentId, userIsItForWorkspace } from '@/lib/ticketAccess'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { isWorkspaceMember } from '@/lib/workspace/workspaceAccess'
+import { getMemberDepartmentId, userIsItForWorkspace } from '@/lib/enterprise/ticketAccess'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 import {
   isTicketPriority, isTicketStatus, isTicketCategory, isTicketSource,
   calculateSlaDue, isValidTransition,
   type TicketPriority, type TicketStatus, type TicketCategory
-} from '@/lib/slaEngine'
+} from '@/lib/enterprise/slaEngine'
 
 // ── GET /api/tickets — list tickets ─────────────────────────────────────────
 

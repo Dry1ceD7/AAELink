@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# Default `npm run dev`: Next on 0.0.0.0 with HTTPS, NEXT_PUBLIC_APP_URL=https://<Wi‑Fi/same-network-IP>:3040
+# Default `bun run dev`: Next on 0.0.0.0 with HTTPS, NEXT_PUBLIC_APP_URL=https://<Wi‑Fi/same-network-IP>:3040
 # (session cookies and redirects match the URL other PCs use).
 #
 # Optional trusted local certs (install mkcert, generate for your LAN IP):
@@ -14,12 +14,12 @@ cd "$ROOT"
 ip=$(zsh "${ROOT}/scripts/lan-ipv4-print.zsh" || true)
 if [[ -z "${ip// }" ]]; then
   ip="127.0.0.1"
-  echo "dev: could not detect a Wi‑Fi / Ethernet IPv4; using ${ip} for HTTPS. Connect to the network or use npm run dev:localhost for plain http://localhost:3040." >&2
+  echo "dev: could not detect a Wi‑Fi / Ethernet IPv4; using ${ip} for HTTPS. Connect to the network or use bun run dev:localhost for plain http://localhost:3040." >&2
 fi
 
 export NEXT_PUBLIC_APP_URL="https://${ip}:3040"
 
-echo "AAELink dev — HTTPS on your Mac's Wi‑Fi / same-network IP (default npm run dev)"
+echo "AAELink dev — HTTPS on your Mac's Wi‑Fi / same-network IP (default bun run dev)"
 echo "------------------------------------------"
 echo "NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}"
 echo ""
@@ -42,4 +42,4 @@ else
   args+=( --experimental-https )
 fi
 
-exec npx next dev "${args[@]}"
+exec bunx next dev "${args[@]}"

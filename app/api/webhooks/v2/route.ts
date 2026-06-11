@@ -1,10 +1,11 @@
+// keep: external integration entry point (webhook / IdP / push provider / device)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID, createHmac, timingSafeEqual } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { webhookDeliveries } from '@/lib/metrics'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { webhookDeliveries } from '@/lib/infra/metrics'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Webhooks v2 API — HMAC-signed, retryable, event-filtered webhook delivery.

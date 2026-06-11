@@ -2,7 +2,7 @@
  * AAELink — WebSocket Transport Layer Tests
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { TransportManager, resetTransport } from '@/lib/wsTransport'
+import { TransportManager, resetTransport } from '@/lib/realtime/wsTransport'
 
 // Mock WebSocket since we're in Node.js test env
 class MockWebSocket {

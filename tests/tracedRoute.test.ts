@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 describe('TracedRoute', () => {
   it('passes request to handler and returns response', async () => {

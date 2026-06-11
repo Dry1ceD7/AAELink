@@ -2,7 +2,7 @@
  * AAELink — Platform Role Exhaustive Tests
  */
 import { describe, it, expect } from 'vitest'
-import { isPlatformAdmin, isSuperAdmin, isItAdmin } from '@/lib/platformRole'
+import { isPlatformAdmin, isSuperAdmin, isItAdmin } from '@/lib/comms/platformRole'
 
 // ── isSuperAdmin ────────────────────────────────────────────────────
 

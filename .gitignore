@@ -1,32 +1,9 @@
-.DS_Store
-.env
-.env.*
-!.env.example
-!.env.lan.example
-node_modules/
-dist/
-build/
-target/
-.next/
-*.log
-*.pem
-*.key
-*.p12
-*.pfx
-secrets/
 # === OS ===
 .DS_Store
 .DS_Store?
 ._*
 Thumbs.db
 desktop.ini
-
-# === Editor ===
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
 
 # === Env files ===
 .env
@@ -35,32 +12,33 @@ desktop.ini
 !.env.example
 !.env.lan.example
 
-# === Go ===
-services/**/bin/
-services/**/tmp/
-services/**/server
-services/**/*.test
-services/**/coverage.out
-services/**/coverage.html
-
+# === Dependencies & Build ===
+node_modules/
+dist/
+build/
+target/
+.next/
 tsconfig.tsbuildinfo
 
-# === Node / Next.js ===
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/.turbo/
-frontend/coverage/
-frontend/tsconfig.tsbuildinfo
-desktop-tauri/node_modules/
-desktop-tauri/src-tauri/target/
-desktop-tauri/src-tauri/gen/
+# === Editor / IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Generated / Cached ===
+coverage/
+.graphify/
 
 # === Docker ===
 docker-compose.override.yml
 
 # === MinIO data (local dev) ===
 .minio-data/
+
+# === Local file-upload store (dev/CI fallback when S3 is unconfigured) ===
+.uploads/
 
 # === Logs ===
 *.log
@@ -86,7 +64,6 @@ docs/WHERE-IS-THE-ENGINE.md
 docs/ROADMAP-PHASES-AND-LAYERS.md
 docs/BRANDING.md
 docs/architecture-*.md
-docs/parity-*.md
 docs/phase-1/
 docs/deployment/
 
@@ -99,7 +76,14 @@ secrets/
 infra/*/secrets.yaml
 !infra/*/secrets.example.yaml
 sqlite.db
+
+# === Dead/legacy tool dirs ===
 .kilocode/
+.opencode/
+.clinerules/
+.cursor/
+.windsurf/
+.agent/
 
 # === Playwright ===
 e2e/.results/
@@ -111,3 +95,10 @@ blob-report/
 
 # === OMC runtime state ===
 .omc/
+
+# Upstream skill repos (cloned into _skills-import/, processed copies live in .claude/skills/external/)
+_skills-import/
+
+# === Logs ===
+*.log
+logs/

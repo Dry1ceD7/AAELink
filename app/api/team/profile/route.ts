@@ -1,8 +1,9 @@
+// keep: enterprise admin surface kept for parity (intentional, not yet wired into UI)
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Team Profile API — Slack team.profile parity.
@@ -16,8 +17,6 @@ async function _GET(req: NextRequest) {
   if (!pool) return NextResponse.json({ error: 'db_unavailable' }, { status: 503 })
   const uid = await readSessionUserId()
   if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-
-  await ensureProfileFieldsTable(pool)
 
   const { rows } = await pool.query(
     `SELECT id, label, field_type, hint, possible_values, ordering, is_required, is_visible
@@ -68,7 +67,6 @@ async function _POST(req: NextRequest) {
     is_visible?: boolean
   }
 
-  await ensureProfileFieldsTable(pool)
   const now = Date.now()
 
   if (body.action === 'add') {
@@ -119,22 +117,6 @@ async function _POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 })
-}
-
-async function ensureProfileFieldsTable(pool: import('pg').Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS aaelink.team_profile_fields (
-      id               TEXT PRIMARY KEY,
-      label            TEXT NOT NULL DEFAULT '',
-      field_type       TEXT NOT NULL DEFAULT 'text',
-      hint             TEXT NOT NULL DEFAULT '',
-      possible_values  TEXT NOT NULL DEFAULT '[]',
-      ordering         INT NOT NULL DEFAULT 0,
-      is_required      BOOLEAN NOT NULL DEFAULT false,
-      is_visible       BOOLEAN NOT NULL DEFAULT true,
-      created_at       BIGINT NOT NULL DEFAULT 0
-    )
-  `).catch(() => {})
 }
 
 export const GET  = tracedRoute('GET',  '/api/team/profile', _GET)

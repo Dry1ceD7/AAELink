@@ -1,8 +1,10 @@
+import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { isBlocked, getBarrierViolationMessage } from '@/lib/enterprise/barrierGuard'
 
 /**
  * POST /api/channels/join — join a public channel by name.
@@ -42,13 +44,36 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: 'cannot_join_private' }, { status: 403 })
   }
 
-  // Add the user as a member (idempotent)
-  await pool.query(
-    `INSERT INTO aaelink.channel_members (channel_id, user_id, created_at)
-     VALUES ($1, $2, $3)
+  // Information barrier: block joining a channel that already contains a member
+  // separated from this user by an active channel-blocking barrier.
+  if (await isBlocked(uid, ch.id, 'channel')) {
+    return NextResponse.json(
+      { error: 'blocked_by_information_barrier', message: getBarrierViolationMessage() },
+      { status: 403 }
+    )
+  }
+
+  // Add the user as a member (idempotent). channel_members is
+  // (channel_id, user_id, role, joined_at) — joined_at is NOT NULL and there is
+  // no created_at column, so the prior insert errored on every join.
+  const now = Date.now()
+  const { rowCount } = await pool.query(
+    `INSERT INTO aaelink.channel_members (channel_id, user_id, role, joined_at)
+     VALUES ($1, $2, 'member', $3)
      ON CONFLICT (channel_id, user_id) DO NOTHING`,
-    [ch.id, uid, Date.now()]
+    [ch.id, uid, now]
   )
+
+  // Post system_join message only if user was actually added (not already a member)
+  if (rowCount && rowCount > 0) {
+    try {
+      await pool.query(
+        `INSERT INTO aaelink.messages (id, channel_id, user_id, body, root_id, type, created_at, updated_at)
+         VALUES ($1, $2, $3, '', '', 'system_join', $4, $4)`,
+        [randomUUID(), ch.id, uid, now]
+      )
+    } catch { /* best-effort */ }
+  }
 
   return NextResponse.json({ ok: true, channel_id: ch.id })
 }

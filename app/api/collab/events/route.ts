@@ -1,10 +1,11 @@
-import { reactionSummariesForMessages, rowToPost } from '@/lib/chat-post'
-import { userCanReadChannel } from '@/lib/collab-access'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { startScheduledMessageProcessor } from '@/lib/scheduledMessageProcessor'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { reactionSummariesForMessages, readReceiptDeltaSince, readReceiptsForMessages, rowToPost } from '@/lib/messaging/chat-post'
+import type { ReadReceipt } from '@/lib/realtime/realtime'
+import { userCanReadChannel } from '@/lib/enterprise/collab-access'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { startScheduledMessageProcessor } from '@/lib/infra/scheduledMessageProcessor'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 // Start the scheduled message delivery processor on module load
 startScheduledMessageProcessor()
@@ -50,6 +51,32 @@ async function initialThreadReplyWatermark(
   return Number(rows[0]?.m || 0)
 }
 
+/**
+ * Seed the read-receipt watermark. On reconnect the client passes back the last
+ * `read_cursor` it received (`read_since`) so reads that landed during the
+ * disconnect gap are re-streamed instead of skipped. On a true first connect
+ * (no cursor) start at the latest existing read — the initial reader stacks come
+ * from the message load (`GET /api/messages` already attaches `read_receipts`),
+ * so the stream only needs to carry subsequent changes. Independent of `since`
+ * (a message cursor), since `read_at` is its own timeline.
+ */
+async function initialReadWatermark(
+  pool: NonNullable<ReturnType<typeof getPool>>,
+  channelId: string,
+  readSinceParam: string | null
+): Promise<number> {
+  if (readSinceParam !== null && readSinceParam !== '') {
+    const s = Number(readSinceParam)
+    if (Number.isFinite(s) && s >= 0) return s
+  }
+  const { rows } = await pool.query<{ m: string }>(
+    `SELECT COALESCE(MAX(read_at), 0)::text AS m FROM aaelink.message_reads
+     WHERE channel_id = $1`,
+    [channelId]
+  )
+  return Number(rows[0]?.m || 0)
+}
+
 async function _GET(req: Request) {
   const pool = getPool()
   if (!pool) return new Response('database_not_configured', { status: 503 })
@@ -64,6 +91,7 @@ async function _GET(req: Request) {
   }
   let watermarkMs = await initialWatermark(pool, channelId, url.searchParams.get('since'))
   let threadReplyWatermarkMs = await initialThreadReplyWatermark(pool, channelId, url.searchParams.get('since'))
+  let readWatermarkMs = await initialReadWatermark(pool, channelId, url.searchParams.get('read_since'))
 
   const stream = new ReadableStream({
     start(controller) {
@@ -94,6 +122,8 @@ async function _GET(req: Request) {
             posts?: unknown[]
             reply_counts?: Record<string, number>
             deletions?: { id: string; deleted_at: number; thread_root_id?: string }[]
+            read_receipts?: Record<string, ReadReceipt[]>
+            read_cursor?: number
           } = {}
           const collabW0 = watermarkMs
 
@@ -121,6 +151,7 @@ async function _GET(req: Request) {
               uid,
               rows.map(r => r.id)
             )
+            const rr = await readReceiptsForMessages(pool, rows.map(r => r.id))
             const posts = rows.map(r =>
               rowToPost(
                 {
@@ -133,7 +164,8 @@ async function _GET(req: Request) {
                   root_id: r.root_id,
                   reply_count: r.reply_count
                 },
-                rx.get(r.id)
+                rx.get(r.id),
+                rr.get(r.id)
               )
             )
             for (const r of rows) {
@@ -208,6 +240,19 @@ async function _GET(req: Request) {
             }
           }
 
+          // Read-receipt deltas: stream the current reader stack for any message
+          // whose reads advanced past the receipt watermark so avatar stacks update
+          // live on the SSE / poll path too. (The WS gateway path merges the same
+          // information from the `message_read` redisPubSub fan-out instead.)
+          const rrDelta = await readReceiptDeltaSince(pool, channelId, readWatermarkMs)
+          if (Object.keys(rrDelta.map).length > 0) {
+            payload.read_receipts = rrDelta.map
+            readWatermarkMs = rrDelta.nextWatermark
+            // Echo the advanced cursor so the client can resume from it on
+            // reconnect (`read_since`) and not miss reads during a disconnect.
+            payload.read_cursor = readWatermarkMs
+          }
+
           const { rows: twRows } = await pool.query<{ m: string | null }>(
             `SELECT MAX(GREATEST(m.created_at, m.updated_at))::text AS m
              FROM aaelink.messages m
@@ -224,7 +269,8 @@ async function _GET(req: Request) {
           if (
             (payload.posts && payload.posts.length > 0) ||
             (payload.reply_counts && Object.keys(payload.reply_counts).length > 0) ||
-            (payload.deletions && payload.deletions.length > 0)
+            (payload.deletions && payload.deletions.length > 0) ||
+            (payload.read_receipts && Object.keys(payload.read_receipts).length > 0)
           ) {
             controller.enqueue(enc.encode(`data: ${JSON.stringify(payload)}\n\n`))
           }
@@ -240,6 +286,11 @@ async function _GET(req: Request) {
       }
 
       req.signal.addEventListener('abort', stop)
+
+      // Emit the baseline read cursor up front so the client can resume the
+      // receipt stream from here on reconnect even if no reads are streamed
+      // before the disconnect (otherwise a gap read would be missed).
+      controller.enqueue(enc.encode(`data: ${JSON.stringify({ read_cursor: readWatermarkMs })}\n\n`))
 
       void tick()
       timer = setInterval(() => void tick(), 2000)

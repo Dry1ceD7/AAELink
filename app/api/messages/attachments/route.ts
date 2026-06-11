@@ -1,9 +1,11 @@
+// keep: slack-compat surface (intentionally addressable, may be invoked by Slack-shaped clients)
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { getActiveBarriers } from '@/lib/enterprise/barrierGuard'
 
 /**
  * Message Attachments API — binds uploaded files to messages.
@@ -27,12 +29,18 @@ async function _GET(req: NextRequest) {
   const messageId = req.nextUrl.searchParams.get('message_id')?.trim() || ''
   if (!messageId) return NextResponse.json({ error: 'message_id_required' }, { status: 400 })
 
+  // The message_attachments link table (id, message_id, file_id, sort_order)
+  // is the real binding and is preserved. Only the joined file table changes:
+  // canonical chat files live in aaelink.file_attachments (migration 033), not
+  // aaelink.documents (which is the documents/KB subsystem). Output column
+  // names are kept stable (filename/file_size/mime_type/storage_key) so
+  // existing clients are unaffected. Soft-deleted files are excluded.
   const { rows } = await pool.query(`
     SELECT ma.id, ma.file_id, ma.sort_order,
-           d.filename, d.file_size, d.mime_type, d.storage_key,
-           d.created_at AS file_created_at
+           f.filename, f.size AS file_size, f.content_type AS mime_type,
+           f.storage_key, f.created_at AS file_created_at
     FROM aaelink.message_attachments ma
-    JOIN aaelink.documents d ON d.id = ma.file_id
+    JOIN aaelink.file_attachments f ON f.id = ma.file_id AND f.deleted_at = 0
     WHERE ma.message_id = $1
     ORDER BY ma.sort_order ASC
   `, [messageId])
@@ -60,11 +68,38 @@ async function _POST(req: NextRequest) {
   if (fileIds.length === 0) return NextResponse.json({ error: 'file_ids_required' }, { status: 400 })
 
   // Verify message ownership
-  const { rows: msgRows } = await pool.query<{ user_id: string }>(
-    `SELECT user_id FROM aaelink.messages WHERE id = $1`, [messageId]
+  const { rows: msgRows } = await pool.query<{ user_id: string; channel_id: string }>(
+    `SELECT user_id, channel_id FROM aaelink.messages WHERE id = $1`, [messageId]
   )
   if (!msgRows[0]) return NextResponse.json({ error: 'message_not_found' }, { status: 404 })
   if (msgRows[0].user_id !== uid) return NextResponse.json({ error: 'forbidden_not_author' }, { status: 403 })
+
+  // Block file sharing across an information barrier (block_file_share=true).
+  // Resolve the channel members, then pairwise-check the sender against each.
+  const { rows: memberRows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id FROM aaelink.channel_members WHERE channel_id = $1`,
+    [msgRows[0].channel_id]
+  )
+  const barriers = await getActiveBarriers('')
+  const fileShareBarriers = barriers.filter((b) => b.block_file_share)
+  if (fileShareBarriers.length > 0) {
+    const senderInA = fileShareBarriers.some((b) => b.group_a_ids.includes(uid))
+    const senderInB = fileShareBarriers.some((b) => b.group_b_ids.includes(uid))
+    if (senderInA || senderInB) {
+      for (const { user_id: memberId } of memberRows) {
+        if (memberId === uid) continue
+        for (const b of fileShareBarriers) {
+          const uInA = b.group_a_ids.includes(uid)
+          const uInB = b.group_b_ids.includes(uid)
+          const mInA = b.group_a_ids.includes(memberId)
+          const mInB = b.group_b_ids.includes(memberId)
+          if ((uInA && mInB) || (uInB && mInA)) {
+            return NextResponse.json({ error: 'blocked_by_information_barrier' }, { status: 403 })
+          }
+        }
+      }
+    }
+  }
 
   const now = Date.now()
   const attached: string[] = []

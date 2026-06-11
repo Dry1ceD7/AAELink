@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Health Check API — Kubernetes readiness/liveness probes.

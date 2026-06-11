@@ -1,48 +1,48 @@
 'use client'
 
 import { Menu } from 'lucide-react'
-import { NotificationsBell } from '@/app/components/NotificationsBell'
-import { TicketsPanel } from '@/app/components/TicketsPanel'
-import { DocumentsPanel } from '@/app/components/DocumentsPanel'
-import { ApprovalsPanel } from '@/app/components/ApprovalsPanel'
-import { KnowledgeBasePanel } from '@/app/components/KnowledgeBasePanel'
-import { CalendarPanel } from '@/app/components/CalendarPanel'
-import { IntegrationsPanel } from '@/app/components/IntegrationsPanel'
-import { SsoSettingsPanel } from '@/app/components/SsoSettingsPanel'
-import { ThreadsListPanel } from '@/app/components/ThreadsListPanel'
-import { SavedItemsPanel } from '@/app/components/SavedItemsPanel'
-import { MarketplacePanel } from '@/app/components/MarketplacePanel'
-import CatchUpView from '@/app/components/CatchUpView'
-import PeopleDirectoryPanel from '@/app/components/PeopleDirectoryPanel'
-import HuddlePanel from '@/app/components/HuddlePanel'
-import CanvasEditor from '@/app/components/CanvasEditor'
-import AISummaryPanel from '@/app/components/AISummaryPanel'
-import DataRetentionSettings from '@/app/components/admin/DataRetentionSettings'
-import InformationBarriers from '@/app/components/admin/InformationBarriers'
-import DLPSettingsPanel from '@/app/components/admin/DLPSettingsPanel'
-import WorkflowBuilder from '@/app/components/WorkflowBuilder'
-import SlackConnectPanel from '@/app/components/SlackConnectPanel'
-import EKMPanel from '@/app/components/admin/EKMPanel'
-import LegalHoldPanel from '@/app/components/admin/LegalHoldPanel'
-import DomainClaimingPanel from '@/app/components/admin/DomainClaimingPanel'
-import EMMPanel from '@/app/components/admin/EMMPanel'
-import AuditLogPanel from '@/app/components/admin/AuditLogPanel'
-import SessionManagementPanel from '@/app/components/admin/SessionManagementPanel'
-import UserGroupsPanel from '@/app/components/UserGroupsPanel'
-import ChannelAnalyticsPanel from '@/app/components/ChannelAnalyticsPanel'
-import DraftsPanel from '@/app/components/DraftsPanel'
-import WorkspaceExportPanel from '@/app/components/admin/WorkspaceExportPanel'
-import NotificationSchedulePanel from '@/app/components/NotificationSchedulePanel'
-import AppDirectoryPanel from '@/app/components/AppDirectoryPanel'
-import AccessibilityPanel from '@/app/components/AccessibilityPanel'
-import FileBrowserPanel from '@/app/components/FileBrowserPanel'
-import StatusPagePanel from '@/app/components/StatusPagePanel'
-import SlackListPanel from '@/app/components/SlackListPanel'
-import CustomEmojiPanel from '@/app/components/CustomEmojiPanel'
-import { ActivityPanel } from '@/app/components/ActivityPanel'
-import HRPanel from '@/app/components/HRPanel'
-import { isPlatformAdmin } from '@/lib/platformRole'
-import type { AppUser } from '@/app/components/chat/ChatMessage'
+import { NotificationsBell } from '@/components/notifications/NotificationsBell'
+import { TicketsPanel } from '@/components/tickets/TicketsPanel'
+import { DocumentsPanel } from '@/components/documents/DocumentsPanel'
+import { ApprovalsPanel } from '@/components/workspace/ApprovalsPanel'
+import { KnowledgeBasePanel } from '@/components/workspace/KnowledgeBasePanel'
+import { CalendarPanel } from '@/components/workspace/CalendarPanel'
+import { IntegrationsPanel } from '@/components/workspace/IntegrationsPanel'
+import { SsoSettingsPanel } from '@/components/shared/SsoSettingsPanel'
+import { ThreadsListPanel } from '@/components/shared/ThreadsListPanel'
+import { SavedItemsPanel } from '@/components/shared/SavedItemsPanel'
+import { MarketplacePanel } from '@/components/workspace/MarketplacePanel'
+import CatchUpView from '@/components/shared/CatchUpView'
+import PeopleDirectoryPanel from '@/components/user/PeopleDirectoryPanel'
+import HuddlePanel from '@/components/workspace/HuddlePanel'
+import CallHistoryPanel from '@/components/workspace/CallHistoryPanel'
+import CanvasEditor from '@/components/shared/CanvasEditor'
+import DataRetentionSettings from '@/components/admin/DataRetentionSettings'
+import InformationBarriers from '@/components/admin/InformationBarriers'
+import DLPSettingsPanel from '@/components/admin/DLPSettingsPanel'
+import WorkflowBuilder from '@/components/workspace/WorkflowBuilder'
+import SlackConnectPanel from '@/components/channels/SlackConnectPanel'
+import EKMPanel from '@/components/admin/EKMPanel'
+import LegalHoldPanel from '@/components/admin/LegalHoldPanel'
+import DomainClaimingPanel from '@/components/admin/DomainClaimingPanel'
+import EMMPanel from '@/components/admin/EMMPanel'
+import AuditLogPanel from '@/components/admin/AuditLogPanel'
+import SessionManagementPanel from '@/components/admin/SessionManagementPanel'
+import UserGroupsPanel from '@/components/user/UserGroupsPanel'
+import ChannelAnalyticsPanel from '@/components/channels/ChannelAnalyticsPanel'
+import DraftsPanel from '@/components/user/DraftsPanel'
+import WorkspaceExportPanel from '@/components/admin/WorkspaceExportPanel'
+import NotificationSchedulePanel from '@/components/notifications/NotificationSchedulePanel'
+import AppDirectoryPanel from '@/components/workspace/AppDirectoryPanel'
+import AccessibilityPanel from '@/components/user/AccessibilityPanel'
+import FileBrowserPanel from '@/components/media/FileBrowserPanel'
+import StatusPagePanel from '@/components/workspace/StatusPagePanel'
+import SlackListPanel from '@/components/workspace/SlackListPanel'
+import CustomEmojiPanel from '@/components/shared/CustomEmojiPanel'
+import { ActivityPanel } from '@/components/shared/ActivityPanel'
+import HRPanel from '@/components/workspace/HRPanel'
+import { isPlatformAdmin } from '@/lib/comms/platformRole'
+import type { AppUser } from '@/components/chat/ChatMessage'
 import type { Channel } from './types'
 
 /* ── Shared header wrapper for module panels ───────────────────────── */
@@ -175,20 +175,17 @@ export function ModuleRenderer({
     case 'huddles':
     case 'huddle':
       return bare(
-        <HuddlePanel channelName={channelTitle} onClose={navigateHome} />,
+        <HuddlePanel channelName={channelTitle} workspaceId={activeTeamId} onClose={navigateHome} />,
         activeModule === 'huddle' ? { style: { background: '#1a1a2e' } } : undefined)
+    case 'calls':
+    case 'call_history':
+      return bare(<CallHistoryPanel onClose={navigateHome} />)
     case 'canvas':
       return bare(<CanvasEditor channelName={channelTitle} onClose={navigateHome} />)
     case 'people':
       return bare(<PeopleDirectoryPanel onClose={navigateHome} onStartDM={(uid) => openDm(uid)} />)
     case 'lists':
       return bare(<SlackListPanel channelName={channelTitle} onClose={navigateHome} />)
-    case 'ai':
-      return bare(
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <AISummaryPanel channelName={channelTitle} onClose={navigateHome} />
-        </div>,
-        { style: { display: 'flex' } })
     case 'workflows':
       return bare(<WorkflowBuilder onClose={navigateHome} />)
     case 'connect':

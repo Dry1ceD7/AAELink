@@ -1,14 +1,16 @@
 import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import fs from 'fs'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
 import path from 'path'
-import { tracedRoute } from '@/lib/tracedRoute'
-
-const UPLOAD_DIR = process.env.AAELINK_UPLOAD_DIR || path.join(process.cwd(), '.uploads')
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+import { tracedRoute } from '@/lib/api/tracedRoute'
+import { storeFileBytes } from '@/lib/files/storage'
+import { enqueueUploadJobs } from '@/lib/files/fileJobs'
+import { getScanPolicy } from '@/lib/files/scanGate'
+import { checkUploadPolicy, SINGLE_SHOT_MAX_BYTES } from '@/lib/files/uploadPolicy'
+import { emitFileUploaded } from '@/lib/webhooks/webhookEmitter'
+import { log } from '@/lib/infra/log'
 
 /**
  * POST /api/files/upload — upload a file attachment for a message.
@@ -28,35 +30,114 @@ async function _POST(req: NextRequest) {
   const channelId = String(formData.get('channel_id') || '').trim()
   const messageId = String(formData.get('message_id') || '').trim()
 
-  if (!file || !channelId) {
-    return NextResponse.json({ error: 'file_and_channel_id_required' }, { status: 400 })
+  // Slack flow: a file can be uploaded BEFORE it is attached to a message or
+  // even associated with a channel (getUploadURLExternal → completeUploadExternal).
+  // Only the file itself is mandatory; channel_id / message_id are optional.
+  if (!file) {
+    return NextResponse.json({ error: 'file_required' }, { status: 400 })
   }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: 'file_too_large', max: MAX_FILE_SIZE }, { status: 413 })
+  // Enforce the org scan policy BEFORE storing bytes: a policy size cap REPLACES
+  // the hardcoded 50MB default when set (max_file_size_mb > 0), otherwise the
+  // built-in default applies; blocked extensions are rejected outright. The same
+  // policy shape drives the access gate and the post-upload pipeline.
+  const policy = await getScanPolicy(pool)
+  const check = checkUploadPolicy(
+    { filename: file.name, size: file.size, defaultMaxBytes: SINGLE_SHOT_MAX_BYTES },
+    policy
+  )
+  if (!check.ok) {
+    return check.error === 'file_too_large'
+      ? NextResponse.json({ error: 'file_too_large', max: check.max }, { status: 413 })
+      : NextResponse.json({ error: 'extension_blocked', extension: check.extension }, { status: 415 })
   }
 
-  // Ensure upload directory exists
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+  // Resolve the owning workspace from the channel when one is provided, so the
+  // row is workspace-scoped for list/info/delete.
+  let workspaceId: string | null = null
+  if (channelId) {
+    const { rows } = await pool.query<{ workspace_id: string }>(
+      `SELECT workspace_id FROM aaelink.channels WHERE id = $1`, [channelId]
+    )
+    workspaceId = rows[0]?.workspace_id ?? null
+  }
 
   const id = randomUUID()
   const ext = path.extname(file.name) || ''
-  const storageKey = `${id}${ext}`
-  const destPath = path.join(UPLOAD_DIR, storageKey)
+  const localKey = `${id}${ext}`
+  const contentType = file.type || 'application/octet-stream'
 
-  // Write file to disk
+  // Persist bytes via the storage abstraction: S3 when configured, local disk
+  // otherwise (dev + tests without S3 env stay on disk). The chosen backend +
+  // its key are recorded so download/scan/index/delete resolve the same bytes.
   const buffer = Buffer.from(await file.arrayBuffer())
-  fs.writeFileSync(destPath, buffer)
+  const { backend, storageKey } = await storeFileBytes({
+    fileId: id,
+    filename: file.name,
+    contentType,
+    body: buffer,
+    localKey,
+  })
 
   const now = Date.now()
 
-  // If message_id is provided, link the attachment to the message
-  if (messageId) {
-    await pool.query(
-      `INSERT INTO aaelink.file_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [id, messageId, channelId, uid, file.name, file.type || 'application/octet-stream', file.size, storageKey, now]
-    )
+  // Always persist the canonical file row (migration 033 relaxed the
+  // message_id/channel_id NOT NULLs), so an unattached upload is no longer an
+  // orphan invisible to /api/files. message_id/channel_id stay null until the
+  // file is bound to a message.
+  await pool.query(
+    `INSERT INTO aaelink.file_attachments
+       (id, message_id, channel_id, workspace_id, user_id, filename, content_type, size, storage_key, storage_backend, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      id,
+      messageId || null,
+      channelId || null,
+      workspaceId,
+      uid,
+      file.name,
+      contentType,
+      file.size,
+      storageKey,
+      backend,
+      now,
+    ]
+  )
+
+  // Fan out file.uploaded to subscribed outgoing webhooks + Events-API
+  // subscriptions (no-op when none configured). Best-effort: a delivery-queue
+  // hiccup must never fail the upload.
+  try {
+    await emitFileUploaded(pool, {
+      file_id: id,
+      filename: file.name,
+      size: file.size,
+      user_id: uid,
+      channel_id: channelId || undefined,
+      workspace_id: workspaceId || undefined,
+    })
+  } catch (err) {
+    log.error('file upload: emitFileUploaded failed', {
+      name: 'files.upload.emit',
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // Fire-and-forget the post-upload pipeline (virus scan + content index). A
+  // queue hiccup must never fail the upload, so enqueue errors are swallowed.
+  try {
+    await enqueueUploadJobs(pool, {
+      fileId: id,
+      filename: file.name,
+      fileSize: file.size,
+      mimeType: contentType,
+      uploadedBy: uid,
+    })
+  } catch (err) {
+    log.error('file upload: enqueue pipeline jobs failed', {
+      name: 'files.upload.enqueue',
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
 
   return NextResponse.json({
@@ -91,11 +172,11 @@ async function _GET(req: NextRequest) {
 
   if (messageId) {
     query = `SELECT id, message_id, filename, content_type, size, storage_key, created_at
-             FROM aaelink.file_attachments WHERE message_id = $1 ORDER BY created_at ASC`
+             FROM aaelink.file_attachments WHERE message_id = $1 AND deleted_at = 0 ORDER BY created_at ASC`
     params = [messageId]
   } else {
     query = `SELECT id, message_id, filename, content_type, size, storage_key, created_at
-             FROM aaelink.file_attachments WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 50`
+             FROM aaelink.file_attachments WHERE channel_id = $1 AND deleted_at = 0 ORDER BY created_at DESC LIMIT 50`
     params = [channelId]
   }
 

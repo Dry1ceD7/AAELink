@@ -22,13 +22,18 @@ Build an enterprise-grade communication and collaboration platform that achieves
 | Compliance | Enterprise Grid only | Built-in from day one |
 | Deployment | SaaS only | SaaS + Private Cloud + Air-gapped on-prem |
 
-### 1.3 Success Metrics (12 months post-GA)
-- ≥ 99.99% uptime SLO (≤ 52 min/year downtime)
-- p95 message fan-out latency ≤ 150 ms in-region; ≤ 400 ms cross-region
-- ≥ 70% search query satisfaction
-- ≤ 30 ms median UI input-to-paint on 4-year-old hardware
-- WCAG 2.2 AA conformance verified by third-party audit
-- SOC 2 Type II, ISO 27001, ISO 27018, HIPAA-ready, FedRAMP Moderate path
+### 1.3 Goal: Success Metrics (12 months post-GA)
+
+<!-- Audit-2026-05-26 UPG-001: heading prefixed with "Goal:" so the audit-engine
+     extracts machine-readable goal anchors. Substance unchanged. The bullets
+     below use SHALL/MUST shape so the bullet sub-pass also fires. -->
+
+- SHALL maintain ≥ 99.99% uptime SLO (≤ 52 min/year downtime)
+- MUST keep p95 message fan-out latency ≤ 150 ms in-region; ≤ 400 ms cross-region
+- SHALL achieve ≥ 70% search query satisfaction
+- MUST keep median UI input-to-paint ≤ 30 ms on 4-year-old hardware
+- SHALL ship WCAG 2.2 AA conformance verified by third-party audit
+- MUST hold SOC 2 Type II, ISO 27001, ISO 27017, ISO 27018, HIPAA-ready, FedRAMP Moderate path, FINRA 17a-4, SEC 17a-4
 
 ---
 
@@ -285,15 +290,15 @@ Workspace (org)
 - Rate Limiting: token-bucket per user/app/IP
 - Idempotency: `Idempotency-Key` on all mutations; 24-hour replay window
 
-### 4.4 Real-Time Engine
-- Connection tier: Elixir/OTP gateway — ≥ 2 M concurrent WS / region
-- Fanout: Kafka topic per workspace partitioned by channel_id
+### 4.4 Requirement: Real-Time Engine
+- MUST run an Elixir/OTP gateway capable of ≥ 2 M concurrent WS per region
+- SHALL fan out via Kafka topic per workspace partitioned by `channel_id`
 - Presence: Redis pub/sub; CRDT for cross-region
 - Ordering: per-channel monotonic sequence ID; client gap detection
 - Backpressure: per-connection token bucket; shed to digest path
 - Reconnection: stream resumption with last-seen offset; max 30s session continuity
 
-### 4.5 Data Layer
+### 4.5 Capability: Data Layer
 | Concern | Choice | Rationale |
 |---|---|---|
 | Relational | PostgreSQL 16 + Citus | Sharded by workspace_id; ACID for membership/permissions |
@@ -306,7 +311,7 @@ Workspace (org)
 | Streaming | Kafka / Redpanda | Event backbone, audit, derived stores |
 | Workflow | Temporal | Durable workflows, retries, sagas |
 
-### 4.6 Search Engine
+### 4.6 Capability: Search Engine
 - Lexical: OpenSearch BM25 + custom analyzers
 - Semantic: SBERT/E5-class embeddings; HNSW index
 - Hybrid Ranking: Reciprocal Rank Fusion + LightGBM LTR
@@ -314,7 +319,7 @@ Workspace (org)
 - Permissioning: pre-filter by ACL before scoring
 - Freshness: ≤ 2 s via Kafka → indexer
 
-### 4.7 AI/ML Layer
+### 4.7 Capability: AI/ML Layer
 - Inference: vLLM/TGI for OSS; Bedrock/Vertex/Azure for managed
 - Tenant Isolation: per-tenant prompt + retrieval; no cross-tenant context
 - Privacy: "no training on your data"; logs scrubbed; opt-out per workspace
@@ -377,7 +382,7 @@ Workspace (org)
 | High info density vs accessibility | Configurable density per user; AA conformance verified at every density |
 | Self-hosted vs SaaS feature parity | Single codebase; feature flags for managed-only services |
 
-### 5.4 Scalability Targets
+### 5.4 Requirement: Scalability Targets
 | Dimension | Target |
 |---|---|
 | Workspaces / region | 100,000 |
@@ -389,9 +394,9 @@ Workspace (org)
 | Search QPS / tenant (sustained) | 50; bursts to 500 |
 | File upload throughput | 10 GB/s per region |
 
-### 5.5 Security & Compliance
-- AuthN: OAuth 2.1, OIDC, SAML 2.0; passkeys (WebAuthn) first-class; MFA mandatory for admins
-- AuthZ: OpenFGA (ReBAC) + ABAC overlays
+### 5.5 Requirement: Security & Compliance
+- MUST support OAuth 2.1, OIDC, SAML 2.0; passkeys (WebAuthn) first-class; MFA mandatory for admins
+- MUST enforce AuthZ via OpenFGA (ReBAC) + ABAC overlays
 - Encryption: TLS 1.3 transit; AES-256-GCM at rest; KMS envelope; HYOK/BYOK
 - Secrets: Vault + workload identity
 - DLP: inline scanners; actions block/redact/quarantine/alert
@@ -407,7 +412,7 @@ Workspace (org)
 
 ## 6. Program Plan & Milestones
 
-### 6.1 Roadmap (76 weeks to GA)
+### 6.1 Goal: Roadmap (76 weeks to GA)
 
 | Milestone | Week | Exit Criteria |
 |---|---|---|

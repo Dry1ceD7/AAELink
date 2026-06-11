@@ -1,6 +1,6 @@
 'use client'
 
-import { RequestAccessFlow } from '../components/RequestAccessFlow'
+import { RequestAccessFlow } from '@/components/modals/RequestAccessFlow'
 
 export default function RegisterPage() {
   return (

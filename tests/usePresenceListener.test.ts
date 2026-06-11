@@ -5,7 +5,7 @@
  * decision thresholds for online/away/offline/dnd.
  */
 import { describe, it, expect } from 'vitest'
-import type { PresenceStatus } from '@/app/components/chat/usePresenceListener'
+import type { PresenceStatus } from '@/components/chat/usePresenceListener'
 
 /** Replicate getStatus logic from source */
 function computeStatus(

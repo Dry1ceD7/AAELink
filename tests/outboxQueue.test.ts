@@ -2,7 +2,7 @@
  * AAELink — Outbox Queue Type Tests
  */
 import { describe, it, expect } from 'vitest'
-import type { QueuedMessage } from '@/lib/outboxQueue'
+import type { QueuedMessage } from '@/lib/infra/outboxQueue'
 
 describe('OutboxQueue — QueuedMessage shape', () => {
   it('accepts valid queued message', () => {

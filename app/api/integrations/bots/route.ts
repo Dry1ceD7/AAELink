@@ -1,9 +1,10 @@
+// keep: external integration entry point (webhook / IdP / push provider / device)
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID, randomBytes } from 'crypto'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Bot Users & OAuth Apps API — manage bot accounts and OAuth app registrations.
@@ -116,7 +117,7 @@ async function _POST(req: NextRequest) {
 
   // Audit
   await pool.query(`
-    INSERT INTO aaelink.audit_log (id, actor_id, action, target_type, target_id, meta, created_at)
+    INSERT INTO aaelink.audit_log (id, actor_id, action, resource_kind, resource_id, metadata, created_at)
     VALUES ($1, $2, 'bot_created', 'bot_user', $3, $4, $5)
   `, [randomUUID(), uid, id, JSON.stringify({ kind, name, scopes }), now])
 

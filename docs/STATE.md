@@ -1,0 +1,148 @@
+# AAELink State
+
+Read at session start. Update with /handoff before ending a session.
+Non-personal voice. No emojis.
+
+Last updated: 2026-06-03 (Stage C — D1 workspace lifecycle + dev-boot fixes).
+
+## Source of truth
+- Parity scope: `docs/SLACK-PARITY-DIRECTIVE.md` (12 domains; AI/ML out of scope).
+- Status: `docs/audits/deep-audit-2026-06-02.md` — the authoritative parity ledger
+  (D1-D12 Done/Partial/Gap) and finding list.
+- Parity matrices: `docs/parity-reference-matrix.md`,
+  `docs/parity-slack-mattermost-aaelink-full-map.md`.
+
+## Done
+- Single `.claude` agent/skill registry; legacy systems (.agents/.kiro/_bmad/
+  _skills-import) archived.
+- Bun cutover complete: CI is Bun-only (lint, type-check, test, build, e2e).
+- Component reorg committed: `app/components/*` (flat) -> `components/<category>/*`.
+- Baseline gates green: tsc 0 errors, lint 0 errors (146 warnings), 1485 unit
+  tests pass (129 files), `next build` succeeds, no circular deps.
+- Enterprise Grid foundation shipped (contradicts older "not started" note):
+  `organizations` + `org_members` tables (migrate v0.0.44), `workspaces.org_id`,
+  `lib/enterprise/{orgAdmin,orgMembers,orgPolicies}`, routes `admin/org/[orgId]/*`,
+  `admin/roles`, full `scim/v2/*`, compliance suite (DLP, barriers, legal-holds,
+  retention, audit streams), 50+ admin routes.
+
+## Stage B remediation (this session)
+- C2 resolved: 678-change mid-reorg tree committed as a clean baseline.
+- C1 resolved: removed live AI surfaces (AISummaryPanel, /api/assistant, 'ai'
+  nav) — Deferred(AI) per scope section 2.
+- C3 resolved: this STATE.md rewritten from reality.
+- H1: Redis added to docker-compose.yml (port 26379).
+- H2: root package-lock.json removed; bun.lock is the tracked lockfile.
+- H3: test:integration / test:all scripts added (DB-backed __tests__ suite now
+  a discoverable local gate, not CI-only).
+- H4: pg value imports converted to type-only; eslint no-restricted-imports rule
+  enforces getPool() going forward.
+- H5: stale dated audits moved to docs/_archive/.
+
+## Stage C progress (this session)
+- CRITICAL fix: fresh-database migration built only 30 of 145 tables (a seed
+  guard `if (!users[0]) return` also gated ~115 CREATE TABLE statements). Fixed
+  + backfill migration 002. Fresh DB now builds 138 tables. This means clean
+  deploys (CI/k8s/new dev) were previously broken for all org/compliance/admin
+  routes. See deep-audit C4.
+- Fixed 14 enterprise-table columns mistyped UUID (base ids are TEXT) — FKs
+  failed on fresh DB. See C5.
+- Repaired the __tests__/api integration harness (stale import, wrong users/
+  sessions schema, wrong cookie, CI `--dir` no-op). Added
+  vitest.integration.config.ts. See C6.
+- Shipped D1 workspace discovery + owner-managed access levels (migration 003 +
+  /api/workspaces/discover + PATCH /api/workspaces/:id + lib + lib-layer test).
+  D1 discovery + access levels Gap/Partial → Done.
+- Validated D9/D10 enterprise modules with DB-backed lib-layer tests (7 files,
+  175 assertions, deterministic green on fresh DB): orgAdmin, orgMembers,
+  orgPolicies, customRoles, inviteRequests, barrierGuard, workspace discovery.
+  Surfaced + fixed 4 real bugs (all in code that was dead behind the C4 guard,
+  so never exercised): custom_roles permissions TEXT[] (JSON.stringify ->
+  malformed array), TIMESTAMPTZ-vs-BIGINT-ms mismatch (custom_roles/
+  role_assignments/invite_requests), invite_requests reviewed_by vs reviewer_id,
+  org delete blocked by missing ON DELETE SET NULL on workspaces.org_id.
+  D9 roles/invites/org-admin and D10 barriers/policies now verified-working.
+
+## Stage C progress (2026-06-03 session)
+- D1 workspace move/archive lifecycle shipped (migration 004 + lib +
+  routes + lib-layer test). `workspaces.archived_at` (BIGINT epoch-ms, 0 =
+  active — mirrors `channels.archived_at`) + `archived_by`.
+  `lib/workspace/workspaceLifecycle.ts`: archiveWorkspace / unarchiveWorkspace
+  (owner-only, system workspace guarded, already_archived/not_archived guards) +
+  moveWorkspaceToOrg (owner-only org reassignment; moving INTO an org requires
+  caller standing in a sibling workspace, mirroring joinOpenWorkspace; UUID-guards
+  the org id; detach-to-null supported). Routes: POST/DELETE
+  `/api/workspaces/:id/archive`, POST `/api/workspaces/:id/move` (traced + CSRF +
+  audit: workspace.archive/unarchive/move). Discovery now excludes archived
+  workspaces (`archived_at = 0`) and joinOpenWorkspace rejects archived ('archived');
+  switcher exposes `is_archived`. Test: `__tests__/api/workspace-lifecycle.test.ts`
+  (14 lib-layer assertions, green on fresh DB). D1 move/archive lifecycle Gap -> Done.
+- Dev-boot blocker fixed (was breaking `next dev` for everyone): `middleware.ts`
+  runs on the Edge runtime and imported `lib/auth/csp.ts`, which used Node's
+  `crypto.randomBytes` — unsupported on Edge, so every route 500'd at startup.
+  Switched `generateNonce()` to Web Crypto (`crypto.getRandomValues` + `btoa`).
+  Also made `lib/api/rateLimitStore.ts`'s optional `import('ioredis')` use a
+  runtime-variable specifier so Turbopack stops emitting a hard Edge
+  "Module not found" for the intentionally-absent optional dep.
+- Gates: tsc 0 errors, lint 0 errors (152 warnings, none in changed files),
+  unit 1482 passed / 3 skipped (1485), integration workspace-lifecycle 14/14 +
+  workspaces-discover 11/11 green.
+
+## Next (Stage C — build in-scope parity gaps, phase order in the directive section 7)
+- Re-validate schema-dependent "Done" routes (D9/D10/org/roles) with DB-backed
+  lib-layer tests now that the schema actually builds (their "Done" was
+  unverified — see C4 correction note at the top of the audit).
+- Phase 1 (D1): org-wide channels, enterprise identity cross-workspace
+  verification. (workspace discovery, access levels, move/archive lifecycle: Done.)
+- Phase 2 (D2): domain claiming, SAML signed-response + owner bypass, session
+  duration enforcement, MFA/EMM cascade, single-channel guest mgmt.
+- Phase 3 (D3+D4): user-group mentions, edit-history, download-all; D4 migrate
+  search from ILIKE to PostgreSQL FTS + filters + cross-workspace + saved searches.
+- See `docs/audits/deep-audit-2026-06-02.md` section A1b for the full ordered list.
+
+## Watch / tracked follow-ups
+- ENV (dev-boot, needs human): the repo `.env` `DATABASE_URL` points the running
+  app at a Postgres that accepts then drops the connection ("Connection terminated
+  unexpectedly" → /api/health 503, all DB routes 500). The correct local DB is the
+  docker postgres on host port 25432:
+  `DATABASE_URL=postgresql://aaelink:aaelink@127.0.0.1:25432/aaelink`. Verified:
+  launching `bun run dev:localhost` with that value gives health 200 + switcher 401.
+  `.env` is permission-protected (secret) so it was not edited; fix the value in
+  `.env` (or export it) to run the app/desktop shell against a working DB.
+- MCP (doctor): removed the broken `caveman-shrink` local MCP server (npx package
+  did not exist → "Failed to connect"). `context7`/`playwright`/`filesystem` MCPs
+  remain "pending approval" — approve interactively via `claude` if wanted.
+- TEST HARNESS GAP (audit C7): route handlers invoked directly under vitest 500
+  because readSessionUserId() calls cookies() (next/headers) outside a request
+  scope. Cookie-auth routes can't be tested by direct invocation. Verify
+  business logic at the lib layer (as D1 discovery does) or via a running server
+  (Playwright). Needs a request-context shim or a documented testing standard.
+  Concrete impact: `bun run test:integration` runs all __tests__; 7 lib-layer
+  files are green, but ~17 legacy route-invocation files are red (C7). Next
+  harness epic: add a cookies request-context shim OR migrate those route tests
+  to the lib-layer pattern. The unit gate (`bun run test`, 1485) stays green.
+- Schema convention drift (partially fixed): the v0.0.44+ enterprise tables were
+  authored with UUID ids (fixed C5) and TIMESTAMPTZ timestamps while the rest of
+  the app uses TEXT ids + BIGINT epoch-ms. Fixed the timestamp columns the libs
+  write (custom_roles/role_assignments/invite_requests); organizations/
+  org_members/org_policies keep TIMESTAMPTZ (their libs don't write ms and tests
+  pass). Audit other enterprise tables before new code writes ms into them.
+- H7 (infra): `infra/k3s` and `infra/docker-desktop` kustomize deploy MATTERMOST
+  (namespace `mattermost`, mattermost image, MATTERMOST_URL), not AAELink. There
+  is no AAELink Kubernetes deployment manifest. Authoring real AAELink manifests
+  is a Stage C infra epic; do not delete mattermost.yaml piecemeal (it would
+  break the kustomization).
+- Blueprint consolidation (H5, needs human decision): multiple overlapping
+  canonical-ish docs coexist — BLUEPRINT.md, ENTERPRISE-BLUEPRINT.md,
+  NORTH-STAR-A.md, ARCHITECTURE-{AAELINK-STACK,MATTERMOST-TO-AAELINK}.md,
+  architecture-{technical,ecosystem-map}.md, ROADMAP.md vs ROADMAP-PHASES-AND-
+  LAYERS.md vs ROADMAP.yaml. Pick one canonical set; archive the rest.
+- Oversized refactor targets (not blockers): lib/infra/migrate.ts (2541),
+  app/home/page.tsx (1808), components/tickets/TicketsPanel.tsx (1522),
+  components/modals/PreferencesModal.tsx (1179), app/styles.css (18278).
+- Dead-file cleanup (knip 74): components/media/FilePreviewModal.tsx,
+  components/modals/ContentFlagModal.tsx, components/shared/ModuleChrome.tsx,
+  components/tickets/SlaCountdown.tsx — confirm dead then remove. Add knip.json.
+- bun audit: 1 moderate (brace-expansion via eslint toolchain) — accept or
+  `bun update`.
+- M5: CatchUpView is notification triage (no AI) but carries Slack "Catch Up"
+  framing; keep as triage or rename to avoid AI association.

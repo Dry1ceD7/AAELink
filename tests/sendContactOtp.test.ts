@@ -2,7 +2,7 @@
  * AAELink — Contact OTP Delivery Status Tests
  */
 import { describe, it, expect } from 'vitest'
-import { contactOtpDeliveryStatus } from '@/lib/sendContactOtp'
+import { contactOtpDeliveryStatus } from '@/lib/auth/sendContactOtp'
 
 describe('SendContactOtp — contactOtpDeliveryStatus', () => {
   it('returns an object with email_ready and sms_ready', () => {

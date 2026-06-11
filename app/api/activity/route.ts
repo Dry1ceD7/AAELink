@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getPool } from '@/lib/db'
-import { ensureSchema } from '@/lib/migrate'
-import { readSessionUserId } from '@/lib/session'
-import { tracedRoute } from '@/lib/tracedRoute'
+import { getPool } from '@/lib/infra/db'
+import { ensureSchema } from '@/lib/infra/migrate'
+import { readSessionUserId } from '@/lib/auth/session'
+import { tracedRoute } from '@/lib/api/tracedRoute'
 
 /**
  * Activity Feed API — GET /api/activity
@@ -81,9 +81,9 @@ async function _GET(req: Request) {
   if (filter === 'all' || filter === 'reactions') {
     queries.push(`
       SELECT
-        r.id AS source_id,
+        (r.message_id || ':' || r.user_id || ':' || r.reaction_key) AS source_id,
         'reaction' AS activity_type,
-        r.emoji_key AS body,
+        r.reaction_key AS body,
         r.user_id AS actor_id,
         u.username AS actor_username,
         u.first_name AS actor_first_name,
@@ -94,7 +94,7 @@ async function _GET(req: Request) {
         c.type AS channel_type,
         m.root_id,
         r.created_at AS activity_at
-      FROM aaelink.reactions r
+      FROM aaelink.message_reactions r
       JOIN aaelink.messages m ON m.id = r.message_id
       JOIN aaelink.channels c ON c.id = m.channel_id AND c.workspace_id = $2
       JOIN aaelink.users u ON u.id = r.user_id
