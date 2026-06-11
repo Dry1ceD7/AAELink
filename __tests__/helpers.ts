@@ -295,6 +295,13 @@ export function asRequest(
     headers?: Record<string, string>
     /** Skip the automatic CSRF cookie+header for tests that exercise CSRF directly. */
     noAutoCsrf?: boolean
+    /**
+     * Abort signal wired into the request so streaming route handlers (SSE)
+     * can be cancelled from a test — aborting fires the handler's
+     * `req.signal` 'abort' listener, letting it clear timers and close the
+     * stream instead of leaking them past the test.
+     */
+    signal?: AbortSignal
   } = {}
 ): NextRequest {
   const url = new URL(path, 'http://localhost:3040')
@@ -335,6 +342,7 @@ export function asRequest(
     method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
+    ...(options.signal ? { signal: options.signal } : {}),
   })
 }
 
